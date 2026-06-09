@@ -39,3 +39,6 @@ temp/
 # Coverage
 coverage.out
 *.coverprofile
+
+# Claude memory
+memory/

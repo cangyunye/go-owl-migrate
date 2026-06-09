@@ -1,2 +1,0 @@
-- [database-metadata-extractor](database-metadata-extractor.md) — Live DB schema introspection for PG/MySQL/Oracle via extractor package
-- [full-call-chain](full-call-chain.md) — Complete call flow reference: CLI → metadata → generation → migration
