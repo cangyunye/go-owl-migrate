@@ -12,16 +12,21 @@ import (
 
 // ValidDialects lists supported target dialects.
 var ValidDialects = map[string]bool{
-	"oracle":    true,
-	"postgres":  true,
-	"mysql":     true,
-	"goldendb":  true,
-	"oceanbase": true,
+	"oracle":           true,
+	"postgres":         true,
+	"mysql":            true,
+	"goldendb":         true,
+	"goldendb-mysql":   true,
+	"goldendb-oracle":  true,
+	"oceanbase":        true,
+	"oceanbase-mysql":  true,
+	"oceanbase-oracle": true,
 }
 
 // ValidMetadataTypes lists supported metadata source types.
 var ValidMetadataTypes = map[string]bool{
 	"csv": true,
+	"database": true,
 }
 
 // ValidErrorPolicies lists supported error handling strategies.
@@ -292,6 +297,14 @@ func (c *Config) validate() error {
 	}
 	if !ValidMetadataTypes[c.Metadata.Type] {
 		return fmt.Errorf("unsupported metadata.type %q: must be one of %v", c.Metadata.Type, mapKeys(ValidMetadataTypes))
+	}
+	if c.Metadata.Type == "database" {
+		if c.Source.Type == "" {
+			return fmt.Errorf("source.type is required when metadata.type is 'database'")
+		}
+		if c.Source.DSN == "" {
+			return fmt.Errorf("source.dsn is required when metadata.type is 'database'")
+		}
 	}
 	if c.DDL.TargetDialect == "" {
 		return fmt.Errorf("ddl.target_dialect is required")

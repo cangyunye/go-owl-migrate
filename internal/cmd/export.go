@@ -2,11 +2,7 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	_ "github.com/go-sql-driver/mysql"  // MySQL driver
 	_ "github.com/lib/pq"               // PostgreSQL driver
@@ -15,8 +11,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
-	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 )
 
@@ -25,9 +19,9 @@ func exportCmd() *cobra.Command {
 		Use:   "export",
 		Short: "Export data from source database to CSV files",
 		Long: `Connects to the source database, reads table data in batches,
-and writes CSV files to the output directory.
+	and writes CSV files to the output directory.
 
-Uses cursor-based pagination when primary keys are available.`,
+	Uses cursor-based pagination when primary keys are available.`,
 	}
 
 	var outputDir string
@@ -39,12 +33,8 @@ Uses cursor-based pagination when primary keys are available.`,
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		// Load CSV metadata for table/column info
-		csvDir := cfg.Metadata.CSV.Path
-		if csvDir == "" {
-			csvDir = "./testdata/csv/"
-		}
-		sm, pkMap, err := loadMetadata(csvDir)
+		// Load metadata from CSV or database
+		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return err
 		}
@@ -61,6 +51,9 @@ Uses cursor-based pagination when primary keys are available.`,
 		}
 		fmt.Printf("Connected to %s\n", cfg.Source.Type)
 
+		// Build PK map for cursor pagination
+		pkMap := buildPKMap(sm)
+
 		// Build logger
 		logCfg := zap.NewDevelopmentConfig()
 		logCfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
@@ -72,15 +65,15 @@ Uses cursor-based pagination when primary keys are available.`,
 
 		exp := exporter.New(db, exporter.Config{
 			OutputDir:         outputDir,
-			PageSize:           cfg.Export.Batch.PageSize,
-			MaxWorkers:         cfg.Export.Parallel.MaxWorkers,
-			CSVDelimiter:       cfg.Export.CSV.Delimiter,
-			CSVQuoteChar:       cfg.Export.CSV.QuoteChar,
-			CSVNullRep:         cfg.Export.CSV.NullRepresentation,
-			CSVHeader:          cfg.Export.CSV.Header,
-			CSVLineTerminator:  cfg.Export.CSV.LineTerminator,
-			DBType:             cfg.Source.Type,
-			Logger:             logger,
+			PageSize:          cfg.Export.Batch.PageSize,
+			MaxWorkers:        cfg.Export.Parallel.MaxWorkers,
+			CSVDelimiter:      cfg.Export.CSV.Delimiter,
+			CSVQuoteChar:      cfg.Export.CSV.QuoteChar,
+			CSVNullRep:        cfg.Export.CSV.NullRepresentation,
+			CSVHeader:         cfg.Export.CSV.Header,
+			CSVLineTerminator: cfg.Export.CSV.LineTerminator,
+			DBType:            cfg.Source.Type,
+			Logger:            logger,
 		})
 
 		ctx := context.Background()
@@ -106,82 +99,4 @@ Uses cursor-based pagination when primary keys are available.`,
 	}
 
 	return cmd
-}
-
-func openDB(dbType, dsn string) (*sql.DB, error) {
-	switch strings.ToLower(dbType) {
-	case "mysql":
-		return sql.Open("mysql", dsn)
-	case "postgres", "postgresql":
-		return sql.Open("postgres", dsn)
-	case "oracle":
-		return sql.Open("oracle", dsn)
-	default:
-		return nil, fmt.Errorf("unsupported database type: %s", dbType)
-	}
-}
-
-func loadMetadata(csvDir string) (*md.SchemaModel, map[string][]string, error) {
-	loader := csvpkg.NewLoader()
-	entries, err := os.ReadDir(csvDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read metadata dir %q: %w", csvDir, err)
-	}
-	hasTables := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
-			continue
-		}
-		path := filepath.Join(csvDir, entry.Name())
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open %s: %w", path, err)
-		}
-		defer f.Close()
-		loader.AddReader(entry.Name(), f)
-		if entry.Name() == "tables.csv" || entry.Name() == "Tables.csv" {
-			hasTables = true
-		}
-	}
-	if !hasTables {
-		return nil, nil, fmt.Errorf("tables.csv not found in %s", csvDir)
-	}
-	sm, err := loader.Load()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Build PK map for cursor pagination
-	pkMap := make(map[string][]string)
-	for _, tbl := range sm.GetTables() {
-		pks := tbl.GetPrimaryKeys()
-		if len(pks) > 0 {
-			key := fmt.Sprintf("%s.%s", tbl.TableSchema, tbl.TableName)
-			names := make([]string, len(pks))
-			for i, pk := range pks {
-				names[i] = pk.ColumnName
-			}
-			pkMap[key] = names
-		}
-	}
-
-	return sm, pkMap, nil
-}
-
-func filterTables(tables []*md.TableDef, include []string) []*md.TableDef {
-	if len(include) == 1 && include[0] == "*" {
-		return tables
-	}
-	includeSet := make(map[string]bool)
-	for _, inc := range include {
-		includeSet[inc] = true
-	}
-	var result []*md.TableDef
-	for _, tbl := range tables {
-		key := fmt.Sprintf("%s.%s", tbl.TableSchema, tbl.TableName)
-		if includeSet[key] || includeSet["*"] {
-			result = append(result, tbl)
-		}
-	}
-	return result
 }

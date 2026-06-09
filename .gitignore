@@ -1,0 +1,41 @@
+# Binaries
+owl-migrate
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+build/
+
+# Test output
+output/
+testoutput/
+*.test
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.local.yaml
+
+# Temp
+tmp/
+temp/
+/tempdir/
+
+# Coverage
+coverage.out
+*.coverprofile

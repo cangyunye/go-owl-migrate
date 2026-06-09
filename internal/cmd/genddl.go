@@ -2,16 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
-	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
@@ -19,10 +14,9 @@ import (
 func genDDLCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gen-ddl",
-		Short: "Generate DDL from CSV metadata",
-		Long: `Reads CSV metadata and generates CREATE TABLE/INDEX/VIEW/etc DDL for the target dialect.
-
-Note: CSV metadata only supports data migration. Structure migration requires live database connection as metadata source.`,
+		Short: "Generate DDL from metadata (CSV or live database)",
+		Long: `Reads metadata from CSV files or a live database and generates
+	CREATE TABLE/INDEX/VIEW/etc DDL for the target dialect.`,
 	}
 
 	var outputDir string
@@ -34,12 +28,8 @@ Note: CSV metadata only supports data migration. Structure migration requires li
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		// Load CSV metadata
-		csvDir := cfg.Metadata.CSV.Path
-		if csvDir == "" {
-			csvDir = "./metadata/"
-		}
-		sm, err := loadCSVModel(csvDir)
+		// Load metadata from CSV or database
+		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return err
 		}
@@ -88,32 +78,4 @@ func toBuildOptions(cfg *config.Config) dialect.BuildOptions {
 		IdentityToSerial:   cfg.DDL.IdentityToSerial,
 		SkipPartitions:     !cfg.DDL.Partition.Migrate,
 	}
-}
-
-func loadCSVModel(csvDir string) (*md.SchemaModel, error) {
-	loader := csvpkg.NewLoader()
-	entries, err := os.ReadDir(csvDir)
-	if err != nil {
-		return nil, fmt.Errorf("read metadata dir %q: %w", csvDir, err)
-	}
-	hasTables := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
-			continue
-		}
-		path := filepath.Join(csvDir, entry.Name())
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", path, err)
-		}
-		defer f.Close()
-		loader.AddReader(entry.Name(), f)
-		if entry.Name() == "tables.csv" || entry.Name() == "Tables.csv" {
-			hasTables = true
-		}
-	}
-	if !hasTables {
-		return nil, fmt.Errorf("tables.csv not found in %s", csvDir)
-	}
-	return loader.Load()
 }

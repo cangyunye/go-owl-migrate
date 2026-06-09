@@ -1,9 +1,7 @@
 package config
 
 import (
-	"path/filepath"
-	"regexp"
-	"strings"
+	"os"
 	"testing"
 )
 
@@ -104,3 +102,17 @@ func TestTableFilter_Match(t *testing.T) {
 }
 
 func loadYAML(data []byte) (*Config, error) {
+	f, err := os.CreateTemp("", "owl-test-*.yaml")
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(f.Name())
+
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return nil, err
+	}
+	f.Close()
+
+	return Load(f.Name())
+}

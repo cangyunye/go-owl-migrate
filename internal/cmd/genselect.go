@@ -2,32 +2,26 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
-	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
 func genSelectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "gen-select",
-		Short: "Generate paginated SELECT statements from CSV metadata",
-		Long: `Reads CSV metadata and generates SELECT statements with cursor-based or offset-based pagination.
-
-The generated SQL files contain placeholder variables ($PAGE_SIZE, $OFFSET, $LAST_*) for batch script use.`,
+		Short: "Generate paginated SELECT statements from metadata",
+		Long: `Reads metadata from CSV files or a live database and generates
+	SELECT statements with cursor-based or offset-based pagination.`,
 	}
 
 	var (
-		outputDir string
-		batchMethod string
-		pageSize   int
+		outputDir    string
+		batchMethod  string
+		pageSize     int
 	)
 
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/select/", "output directory for SELECT files")
@@ -47,12 +41,8 @@ The generated SQL files contain placeholder variables ($PAGE_SIZE, $OFFSET, $LAS
 			batchMethod = cfg.SelectGen.Batch.Method
 		}
 
-		// Load CSV metadata
-		csvDir := cfg.Metadata.CSV.Path
-		if csvDir == "" {
-			csvDir = "./metadata/"
-		}
-		sm, err := loadCSVFromDir(csvDir)
+		// Load metadata from CSV or database
+		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return err
 		}
@@ -77,32 +67,4 @@ The generated SQL files contain placeholder variables ($PAGE_SIZE, $OFFSET, $LAS
 	}
 
 	return cmd
-}
-
-func loadCSVFromDir(csvDir string) (*md.SchemaModel, error) {
-	loader := csvpkg.NewLoader()
-	entries, err := os.ReadDir(csvDir)
-	if err != nil {
-		return nil, fmt.Errorf("read metadata dir %q: %w", csvDir, err)
-	}
-	hasTables := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
-			continue
-		}
-		path := filepath.Join(csvDir, entry.Name())
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", path, err)
-		}
-		defer f.Close()
-		loader.AddReader(entry.Name(), f)
-		if entry.Name() == "tables.csv" || entry.Name() == "Tables.csv" {
-			hasTables = true
-		}
-	}
-	if !hasTables {
-		return nil, fmt.Errorf("tables.csv not found in %s", csvDir)
-	}
-	return loader.Load()
 }

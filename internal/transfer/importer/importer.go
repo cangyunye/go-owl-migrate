@@ -28,6 +28,7 @@ type Config struct {
 	MaxWorkers      int
 	DateTimeFormat  string // e.g. "yyyyMMddHHmmss"
 	TrimStrings     bool
+	TargetDBType    string // "postgres", "mysql", "oracle" — affects quoting and placeholders
 	Logger          *zap.Logger
 }
 
@@ -53,6 +54,11 @@ func New(db *sql.DB, cfg Config) *Importer {
 		cfg.CSVNullMarker = "\\N"
 	}
 	return &Importer{db: db, cfg: cfg, logger: cfg.Logger}
+}
+
+// isMySQL returns true if the target database is MySQL.
+func (imp *Importer) isMySQL() bool {
+	return strings.EqualFold(imp.cfg.TargetDBType, "mysql")
 }
 
 // ImportResult holds the result of importing one table.
@@ -171,16 +177,22 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	// Build INSERT statement
 	quotedCols := make([]string, len(header))
 	for i, h := range header {
-		quotedCols[i] = quoteIdent(h)
+		quotedCols[i] = imp.quoteIdent(h)
 	}
-	// Generate $1, $2, ... style placeholders (PostgreSQL-compatible)
+	// Generate placeholders: $1, $2, ... for PG/Oracle, ? for MySQL
 	placeholders := make([]string, len(header))
-	for i := range placeholders {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
+	if imp.isMySQL() {
+		for i := range placeholders {
+			placeholders[i] = "?"
+		}
+	} else {
+		for i := range placeholders {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		}
 	}
 
 	insertSQL := fmt.Sprintf("INSERT INTO %s.%s (%s) VALUES (%s)",
-		quoteIdent(targetSchema), quoteIdent(tbl.TableName),
+		imp.quoteIdent(targetSchema), imp.quoteIdent(tbl.TableName),
 		strings.Join(quotedCols, ", "),
 		strings.Join(placeholders, ", "),
 	)
@@ -188,7 +200,7 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	// Truncate if configured
 	if imp.cfg.TruncateBefore {
 		truncSQL := fmt.Sprintf("TRUNCATE TABLE %s.%s",
-			quoteIdent(targetSchema), quoteIdent(tbl.TableName))
+			imp.quoteIdent(targetSchema), imp.quoteIdent(tbl.TableName))
 		if _, err := imp.db.ExecContext(ctx, truncSQL); err != nil {
 			imp.logger.Warn("TRUNCATE failed (table may not exist yet)", zap.Error(err))
 		}
@@ -349,6 +361,9 @@ func isAllDigits(s string) bool {
 	return true
 }
 
-func quoteIdent(name string) string {
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` // PostgreSQL-style
+func (imp *Importer) quoteIdent(name string) string {
+	if imp.isMySQL() {
+		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+	}
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` // PostgreSQL/Oracle-style
 }

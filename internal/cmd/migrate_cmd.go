@@ -18,7 +18,6 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
 )
@@ -38,8 +37,8 @@ Flow:
 	}
 
 	var (
-		tempDir   string
-		skipDDL   bool
+		tempDir    string
+		skipDDL    bool
 		reportFile string
 	)
 
@@ -56,17 +55,16 @@ Flow:
 		report := NewMigrationReport(cfg.Source.Type, cfg.Target.Type)
 		startTime := time.Now()
 
-		// Step 1: Load metadata
+		// Step 1: Load metadata from CSV or database
 		fmt.Println("=== Step 1: Load metadata ===")
-		csvDir := cfg.Metadata.CSV.Path
-		if csvDir == "" {
-			csvDir = "./testdata/csv/"
-		}
-		sm, pkMap, err := loadMetadataForMigrate(csvDir)
+		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return fmt.Errorf("load metadata: %w", err)
 		}
 		fmt.Printf("Loaded %d tables from metadata\n", len(sm.GetTables()))
+
+		// Build PK map for cursor pagination
+		pkMap := buildPKMap(sm)
 
 		// Step 2: Connect to source
 		fmt.Println("=== Step 2: Connect to source ===")
@@ -149,6 +147,7 @@ Flow:
 			MaxWorkers:     cfg.Import.Parallel.MaxWorkers,
 			DateTimeFormat: cfg.Import.DataTransforms.DatetimeFormat,
 			TrimStrings:    cfg.Import.DataTransforms.TrimStrings,
+			TargetDBType:   cfg.Target.Type,
 			Logger:         impLogger,
 		})
 
@@ -191,16 +190,16 @@ Flow:
 
 // MigrationReport holds the summary of a migration operation.
 type MigrationReport struct {
-	SourceDialect string              `json:"source_dialect"`
-	TargetDialect string              `json:"target_dialect"`
-	GeneratedAt   string              `json:"generated_at"`
-	Duration      string              `json:"duration"`
-	Tables        []TableReport       `json:"tables"`
-	TotalExpected int64               `json:"total_expected"`
-	TotalActual   int64               `json:"total_actual"`
-	TotalSkipped  int64               `json:"total_skipped"`
-	TotalErrors   int64               `json:"total_errors"`
-	Status        string              `json:"status"`
+	SourceDialect string        `json:"source_dialect"`
+	TargetDialect string        `json:"target_dialect"`
+	GeneratedAt   string        `json:"generated_at"`
+	Duration      string        `json:"duration"`
+	Tables        []TableReport `json:"tables"`
+	TotalExpected int64         `json:"total_expected"`
+	TotalActual   int64         `json:"total_actual"`
+	TotalSkipped  int64         `json:"total_skipped"`
+	TotalErrors   int64         `json:"total_errors"`
+	Status        string        `json:"status"`
 }
 
 // TableReport holds per-table migration results.
@@ -263,51 +262,6 @@ func (r *MigrationReport) Print() {
 		}
 		fmt.Println()
 	}
-}
-
-func loadMetadataForMigrate(csvDir string) (*md.SchemaModel, map[string][]string, error) {
-	loader := csvpkg.NewLoader()
-	entries, err := os.ReadDir(csvDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read metadata dir %q: %w", csvDir, err)
-	}
-	hasTables := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
-			continue
-		}
-		path := filepath.Join(csvDir, entry.Name())
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, nil, fmt.Errorf("open %s: %w", path, err)
-		}
-		defer f.Close()
-		loader.AddReader(entry.Name(), f)
-		if entry.Name() == "tables.csv" || entry.Name() == "Tables.csv" {
-			hasTables = true
-		}
-	}
-	if !hasTables {
-		return nil, nil, fmt.Errorf("tables.csv not found in %s", csvDir)
-	}
-	sm, err := loader.Load()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pkMap := make(map[string][]string)
-	for _, tbl := range sm.GetTables() {
-		pks := tbl.GetPrimaryKeys()
-		if len(pks) > 0 {
-			key := fmt.Sprintf("%s.%s", tbl.TableSchema, tbl.TableName)
-			names := make([]string, len(pks))
-			for i, pk := range pks {
-				names[i] = pk.ColumnName
-			}
-			pkMap[key] = names
-		}
-	}
-	return sm, pkMap, nil
 }
 
 func ensureTablesForMigrate(ctx context.Context, db *sql.DB, sm *md.SchemaModel, cfg *config.Config) error {

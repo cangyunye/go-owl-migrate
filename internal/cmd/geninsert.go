@@ -2,16 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
-	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 )
 
 func genInsertCmd() *cobra.Command {
@@ -46,12 +41,8 @@ The CSV files are read from the data directory and INSERT SQL is written to the 
 			cfg.DDL.TargetDialect = dialect
 		}
 
-		// Load metadata
-		csvDir := cfg.Metadata.CSV.Path
-		if csvDir == "" {
-			csvDir = "./testdata/csv/"
-		}
-		sm, err := loadMetadataForGenInsert(csvDir)
+		// Load metadata from CSV or database
+		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return fmt.Errorf("load metadata: %w", err)
 		}
@@ -76,32 +67,4 @@ The CSV files are read from the data directory and INSERT SQL is written to the 
 	}
 
 	return cmd
-}
-
-func loadMetadataForGenInsert(csvDir string) (*md.SchemaModel, error) {
-	loader := csvpkg.NewLoader()
-	entries, err := os.ReadDir(csvDir)
-	if err != nil {
-		return nil, fmt.Errorf("read metadata dir %q: %w", csvDir, err)
-	}
-	hasTables := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
-			continue
-		}
-		path := filepath.Join(csvDir, entry.Name())
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", path, err)
-		}
-		defer f.Close()
-		loader.AddReader(entry.Name(), f)
-		if entry.Name() == "tables.csv" || entry.Name() == "Tables.csv" {
-			hasTables = true
-		}
-	}
-	if !hasTables {
-		return nil, fmt.Errorf("tables.csv not found in %s", csvDir)
-	}
-	return loader.Load()
 }

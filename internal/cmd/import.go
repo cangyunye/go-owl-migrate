@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -15,7 +13,6 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
 )
 
@@ -32,12 +29,8 @@ func importCmd() *cobra.Command {
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		// Load CSV metadata
-		csvDir := cfg.Metadata.CSV.Path
-		if csvDir == "" {
-			csvDir = "./testdata/csv/"
-		}
-		sm, err := loadCSVModelForImport(csvDir)
+		// Load metadata from CSV or database
+		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return err
 		}
@@ -78,7 +71,8 @@ func importCmd() *cobra.Command {
 			MaxWorkers:     cfg.Import.Parallel.MaxWorkers,
 			DateTimeFormat: cfg.Import.DataTransforms.DatetimeFormat,
 			TrimStrings:    cfg.Import.DataTransforms.TrimStrings,
-			Logger:         logger,
+			TargetDBType:   cfg.Target.Type,
+		Logger:         logger,
 		})
 
 		tables := sm.GetTables() // All tables from metadata
@@ -114,34 +108,6 @@ func importCmd() *cobra.Command {
 	}
 
 	return cmd
-}
-
-func loadCSVModelForImport(csvDir string) (*md.SchemaModel, error) {
-	loader := csvpkg.NewLoader()
-	entries, err := os.ReadDir(csvDir)
-	if err != nil {
-		return nil, fmt.Errorf("read metadata dir %q: %w", csvDir, err)
-	}
-	hasTables := false
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
-			continue
-		}
-		path := filepath.Join(csvDir, entry.Name())
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("open %s: %w", path, err)
-		}
-		defer f.Close()
-		loader.AddReader(entry.Name(), f)
-		if entry.Name() == "tables.csv" || entry.Name() == "Tables.csv" {
-			hasTables = true
-		}
-	}
-	if !hasTables {
-		return nil, fmt.Errorf("tables.csv not found in %s", csvDir)
-	}
-	return loader.Load()
 }
 
 func ensureTables(ctx context.Context, db *sql.DB, sm *md.SchemaModel, cfg *config.Config, schemaMapping map[string]string) error {
@@ -193,12 +159,47 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	if cfg.DDL.IncludeIfNotExists {
 		b.WriteString("IF NOT EXISTS ")
 	}
-	b.WriteString(fmt.Sprintf(`"%s"."%s"`, schema, tbl.TableName))
+
+	// MySQL uses backticks, others use double quotes
+	targetIsMySQL := strings.EqualFold(cfg.Target.Type, "mysql")
+	q := func(name string) string {
+		if targetIsMySQL {
+			return "`" + name + "`"
+		}
+		return `"` + name + `"`
+	}
+
+	b.WriteString(fmt.Sprintf("%s.%s", q(schema), q(tbl.TableName)))
 	b.WriteString(" (\n")
 	cols := tbl.GetColumns()
+
+	// Extended type map for cross-dialect compatibility
 	typeMap := map[string]string{
-		"INT": "INTEGER", "VARCHAR": "VARCHAR", "DECIMAL": "NUMERIC",
-		"DATE": "DATE", "NUMBER": "NUMERIC", "VARCHAR2": "VARCHAR",
+		"INT":                           "INTEGER",
+		"INTEGER":                       "INTEGER",
+		"VARCHAR":                       "VARCHAR",
+		"CHARACTER VARYING":             "VARCHAR",
+		"VARCHAR2":                      "VARCHAR",
+		"CHAR":                          "CHAR",
+		"CHARACTER":                     "CHAR",
+		"DECIMAL":                       "DECIMAL",
+		"NUMERIC":                       "DECIMAL",
+		"NUMBER":                        "DECIMAL",
+		"DATE":                          "DATE",
+		"TIMESTAMP":                     "DATETIME",
+		"TIMESTAMPTZ":                   "DATETIME",
+		"BIGINT":                        "BIGINT",
+		"SMALLINT":                      "SMALLINT",
+		"BOOLEAN":                       "TINYINT(1)",
+		"REAL":                          "FLOAT",
+		"DOUBLE PRECISION":              "DOUBLE",
+		"TEXT":                          "LONGTEXT",
+		"CLOB":                          "LONGTEXT",
+		"BLOB":                          "LONGBLOB",
+		"BYTEA":                         "LONGBLOB",
+		"JSON":                          "JSON",
+		"JSONB":                         "JSON",
+		"XML":                           "LONGTEXT",
 	}
 
 	// Build PK column set for inline PRIMARY KEY
@@ -209,18 +210,25 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	}
 
 	for i, col := range cols {
-		b.WriteString(fmt.Sprintf(`  "%s" `, col.ColumnName))
+		b.WriteString("  ")
+		b.WriteString(q(col.ColumnName))
+		b.WriteString(" ")
 		targetType := col.DataType
 		if m, ok := typeMap[strings.ToUpper(col.DataType)]; ok {
 			targetType = m
 		}
-		if strings.ToUpper(col.DataType) == "VARCHAR" || strings.ToUpper(col.DataType) == "VARCHAR2" {
+
+		// Handle VARCHAR types: respect length if set, provide default for MySQL
+		upType := strings.ToUpper(col.DataType)
+		if upType == "VARCHAR" || upType == "VARCHAR2" || upType == "CHARACTER VARYING" || upType == "CHARACTER" {
 			if col.DataLength > 0 {
 				targetType = fmt.Sprintf("VARCHAR(%d)", col.DataLength)
+			} else if targetIsMySQL {
+				targetType = "VARCHAR(255)"
 			}
 		}
-		if strings.ToUpper(col.DataType) == "DECIMAL" && col.DataPrecision > 0 && col.DataScale > 0 {
-			targetType = fmt.Sprintf("NUMERIC(%d,%d)", col.DataPrecision, col.DataScale)
+		if (upType == "DECIMAL" || upType == "NUMERIC" || upType == "NUMBER") && col.DataPrecision > 0 && col.DataScale > 0 {
+			targetType = fmt.Sprintf("DECIMAL(%d,%d)", col.DataPrecision, col.DataScale)
 		}
 		b.WriteString(targetType)
 		if col.Nullable == "NO" {
@@ -236,7 +244,7 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	if len(pks) > 0 {
 		pkNames := make([]string, len(pks))
 		for i, pk := range pks {
-			pkNames[i] = fmt.Sprintf(`"%s"`, pk.ColumnName)
+			pkNames[i] = q(pk.ColumnName)
 		}
 		b.WriteString(fmt.Sprintf("  PRIMARY KEY (%s)\n", strings.Join(pkNames, ", ")))
 	}
