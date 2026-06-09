@@ -1,0 +1,12 @@
+TABLE_SCHEMA,TABLE_NAME,COLUMN_NAME,ORDINAL_POSITION,DATA_TYPE,DATA_LENGTH,DATA_PRECISION,DATA_SCALE,NULLABLE,DEFAULT_VALUE,COLUMN_COMMENT
+default_db,EMP,EMPNO,1,INT,,,10,NO,,Employee number
+default_db,EMP,ENAME,2,VARCHAR,10,,,YES,,Employee name
+default_db,EMP,JOB,3,VARCHAR,9,,,YES,,Job title
+default_db,EMP,MGR,4,INT,,,10,YES,,Manager ID
+default_db,EMP,HIREDATE,5,DATE,,,,YES,,Hire date
+default_db,EMP,SAL,6,DECIMAL,,7,2,YES,,Salary
+default_db,EMP,COMM,7,DECIMAL,,7,2,YES,,Commission
+default_db,EMP,DEPTNO,8,INT,,,10,NO,,Department number
+default_db,DEPT,DEPTNO,1,INT,,,10,NO,,Department number
+default_db,DEPT,DNAME,2,VARCHAR,14,,,YES,,Department name
+default_db,DEPT,LOC,3,VARCHAR,13,,,YES,,Location

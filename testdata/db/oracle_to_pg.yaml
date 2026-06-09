@@ -1,0 +1,58 @@
+general:
+  log_level: info
+  log_format: text
+
+metadata:
+  type: csv
+  csv:
+    path: ./testdata/db/oracle/
+    delimiter: ","
+    encoding: utf-8
+    has_header: true
+    column_name_matching: case_insensitive
+
+source:
+  type: oracle
+  dsn: "oracle://scott:tiger@127.0.0.1:1521/XEPDB1"
+
+target:
+  type: postgres
+  dsn: "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
+
+ddl:
+  target_dialect: postgres
+  schema_mapping:
+    SCOTT: public
+  include_if_not_exists: true
+
+export:
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    header: true
+    null_representation: "\\N"
+    line_terminator: "\n"
+  batch:
+    page_size: 5000
+  parallel:
+    enabled: true
+    max_workers: 4
+
+import:
+  csv:
+    delimiter: ","
+    has_header: true
+    null_marker: "\\N"
+  target:
+    truncate_before: true
+  batch:
+    commit_interval: 1000
+    error_policy: stop
+  parallel:
+    enabled: true
+    max_workers: 2
+    respect_foreign_keys: false
+  data_transforms:
+    datetime_format: "yyyyMMddHHmmss"
+    trim_strings: true
+    null_if: ["NULL", "null", "\\N"]

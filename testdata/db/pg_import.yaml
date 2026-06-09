@@ -1,0 +1,43 @@
+general:
+  log_level: debug
+  log_format: text
+
+metadata:
+  type: csv
+  csv:
+    path: ./testdata/db/mysql/
+    delimiter: ","
+    encoding: utf-8
+    has_header: true
+    column_name_matching: case_insensitive
+
+target:
+  type: postgres
+  dsn: "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
+
+ddl:
+  target_dialect: postgres
+  include_if_not_exists: true
+  schema_mapping:
+    default_db: public
+
+import:
+  source_dir: ./output/data/
+  format: csv
+  csv:
+    delimiter: ","
+    has_header: true
+    null_marker: "\\N"
+  target:
+    truncate_before: true
+  batch:
+    commit_interval: 1000
+    error_policy: stop
+  parallel:
+    enabled: true
+    max_workers: 2
+    respect_foreign_keys: false
+  data_transforms:
+    datetime_format: "yyyyMMddHHmmss"
+    trim_strings: true
+    null_if: ["NULL", "null", "\\N"]

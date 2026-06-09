@@ -1,0 +1,79 @@
+# go-owl-migrate 示例配置
+general:
+  log_level: debug
+  log_format: text
+
+metadata:
+  type: csv
+  csv:
+    path: ./testdata/csv/
+    delimiter: ","
+    encoding: utf-8
+    has_header: true
+    null_marker: "\\N"
+    column_name_matching: case_insensitive
+
+ddl:
+  output_dir: ./output/ddl/
+  target_dialect: postgres
+  include_comments: true
+  include_if_not_exists: true
+  split_by_object: true
+  schema_mapping:
+    SCOTT: public
+  table_filter:
+    include: ["*"]
+    exclude:
+      glob: ["*_LOG", "TMP_*"]
+      schemas:
+        - "SYS"
+        - "SYSTEM"
+      tables: []
+  type_overrides: {}
+  partition:
+    migrate: false
+
+select_gen:
+  output_dir: ./output/select/
+  batch:
+    method: cursor
+    page_size: 5000
+
+export:
+  output_dir: ./output/data/
+  format: csv
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    encoding: utf-8
+    header: true
+    null_representation: "\\N"
+  batch:
+    method: cursor
+    page_size: 5000
+  parallel:
+    enabled: true
+    max_workers: 4
+  tables:
+    include: ["*"]
+
+import:
+  source_dir: ./output/data/
+  format: csv
+  csv:
+    delimiter: ","
+    has_header: true
+    null_marker: "\\N"
+  target:
+    truncate_before: false
+  batch:
+    commit_interval: 1000
+    error_policy: skip_row
+  parallel:
+    enabled: true
+    max_workers: 4
+    respect_foreign_keys: true
+  data_transforms:
+    datetime_format: "yyyyMMddHHmmss"
+    trim_strings: true
+    null_if: ["NULL", "null", "\\N"]

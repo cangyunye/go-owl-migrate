@@ -1,0 +1,29 @@
+{
+  "source_dialect": "mysql",
+  "target_dialect": "postgres",
+  "generated_at": "2026-06-09 08:16:27",
+  "duration": "116.512833ms",
+  "tables": [
+    {
+      "schema": "public",
+      "table": "DEPT",
+      "expected": 4,
+      "actual": 4,
+      "skipped": 0,
+      "errors": 0
+    },
+    {
+      "schema": "public",
+      "table": "EMP",
+      "expected": 14,
+      "actual": 14,
+      "skipped": 0,
+      "errors": 0
+    }
+  ],
+  "total_expected": 18,
+  "total_actual": 18,
+  "total_skipped": 0,
+  "total_errors": 0,
+  "status": "SUCCESS"
+}

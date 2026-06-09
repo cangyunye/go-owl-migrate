@@ -1,0 +1,99 @@
+services:
+  # MySQL 外置硬盘挂载
+  mysql:
+    image: mysql:latest
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123456
+      MYSQL_DATABASE: default_db
+      MYSQL_USER: app
+      MYSQL_PASSWORD: app123456
+    volumes:
+      - /Volumes/ORICO2T/Users/sinvigil/mount/mysql/data:/var/lib/mysql
+      - /Volumes/ORICO2T/Users/sinvigil/mount/mysql/conf:/etc/mysql/conf.d
+      - /Volumes/ORICO2T/Users/sinvigil/mount/mysql/logs:/var/log/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-proot123456"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Postgres 外置硬盘挂载
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: postgres_db
+    volumes:
+      - /Volumes/ORICO2T/Users/sinvigil/mount/postgres/data:/var/lib/postgresql/data
+      - /Volumes/ORICO2T/Users/sinvigil/mount/postgres/logs:/var/lib/postgresql/logs
+    ports:
+      - "5432:5432"
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Oracle 仅使用Docker内置命名卷，不挂载外置磁盘
+  oracle:
+    image: gvenzl/oracle-xe:21-slim-faststart
+    platform: linux/amd64
+    pull_policy: never
+    container_name: oracle
+    restart: always
+    environment:
+      ORACLE_PASSWORD: Oracle123!
+      ORACLE_DATABASE: XEPDB1
+      APP_USER: appuser
+      APP_USER_PASSWORD: App123!
+      SGA_TARGET: 768M
+    volumes:
+      # 只保留oradata数据卷，删掉diag/logs额外挂载（极易引发软链接冲突）
+      - oracle-data:/opt/oracle/oradata
+    ports:
+      - "1521:1521"
+      - "5500:5500"
+    networks:
+      - app-net
+    deploy:
+      resources:
+        limits:
+          cpus: '3'
+          memory: 3G
+
+  # Nginx 外置硬盘挂载
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    restart: always
+    volumes:
+      - /Volumes/ORICO2T/Users/sinvigil/mount/nginx/conf:/etc/nginx/conf.d
+      - /Volumes/ORICO2T/Users/sinvigil/mount/nginx/html:/usr/share/nginx/html
+      - /Volumes/ORICO2T/Users/sinvigil/mount/nginx/logs:/var/log/nginx
+      - /Volumes/ORICO2T/Users/sinvigil/mount/nginx/ssl:/etc/nginx/ssl
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - app-net
+    depends_on:
+      - mysql
+      - postgres
+      - oracle
+
+networks:
+  app-net:
+    driver: bridge
+volumes:
+  oracle-data:

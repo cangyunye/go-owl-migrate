@@ -1,0 +1,3 @@
+TABLE_SCHEMA,TABLE_NAME,TABLE_TYPE,TABLE_COMMENT,ROW_COUNT
+default_db,EMP,TABLE,Employee table,14
+default_db,DEPT,TABLE,Department table,4

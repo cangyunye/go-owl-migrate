@@ -1,0 +1,57 @@
+services:
+  # Oracle 19c Express Edition
+  oracle:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: owl-oracle
+    environment:
+      ORACLE_PASSWORD: oracle123
+      APP_USER: scott
+      APP_USER_PASSWORD: tiger
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  # PostgreSQL 16
+  postgres:
+    image: postgres:16-alpine
+    container_name: owl-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: owltest
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  # MySQL 8
+  mysql:
+    image: mysql:8.4
+    container_name: owl-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: mysql123
+      MYSQL_DATABASE: owltest
+      MYSQL_USER: owl
+      MYSQL_PASSWORD: owltest
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+volumes:
+  oracle-data:
+  pg-data:
+  mysql-data:

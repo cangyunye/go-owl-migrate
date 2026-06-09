@@ -1,0 +1,38 @@
+general:
+  log_level: debug
+  log_format: text
+
+metadata:
+  type: csv
+  csv:
+    path: ./testdata/db/mysql/
+    delimiter: ","
+    encoding: utf-8
+    has_header: true
+    column_name_matching: case_insensitive
+
+source:
+  type: mysql
+  dsn: "root:root123456@tcp(127.0.0.1:3306)/default_db"
+
+ddl:
+  target_dialect: postgres
+
+export:
+  output_dir: ./output/data/
+  format: csv
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    encoding: utf-8
+    header: true
+    null_representation: "\\N"
+    line_terminator: "\n"
+  batch:
+    method: cursor
+    page_size: 5000
+  parallel:
+    enabled: true
+    max_workers: 4
+  tables:
+    include: ["*"]
