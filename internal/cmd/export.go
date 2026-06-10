@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	_ "github.com/go-sql-driver/mysql"  // MySQL driver
-	_ "github.com/lib/pq"               // PostgreSQL driver
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/lib/pq"              // PostgreSQL driver
 	_ "github.com/sijms/go-ora/v2"     // Oracle driver (pure Go)
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"

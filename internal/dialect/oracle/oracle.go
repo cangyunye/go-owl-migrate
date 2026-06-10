@@ -113,7 +113,7 @@ func (OracleTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 
 type OracleQuoter struct{}
 
-func (OracleQuoter) Quote(name string) string   { return fmt.Sprintf(`"%s"`, strings.ToUpper(name)) }
+func (OracleQuoter) Quote(name string) string     { return fmt.Sprintf(`"%s"`, strings.ToUpper(name)) }
 func (OracleQuoter) Unquote(quoted string) string { return strings.Trim(quoted, `"`) }
 
 // ── Features ──

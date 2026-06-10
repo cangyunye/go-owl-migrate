@@ -95,6 +95,12 @@ func (l *Loader) Load() (*md.SchemaModel, error) {
 		sm.AddSequence(seq)
 	}
 
+	// Synonyms
+	synonyms, _ := l.parseSynonyms()
+	for _, syn := range synonyms {
+		sm.AddSynonym(syn)
+	}
+
 	return sm, nil
 }
 
@@ -174,4 +180,15 @@ func (l *Loader) parseSequences() ([]*md.SequenceDef, error) {
 		return nil, nil
 	}
 	return ParseSequences(r)
+}
+
+func (l *Loader) parseSynonyms() ([]*md.SynonymDef, error) {
+	r, ok := l.files["synonyms.csv"]
+	if !ok {
+		r, ok = l.files["Synonyms.csv"]
+	}
+	if !ok {
+		return nil, nil
+	}
+	return ParseSynonyms(r)
 }

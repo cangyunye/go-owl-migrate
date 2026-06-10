@@ -12,8 +12,8 @@ import (
 
 // DDLGenerator orchestrates DDL generation from a SchemaModel using a Dialect.
 type DDLGenerator struct {
-	dialect  dialect.Dialect
-	opts     dialect.BuildOptions
+	dialect   dialect.Dialect
+	opts      dialect.BuildOptions
 	outputDir string
 }
 

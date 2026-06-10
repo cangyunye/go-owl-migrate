@@ -13,7 +13,7 @@ import (
 // InsertConfig controls INSERT SQL generation.
 type InsertConfig struct {
 	OutputDir      string
-	BatchSize      int    // VALUES rows per INSERT
+	BatchSize      int // VALUES rows per INSERT
 	TruncateBefore bool
 	Dialect        string // oracle/postgres/mysql
 	NullMarker     string

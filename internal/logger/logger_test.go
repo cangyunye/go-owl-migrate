@@ -121,4 +121,4 @@ func TestConfig_Defaults(t *testing.T) {
 type nopWriteSyncer struct{ buf *strings.Builder }
 
 func (n *nopWriteSyncer) Write(p []byte) (int, error) { return n.buf.Write(p) }
-func (n *nopWriteSyncer) Sync() error                  { return nil }
+func (n *nopWriteSyncer) Sync() error                 { return nil }

@@ -11,16 +11,16 @@ import (
 
 // TypeMappingFile is the YAML structure for a type mapping file.
 type TypeMappingFile struct {
-	Version    string            `yaml:"version"`
-	Name       string            `yaml:"name"`
-	SourceDB   string            `yaml:"source_db"`
-	TargetDB   string            `yaml:"target_db"`
-	Description string           `yaml:"description"`
+	Version     string `yaml:"version"`
+	Name        string `yaml:"name"`
+	SourceDB    string `yaml:"source_db"`
+	TargetDB    string `yaml:"target_db"`
+	Description string `yaml:"description"`
 
-	ExactMappings      map[string]string      `yaml:"exact_mappings"`
-	Parameterized      map[string][]ParamRule  `yaml:"parameterized"`
-	SemanticOverrides  []SemanticOverride      `yaml:"semantic_overrides"`
-	DefaultTransforms  map[string]string       `yaml:"default_transforms"`
+	ExactMappings     map[string]string      `yaml:"exact_mappings"`
+	Parameterized     map[string][]ParamRule `yaml:"parameterized"`
+	SemanticOverrides []SemanticOverride     `yaml:"semantic_overrides"`
+	DefaultTransforms map[string]string      `yaml:"default_transforms"`
 }
 
 // ParamRule is a parameterized type mapping rule.
@@ -43,10 +43,10 @@ type ParamCondition struct {
 
 // SemanticOverride maps column name patterns to target types.
 type SemanticOverride struct {
-	Pattern    string         `yaml:"pattern"`
-	Condition  SemanticCond   `yaml:"condition"`
-	TargetType string         `yaml:"target_type"`
-	Transform  string         `yaml:"transform"`
+	Pattern    string       `yaml:"pattern"`
+	Condition  SemanticCond `yaml:"condition"`
+	TargetType string       `yaml:"target_type"`
+	Transform  string       `yaml:"transform"`
 
 	compiled *regexp.Regexp // compiled pattern
 }

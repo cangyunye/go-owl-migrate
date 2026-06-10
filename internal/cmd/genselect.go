@@ -19,9 +19,9 @@ func genSelectCmd() *cobra.Command {
 	}
 
 	var (
-		outputDir    string
-		batchMethod  string
-		pageSize     int
+		outputDir   string
+		batchMethod string
+		pageSize    int
 	)
 
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/select/", "output directory for SELECT files")

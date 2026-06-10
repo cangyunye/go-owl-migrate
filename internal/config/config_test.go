@@ -7,11 +7,11 @@ import (
 
 func TestTableFilter_Match(t *testing.T) {
 	tests := []struct {
-		name    string
-		filter  TableFilterConfig
-		schema  string
-		table   string
-		want    bool
+		name   string
+		filter TableFilterConfig
+		schema string
+		table  string
+		want   bool
 	}{
 		{
 			name:   "wildcard include matches everything",
@@ -77,13 +77,13 @@ func TestTableFilter_Match(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "glob include schema pattern",
+			name:   "glob include schema pattern",
 			filter: TableFilterConfig{Include: []string{"SCOTT.*"}},
 			schema: "SCOTT", table: "EMP",
 			want: true,
 		},
 		{
-			name: "glob include schema pattern no match",
+			name:   "glob include schema pattern no match",
 			filter: TableFilterConfig{Include: []string{"HR.*"}},
 			schema: "SCOTT", table: "EMP",
 			want: false,

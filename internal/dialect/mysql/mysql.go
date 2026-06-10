@@ -121,7 +121,7 @@ func (MySQLTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 
 type MySQLQuoter struct{}
 
-func (MySQLQuoter) Quote(name string) string   { return fmt.Sprintf("`%s`", name) }
+func (MySQLQuoter) Quote(name string) string     { return fmt.Sprintf("`%s`", name) }
 func (MySQLQuoter) Unquote(quoted string) string { return strings.Trim(quoted, "`") }
 
 type MySQLFeatures struct{}
@@ -170,14 +170,14 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 	return b.String(), nil
 }
 
-func (MySQLDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error) { return "", nil }
-func (MySQLDDLBuilder) BuildCreateView(v *md.ViewDef) (string, error)    { return "", nil }
-func (MySQLDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef) (string, error) { return "", nil }
-func (MySQLDDLBuilder) BuildCreateFunction(fn *md.FunctionDef) (string, error) { return "", nil }
-func (MySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error) { return "", nil }
-func (MySQLDDLBuilder) BuildCreateMView(mv *md.MViewDef) (string, error)     { return "", nil }
-func (MySQLDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef) (string, error) { return "", nil }
-func (MySQLDDLBuilder) BuildCreatePackage(pkg *md.PackageDef) (string, error)       { return "", nil }
+func (MySQLDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error)             { return "", nil }
+func (MySQLDDLBuilder) BuildCreateView(v *md.ViewDef) (string, error)                 { return "", nil }
+func (MySQLDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef) (string, error)         { return "", nil }
+func (MySQLDDLBuilder) BuildCreateFunction(fn *md.FunctionDef) (string, error)        { return "", nil }
+func (MySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error)       { return "", nil }
+func (MySQLDDLBuilder) BuildCreateMView(mv *md.MViewDef) (string, error)              { return "", nil }
+func (MySQLDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef) (string, error)         { return "", nil }
+func (MySQLDDLBuilder) BuildCreatePackage(pkg *md.PackageDef) (string, error)         { return "", nil }
 func (MySQLDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef) (string, error) { return "", nil }
 
 type MySQLDMLHelper struct{}

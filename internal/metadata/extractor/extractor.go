@@ -22,6 +22,7 @@ type MetadataQuerier interface {
 	QueryViews(db *sql.DB, schema string) ([]*md.ViewDef, error)
 	QuerySequences(db *sql.DB, schema string) ([]*md.SequenceDef, error)
 	QueryTriggers(db *sql.DB, schema string) ([]*md.TriggerDef, error)
+	QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error)
 }
 
 var (
@@ -164,6 +165,15 @@ func Extract(db *sql.DB, dbType, schema string) (*md.SchemaModel, error) {
 	}
 	for _, trg := range triggers {
 		sm.AddTrigger(trg)
+	}
+
+	// 9. Synonyms (optional)
+	synonyms, err := querier.QuerySynonyms(db, schema)
+	if err != nil {
+		return nil, fmt.Errorf("query synonyms: %w", err)
+	}
+	for _, syn := range synonyms {
+		sm.AddSynonym(syn)
 	}
 
 	return sm, nil

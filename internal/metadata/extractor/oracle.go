@@ -361,3 +361,37 @@ func (OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Tri
 	}
 	return triggers, rows.Err()
 }
+
+func (OracleMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error) {
+	rows, err := db.Query(`
+		SELECT
+			synonym_name,
+			owner,
+			table_owner,
+			table_name,
+			CASE WHEN owner = 'PUBLIC' THEN 'YES' ELSE 'NO' END AS is_public
+		FROM all_synonyms
+		WHERE owner = UPPER(:1)
+		   OR table_owner = UPPER(:1)
+		ORDER BY synonym_name`, schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var synonyms []*md.SynonymDef
+	for rows.Next() {
+		var synName, synOwner, tblOwner, tblName, isPublic string
+		if err := rows.Scan(&synName, &synOwner, &tblOwner, &tblName, &isPublic); err != nil {
+			return nil, err
+		}
+		synonyms = append(synonyms, &md.SynonymDef{
+			SynonymName:   synName,
+			SynonymSchema: synOwner,
+			TargetSchema:  tblOwner,
+			TargetName:    tblName,
+			IsPublic:      isPublic,
+		})
+	}
+	return synonyms, rows.Err()
+}

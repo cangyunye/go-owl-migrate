@@ -63,11 +63,11 @@ func TestOBMySQL_SequenceSupport(t *testing.T) {
 	seq := &md.SequenceDef{
 		SequenceSchema: "testdb",
 		SequenceName:   "seq_orders",
-		StartValue:    1,
-		IncrementBy:   1,
-		MaxValue:      999999999,
-		Cycle:         "NO",
-		CacheSize:     20,
+		StartValue:     1,
+		IncrementBy:    1,
+		MaxValue:       999999999,
+		Cycle:          "NO",
+		CacheSize:      20,
 	}
 	sql, err := d.BuildCreateSequence(seq)
 	if err != nil {

@@ -39,6 +39,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "./migrate.yaml", "config file path")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "override log level (debug/info/warn/error)")
 
+	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(validateCmd())
 	rootCmd.AddCommand(genDDLCmd())
 	rootCmd.AddCommand(genSelectCmd())

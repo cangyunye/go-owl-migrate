@@ -116,7 +116,7 @@ func (PGTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 
 type PGQuoter struct{}
 
-func (PGQuoter) Quote(name string) string   { return fmt.Sprintf(`"%s"`, strings.ToLower(name)) }
+func (PGQuoter) Quote(name string) string     { return fmt.Sprintf(`"%s"`, strings.ToLower(name)) }
 func (PGQuoter) Unquote(quoted string) string { return strings.Trim(quoted, `"`) }
 
 type PGFeatures struct{}
@@ -166,14 +166,14 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 	return b.String(), nil
 }
 
-func (PGDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error) { return "", nil }
-func (PGDDLBuilder) BuildCreateView(v *md.ViewDef) (string, error)    { return "", nil }
-func (PGDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef) (string, error) { return "", nil }
-func (PGDDLBuilder) BuildCreateFunction(fn *md.FunctionDef) (string, error) { return "", nil }
-func (PGDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error) { return "", nil }
-func (PGDDLBuilder) BuildCreateMView(mv *md.MViewDef) (string, error)     { return "", nil }
-func (PGDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef) (string, error) { return "", nil }
-func (PGDDLBuilder) BuildCreatePackage(pkg *md.PackageDef) (string, error)       { return "", nil }
+func (PGDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error)             { return "", nil }
+func (PGDDLBuilder) BuildCreateView(v *md.ViewDef) (string, error)                 { return "", nil }
+func (PGDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef) (string, error)         { return "", nil }
+func (PGDDLBuilder) BuildCreateFunction(fn *md.FunctionDef) (string, error)        { return "", nil }
+func (PGDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error)       { return "", nil }
+func (PGDDLBuilder) BuildCreateMView(mv *md.MViewDef) (string, error)              { return "", nil }
+func (PGDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef) (string, error)         { return "", nil }
+func (PGDDLBuilder) BuildCreatePackage(pkg *md.PackageDef) (string, error)         { return "", nil }
 func (PGDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef) (string, error) { return "", nil }
 
 type PGDMLHelper struct{}

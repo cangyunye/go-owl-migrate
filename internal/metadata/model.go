@@ -6,28 +6,28 @@ import (
 
 // ColumnDef represents a column definition from metadata.
 type ColumnDef struct {
-	TableSchema      string
-	TableName        string
-	ColumnName       string
-	OrdinalPosition  int
-	DataType         string
-	DataLength       int
-	DataPrecision    int
-	DataScale        int
-	Nullable         string // YES/NO
-	DefaultValue     string
-	ColumnComment    string
-	IsIdentity       string // YES/NO
+	TableSchema        string
+	TableName          string
+	ColumnName         string
+	OrdinalPosition    int
+	DataType           string
+	DataLength         int
+	DataPrecision      int
+	DataScale          int
+	Nullable           string // YES/NO
+	DefaultValue       string
+	ColumnComment      string
+	IsIdentity         string // YES/NO
 	IdentityGeneration string // ALWAYS/BY DEFAULT
-	IdentityStart    int
-	IdentityIncrement int
-	CharUsed         string // Oracle CHAR/BYTE
-	HiddenColumn     string // YES/NO
-	VirtualExpression string
-	EnumValues       string
-	CharacterSet     string
-	Collation        string
-	OnUpdate         string
+	IdentityStart      int
+	IdentityIncrement  int
+	CharUsed           string // Oracle CHAR/BYTE
+	HiddenColumn       string // YES/NO
+	VirtualExpression  string
+	EnumValues         string
+	CharacterSet       string
+	Collation          string
+	OnUpdate           string
 }
 
 // NewColumnDef creates a ColumnDef with required field validation.
@@ -77,26 +77,26 @@ func (c *ColumnDef) HasDefault() (bool, string) {
 
 // TableDef represents a table definition.
 type TableDef struct {
-	TableSchema  string
-	TableName    string
-	TableType    string // TABLE/VIEW/MVIEW
-	Engine       string
-	Tablespace   string
-	TableComment string
-	Partitioned  string // YES/NO
+	TableSchema   string
+	TableName     string
+	TableType     string // TABLE/VIEW/MVIEW
+	Engine        string
+	Tablespace    string
+	TableComment  string
+	Partitioned   string // YES/NO
 	PartitionInfo string
-	RowFormat    string
-	Temporary    string // YES/NO
-	RowCount     int
-	Charset      string
-	Collation    string
-	Owner        string // Original owner (Oracle User/PG Schema/MySQL Database)
+	RowFormat     string
+	Temporary     string // YES/NO
+	RowCount      int
+	Charset       string
+	Collation     string
+	Owner         string // Original owner (Oracle User/PG Schema/MySQL Database)
 
-	Columns       []*ColumnDef
-	PrimaryKeys   []*PrimaryKeyDef
-	Indexes       []*IndexDef
-	ForeignKeys   []*ForeignKeyDef
-	Triggers      []*TriggerDef
+	Columns     []*ColumnDef
+	PrimaryKeys []*PrimaryKeyDef
+	Indexes     []*IndexDef
+	ForeignKeys []*ForeignKeyDef
+	Triggers    []*TriggerDef
 }
 
 // NewTableDef creates a TableDef with required field validation.
@@ -146,10 +146,10 @@ func (t *TableDef) GetColumns() []*ColumnDef {
 // AddPrimaryKey adds a primary key column reference.
 func (t *TableDef) AddPrimaryKey(constraintName, columnName string) {
 	t.PrimaryKeys = append(t.PrimaryKeys, &PrimaryKeyDef{
-		TableSchema:    t.TableSchema,
-		TableName:      t.TableName,
-		ConstraintName: constraintName,
-		ColumnName:     columnName,
+		TableSchema:     t.TableSchema,
+		TableName:       t.TableName,
+		ConstraintName:  constraintName,
+		ColumnName:      columnName,
 		OrdinalPosition: len(t.PrimaryKeys) + 1,
 	})
 }

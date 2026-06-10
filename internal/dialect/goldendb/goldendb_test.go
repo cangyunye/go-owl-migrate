@@ -23,11 +23,11 @@ func TestGoldenDBMySQL_InheritsMySQLTypeMapping(t *testing.T) {
 	d := NewMySQL()
 
 	tests := []struct {
-		rawType  string
-		length   int
+		rawType   string
+		length    int
 		precision int
-		scale    int
-		wantBase dialect.LogicalBase
+		scale     int
+		wantBase  dialect.LogicalBase
 	}{
 		{"VARCHAR", 100, 0, 0, dialect.LBVarchar},
 		{"INT", 0, 0, 0, dialect.LBInt},
@@ -132,7 +132,7 @@ func TestGoldenDBOracle_InheritsOracleTypeMapping(t *testing.T) {
 	}{
 		{"VARCHAR2", 100, 0, 0, dialect.LBVarchar},
 		{"NUMBER", 0, 4, 0, dialect.LBSmallInt},
-		{"NUMBER", 0, 10, 0, dialect.LBBigInt},  // 10 > 9, falls to BIGINT
+		{"NUMBER", 0, 10, 0, dialect.LBBigInt}, // 10 > 9, falls to BIGINT
 		{"NUMBER", 0, 10, 2, dialect.LBNumeric},
 		{"DATE", 0, 0, 0, dialect.LBDatetime},
 		{"CLOB", 0, 0, 0, dialect.LBCLOB},
@@ -229,10 +229,10 @@ func TestGoldenDBOracle_EqualToNativeOracle(t *testing.T) {
 	_ = oracleD
 
 	types := []struct {
-		raw       string
-		len       int
-		prec      int
-		scale     int
+		raw   string
+		len   int
+		prec  int
+		scale int
 	}{
 		{"VARCHAR2", 100, 0, 0},
 		{"CHAR", 10, 0, 0},

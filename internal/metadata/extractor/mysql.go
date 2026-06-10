@@ -344,3 +344,7 @@ func (MySQLMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trig
 	}
 	return triggers, rows.Err()
 }
+
+func (MySQLMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error) {
+	return nil, nil // MySQL does not have synonyms
+}

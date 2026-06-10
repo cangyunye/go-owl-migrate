@@ -2,6 +2,7 @@ services:
   # MySQL 外置硬盘挂载
   mysql:
     image: mysql:latest
+    pull_policy: never
     container_name: mysql
     restart: always
     environment:
@@ -26,6 +27,7 @@ services:
   # Postgres 外置硬盘挂载
   postgres:
     image: postgres:15-alpine
+    pull_policy: never
     container_name: postgres
     restart: always
     environment:
@@ -44,7 +46,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+  # OpenGauss 对应你 docker run 启动参数
+  opengauss:
+    image: enmotech/opengauss:latest
+    pull_policy: never
+    container_name: opengauss
+    privileged: true
+    restart: always
+    environment:
+      GS_PASSWORD: OpenGauss@123
+    volumes:
+      - /Volumes/ORICO2T/Users/sinvigil/mount/opengauss:/var/lib/opengauss
+    ports:
+      - "5433:5432"
+    networks:
+      - app-net
   # Oracle 仅使用Docker内置命名卷，不挂载外置磁盘
   oracle:
     image: gvenzl/oracle-xe:21-slim-faststart

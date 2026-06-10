@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/lib/pq"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	_ "github.com/lib/pq"
 )
 
 // connectPostgres opens a connection to the running PostgreSQL test container.

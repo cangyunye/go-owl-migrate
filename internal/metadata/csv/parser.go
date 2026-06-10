@@ -374,3 +374,31 @@ func ParseSequences(r io.Reader) ([]*md.SequenceDef, error) {
 	}
 	return seqs, nil
 }
+
+// ParseSynonyms parses a synonyms.csv reader.
+func ParseSynonyms(r io.Reader) ([]*md.SynonymDef, error) {
+	records, err := readAllRecords(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) < 1 {
+		return nil, nil
+	}
+	headers := records[0]
+	var synonyms []*md.SynonymDef
+	for _, rec := range records[1:] {
+		if skipLine(rec) {
+			continue
+		}
+		m := recordToMap(headers, rec)
+		synonyms = append(synonyms, &md.SynonymDef{
+			SynonymName:   m["SYNONYM_NAME"],
+			SynonymSchema: m["SYNONYM_SCHEMA"],
+			TargetSchema:  m["TARGET_SCHEMA"],
+			TargetName:    m["TARGET_NAME"],
+			IsPublic:      m["IS_PUBLIC"],
+			TargetType:    m["TARGET_TYPE"],
+		})
+	}
+	return synonyms, nil
+}

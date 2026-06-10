@@ -389,3 +389,7 @@ func (PGMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trigger
 	}
 	return triggers, rows.Err()
 }
+
+func (PGMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error) {
+	return nil, nil // PostgreSQL does not have synonyms
+}

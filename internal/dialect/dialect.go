@@ -81,13 +81,13 @@ type Features interface {
 
 // BuildOptions controls DDL generation behavior.
 type BuildOptions struct {
-	TargetDialect    string
-	SchemaMapping    map[string]string
-	IncludeComments  bool
+	TargetDialect      string
+	SchemaMapping      map[string]string
+	IncludeComments    bool
 	IncludeIfNotExists bool
-	AddRowIDColumn   bool
-	IdentityToSerial bool
-	SkipPartitions   bool
+	AddRowIDColumn     bool
+	IdentityToSerial   bool
+	SkipPartitions     bool
 }
 
 // DDLBuilder generates DDL statements.
