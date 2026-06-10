@@ -65,6 +65,8 @@ func normalizeDBType(t string) string {
 		return "mysql"
 	case "goldendb-oracle", "oceanbase-oracle":
 		return "oracle"
+	case "panweidb", "opengaussdb":
+		return "postgres"
 	default:
 		return t
 	}

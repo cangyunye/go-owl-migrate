@@ -88,11 +88,11 @@ func loadDBModel(dbType, dsn, schema string) (*md.SchemaModel, error) {
 // openDB opens a database connection by type.
 func openDB(dbType, dsn string) (*sql.DB, error) {
 	switch strings.ToLower(dbType) {
-	case "mysql":
+	case "mysql", "goldendb", "goldendb-mysql", "oceanbase-mysql":
 		return sql.Open("mysql", dsn)
-	case "postgres", "postgresql":
+	case "postgres", "postgresql", "opengaussdb", "panweidb":
 		return sql.Open("postgres", dsn)
-	case "oracle":
+	case "oracle", "goldendb-oracle", "oceanbase-oracle":
 		return sql.Open("oracle", dsn)
 	default:
 		return nil, fmt.Errorf("unsupported database type: %s", dbType)

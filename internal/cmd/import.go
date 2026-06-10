@@ -29,13 +29,11 @@ func importCmd() *cobra.Command {
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		// Load metadata from CSV or database
 		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return err
 		}
 
-		// Connect to target database
 		db, err := openDB(cfg.Target.Type, cfg.Target.DSN)
 		if err != nil {
 			return fmt.Errorf("connect to target: %w", err)
@@ -47,7 +45,6 @@ func importCmd() *cobra.Command {
 		}
 		fmt.Printf("Connected to %s\n", cfg.Target.Type)
 
-		// Ensure target tables exist (create basic structure from metadata)
 		if err := ensureTables(cmd.Context(), db, sm, cfg, cfg.DDL.SchemaMapping); err != nil {
 			return fmt.Errorf("ensure target tables: %w", err)
 		}
@@ -72,10 +69,10 @@ func importCmd() *cobra.Command {
 			DateTimeFormat: cfg.Import.DataTransforms.DatetimeFormat,
 			TrimStrings:    cfg.Import.DataTransforms.TrimStrings,
 			TargetDBType:   cfg.Target.Type,
-		Logger:         logger,
+			Logger:         logger,
 		})
 
-		tables := sm.GetTables() // All tables from metadata
+		tables := sm.GetTables()
 		ctx := context.Background()
 		results, err := imp.ImportTables(ctx, tables, cfg.DDL.SchemaMapping)
 		if err != nil {
@@ -111,28 +108,26 @@ func importCmd() *cobra.Command {
 }
 
 func ensureTables(ctx context.Context, db *sql.DB, sm *md.SchemaModel, cfg *config.Config, schemaMapping map[string]string) error {
+	targetType := strings.ToLower(cfg.Target.Type)
+	targetIsMySQL := targetType == "mysql" ||
+		strings.HasPrefix(targetType, "goldendb") ||
+		strings.HasPrefix(targetType, "oceanbase")
+
 	for _, tbl := range sm.GetTables() {
 		schema := tbl.TableSchema
 		if m, ok := schemaMapping[schema]; ok {
 			schema = m
 		}
 
-		// Check if table exists
 		var count int
 		checkSQL := "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2"
-		if cfg.Target.Type == "mysql" {
+		if targetIsMySQL {
 			checkSQL = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?"
 		}
 
-		var err error
-		if cfg.Target.Type == "mysql" {
-			err = db.QueryRowContext(ctx, checkSQL, schema, tbl.TableName).Scan(&count)
-		} else {
-			err = db.QueryRowContext(ctx, checkSQL, schema, tbl.TableName).Scan(&count)
-		}
+		err := db.QueryRowContext(ctx, checkSQL, schema, tbl.TableName).Scan(&count)
 
 		if err != nil {
-			// Table likely doesn't exist — try to create it
 			createSQL := buildCreateTableSQL(tbl, schema, cfg)
 			if createSQL != "" {
 				if _, err := db.ExecContext(ctx, createSQL); err != nil {
@@ -156,12 +151,17 @@ func ensureTables(ctx context.Context, db *sql.DB, sm *md.SchemaModel, cfg *conf
 func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) string {
 	var b strings.Builder
 	b.WriteString("CREATE TABLE ")
-	if cfg.DDL.IncludeIfNotExists {
+
+	targetIsMySQL := strings.EqualFold(cfg.Target.Type, "mysql") ||
+		strings.HasPrefix(strings.ToLower(cfg.Target.Type), "goldendb") ||
+		strings.HasPrefix(strings.ToLower(cfg.Target.Type), "oceanbase")
+	targetIsOracle := strings.EqualFold(cfg.Target.Type, "oracle") ||
+		strings.HasSuffix(strings.ToLower(cfg.Target.Type), "-oracle")
+
+	if cfg.DDL.IncludeIfNotExists && !targetIsOracle {
 		b.WriteString("IF NOT EXISTS ")
 	}
 
-	// MySQL uses backticks, others use double quotes
-	targetIsMySQL := strings.EqualFold(cfg.Target.Type, "mysql")
 	q := func(name string) string {
 		if targetIsMySQL {
 			return "`" + name + "`"
@@ -173,63 +173,146 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	b.WriteString(" (\n")
 	cols := tbl.GetColumns()
 
-	// Extended type map for cross-dialect compatibility
-	typeMap := map[string]string{
-		"INT":                           "INTEGER",
-		"INTEGER":                       "INTEGER",
-		"VARCHAR":                       "VARCHAR",
-		"CHARACTER VARYING":             "VARCHAR",
-		"VARCHAR2":                      "VARCHAR",
-		"CHAR":                          "CHAR",
-		"CHARACTER":                     "CHAR",
-		"DECIMAL":                       "DECIMAL",
-		"NUMERIC":                       "DECIMAL",
-		"NUMBER":                        "DECIMAL",
-		"DATE":                          "DATE",
-		"TIMESTAMP":                     "DATETIME",
-		"TIMESTAMPTZ":                   "DATETIME",
-		"BIGINT":                        "BIGINT",
-		"SMALLINT":                      "SMALLINT",
-		"BOOLEAN":                       "TINYINT(1)",
-		"REAL":                          "FLOAT",
-		"DOUBLE PRECISION":              "DOUBLE",
-		"TEXT":                          "LONGTEXT",
-		"CLOB":                          "LONGTEXT",
-		"BLOB":                          "LONGBLOB",
-		"BYTEA":                         "LONGBLOB",
-		"JSON":                          "JSON",
-		"JSONB":                         "JSON",
-		"XML":                           "LONGTEXT",
+	// Oracle-specific type map
+	oracleMap := map[string]string{
+		"INT":               "NUMBER(10)",
+		"INTEGER":           "NUMBER(10)",
+		"BIGINT":            "NUMBER(19)",
+		"SMALLINT":          "NUMBER(5)",
+		"BOOLEAN":           "NUMBER(1)",
+		"REAL":              "BINARY_FLOAT",
+		"DOUBLE PRECISION":  "BINARY_DOUBLE",
+		"TEXT":              "CLOB",
+		"CLOB":              "CLOB",
+		"BLOB":              "BLOB",
+		"BYTEA":             "BLOB",
+		"JSON":              "CLOB",
+		"JSONB":             "CLOB",
+		"XML":               "XMLTYPE",
+		"TIMESTAMP":         "TIMESTAMP",
+		"TIMESTAMPTZ":       "TIMESTAMP WITH TIME ZONE",
+		"VARCHAR":           "VARCHAR2",
+		"CHARACTER VARYING": "VARCHAR2",
+		"DECIMAL":           "NUMBER",
+		"NUMERIC":           "NUMBER",
+		"NUMBER":            "NUMBER",
+		"FLOAT":             "BINARY_FLOAT",
+		"DOUBLE":            "BINARY_DOUBLE",
 	}
 
-	// Build PK column set for inline PRIMARY KEY
-	pks := tbl.GetPrimaryKeys()
-	pkSet := make(map[string]bool, len(pks))
-	for _, pk := range pks {
-		pkSet[strings.ToUpper(pk.ColumnName)] = true
+	// MySQL-specific type map (also serves as general cross-dialect)
+	mysqlMap := map[string]string{
+		"INT":               "INTEGER",
+		"INTEGER":           "INTEGER",
+		"VARCHAR":           "VARCHAR",
+		"CHARACTER VARYING": "VARCHAR",
+		"VARCHAR2":          "VARCHAR",
+		"CHAR":              "CHAR",
+		"CHARACTER":         "CHAR",
+		"DECIMAL":           "DECIMAL",
+		"NUMERIC":           "DECIMAL",
+		"NUMBER":            "DECIMAL",
+		"DATE":              "DATE",
+		"TIMESTAMP":         "DATETIME",
+		"TIMESTAMPTZ":       "DATETIME",
+		"BIGINT":            "BIGINT",
+		"SMALLINT":          "SMALLINT",
+		"BOOLEAN":           "TINYINT(1)",
+		"REAL":              "FLOAT",
+		"DOUBLE PRECISION":  "DOUBLE",
+		"TEXT":              "LONGTEXT",
+		"CLOB":              "LONGTEXT",
+		"BLOB":              "LONGBLOB",
+		"BYTEA":             "LONGBLOB",
+		"JSON":              "JSON",
+		"JSONB":             "JSON",
+		"XML":               "LONGTEXT",
 	}
+
+	// PG target keeps source types mostly as-is
+	pgMap := map[string]string{
+		"VARCHAR2": "VARCHAR",
+		"NUMBER":   "NUMERIC",
+		"BOOLEAN":  "BOOLEAN",
+		"CLOB":     "TEXT",
+		"BLOB":     "BYTEA",
+		"JSON":     "JSONB",
+		"XML":      "XML",
+	}
+
+	pks := tbl.GetPrimaryKeys()
 
 	for i, col := range cols {
 		b.WriteString("  ")
 		b.WriteString(q(col.ColumnName))
 		b.WriteString(" ")
-		targetType := col.DataType
-		if m, ok := typeMap[strings.ToUpper(col.DataType)]; ok {
-			targetType = m
-		}
 
-		// Handle VARCHAR types: respect length if set, provide default for MySQL
 		upType := strings.ToUpper(col.DataType)
-		if upType == "VARCHAR" || upType == "VARCHAR2" || upType == "CHARACTER VARYING" || upType == "CHARACTER" {
-			if col.DataLength > 0 {
-				targetType = fmt.Sprintf("VARCHAR(%d)", col.DataLength)
-			} else if targetIsMySQL {
-				targetType = "VARCHAR(255)"
+		var targetType string
+
+		if targetIsOracle {
+			if m, ok := oracleMap[upType]; ok {
+				targetType = m
+			} else {
+				targetType = col.DataType
+			}
+		} else if targetIsMySQL {
+			if m, ok := mysqlMap[upType]; ok {
+				targetType = m
+			} else {
+				targetType = col.DataType
+			}
+		} else {
+			if m, ok := pgMap[upType]; ok {
+				targetType = m
+			} else {
+				targetType = col.DataType
 			}
 		}
-		if (upType == "DECIMAL" || upType == "NUMERIC" || upType == "NUMBER") && col.DataPrecision > 0 && col.DataScale > 0 {
-			targetType = fmt.Sprintf("DECIMAL(%d,%d)", col.DataPrecision, col.DataScale)
+
+		// Handle VARCHAR lengths
+		if col.DataLength > 0 {
+			if targetIsOracle {
+				if upType == "VARCHAR" || upType == "VARCHAR2" || upType == "CHARACTER VARYING" || upType == "CHARACTER" {
+					targetType = fmt.Sprintf("VARCHAR2(%d)", col.DataLength)
+				} else if upType == "CHAR" || upType == "CHARACTER" {
+					targetType = fmt.Sprintf("CHAR(%d)", col.DataLength)
+				}
+			} else {
+				if upType == "VARCHAR" || upType == "VARCHAR2" || upType == "CHARACTER VARYING" || upType == "CHARACTER" {
+					targetType = fmt.Sprintf("VARCHAR(%d)", col.DataLength)
+				} else if upType == "CHAR" || upType == "CHARACTER" {
+					targetType = fmt.Sprintf("CHAR(%d)", col.DataLength)
+				}
+			}
+		} else {
+			// Provide default length where required
+			if targetIsMySQL && (upType == "VARCHAR" || upType == "VARCHAR2" || upType == "CHARACTER VARYING") {
+				targetType = "VARCHAR(255)"
+			}
+			if targetIsMySQL && upType == "CHARACTER" {
+				targetType = "CHAR(255)"
+			}
 		}
+
+		// Handle NUMBER/DECIMAL with precision/scale
+		isNumeric := upType == "DECIMAL" || upType == "NUMERIC" || upType == "NUMBER"
+		if isNumeric && col.DataPrecision > 0 {
+			if col.DataScale > 0 {
+				if targetIsOracle {
+					targetType = fmt.Sprintf("NUMBER(%d,%d)", col.DataPrecision, col.DataScale)
+				} else {
+					targetType = fmt.Sprintf("DECIMAL(%d,%d)", col.DataPrecision, col.DataScale)
+				}
+			} else {
+				if targetIsOracle {
+					targetType = fmt.Sprintf("NUMBER(%d)", col.DataPrecision)
+				} else {
+					targetType = fmt.Sprintf("DECIMAL(%d)", col.DataPrecision)
+				}
+			}
+		}
+
 		b.WriteString(targetType)
 		if col.Nullable == "NO" {
 			b.WriteString(" NOT NULL")
@@ -240,7 +323,6 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 		b.WriteString("\n")
 	}
 
-	// Inline PRIMARY KEY (avoids duplicate PK error when table already exists)
 	if len(pks) > 0 {
 		pkNames := make([]string, len(pks))
 		for i, pk := range pks {

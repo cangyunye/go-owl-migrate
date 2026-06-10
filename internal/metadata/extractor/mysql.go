@@ -16,7 +16,6 @@ func (MySQLMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableD
 	rows, err := db.Query(`
 		SELECT table_name, engine, table_comment, row_format, table_collation,
 		       COALESCE(create_options, ''),
-		       IFNULL(tablespace_name, ''),
 		       COALESCE(IF(row_format = 'TEMPORARY', 'YES', 'NO'), 'NO') AS temporary
 		FROM information_schema.tables
 		WHERE table_schema = ?
@@ -29,8 +28,8 @@ func (MySQLMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableD
 
 	var tables []*md.TableDef
 	for rows.Next() {
-		var tableName, engine, tableComment, rowFormat, collation, createOptions, tablespace, temporary string
-		if err := rows.Scan(&tableName, &engine, &tableComment, &rowFormat, &collation, &createOptions, &tablespace, &temporary); err != nil {
+		var tableName, engine, tableComment, rowFormat, collation, createOptions, temporary string
+		if err := rows.Scan(&tableName, &engine, &tableComment, &rowFormat, &collation, &createOptions, &temporary); err != nil {
 			return nil, err
 		}
 
@@ -52,7 +51,7 @@ func (MySQLMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableD
 		tbl.Collation = collation
 		tbl.Partitioned = partitioned
 		tbl.PartitionInfo = partitionInfo
-		tbl.Tablespace = tablespace
+		tbl.Tablespace = ""
 		tbl.Temporary = temporary
 		tbl.Owner = schema
 		tbl.TableType = "TABLE"
@@ -264,11 +263,11 @@ func (MySQLMetadataQuerier) QueryForeignKeys(db *sql.DB, schema string) ([]*md.F
 func (MySQLMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDef, error) {
 	rows, err := db.Query(`
 		SELECT
-			table_name,
-			view_definition,
-			COALESCE(table_comment, '') AS view_comment,
-			CASE WHEN is_updatable = 'YES' THEN 'YES' ELSE 'NO' END AS is_updatable,
-			CASE WHEN check_option = 'NONE' THEN '' ELSE COALESCE(check_option, '') END AS check_option
+			v.table_name,
+			v.view_definition,
+			COALESCE(t.table_comment, '') AS view_comment,
+			CASE WHEN v.is_updatable = 'YES' THEN 'YES' ELSE 'NO' END AS is_updatable,
+			CASE WHEN v.check_option = 'NONE' THEN '' ELSE COALESCE(v.check_option, '') END AS check_option
 		FROM information_schema.views v
 		LEFT JOIN information_schema.tables t
 			ON v.table_schema = t.table_schema AND v.table_name = t.table_name
@@ -311,7 +310,7 @@ func (MySQLMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trig
 			event_manipulation AS trigger_event,
 			action_statement AS trigger_body,
 			action_condition AS when_clause,
-			COALESCE(trigger_comment, '') AS description,
+			'',
 			'PLSQL' AS language
 		FROM information_schema.triggers
 		WHERE trigger_schema = ?

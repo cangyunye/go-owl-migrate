@@ -8,13 +8,15 @@ import (
 	goldendb "github.com/cangyunye/go-owl-migrate/internal/dialect/goldendb"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/mysql"
 	oceanbase "github.com/cangyunye/go-owl-migrate/internal/dialect/oceanbase"
+	opengaussdb "github.com/cangyunye/go-owl-migrate/internal/dialect/opengaussdb"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/oracle"
+	panweidb "github.com/cangyunye/go-owl-migrate/internal/dialect/panweidb"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/postgres"
 )
 
 var (
-	mu   sync.RWMutex
-	reg  = make(map[string]dialect.Dialect)
+	mu  sync.RWMutex
+	reg = make(map[string]dialect.Dialect)
 )
 
 func init() {
@@ -25,6 +27,8 @@ func init() {
 	Register("goldendb-oracle", goldendb.NewOracle())
 	Register("oceanbase-mysql", oceanbase.NewMySQL())
 	Register("oceanbase-oracle", oceanbase.NewOracle())
+	Register("panweidb", panweidb.New())
+	Register("opengaussdb", opengaussdb.New())
 }
 
 // Register adds a dialect to the global registry.

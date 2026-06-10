@@ -18,18 +18,18 @@ import (
 
 // Config holds importer configuration.
 type Config struct {
-	SourceDir       string
-	CSVDelimiter    string
-	CSVNullMarker   string
-	TruncateBefore  bool
-	CommitInterval  int
-	ErrorPolicy     string // skip_row/stop/log_only
-	MaxErrors       int
-	MaxWorkers      int
-	DateTimeFormat  string // e.g. "yyyyMMddHHmmss"
-	TrimStrings     bool
-	TargetDBType    string // "postgres", "mysql", "oracle" — affects quoting and placeholders
-	Logger          *zap.Logger
+	SourceDir      string
+	CSVDelimiter   string
+	CSVNullMarker  string
+	TruncateBefore bool
+	CommitInterval int
+	ErrorPolicy    string // skip_row/stop/log_only
+	MaxErrors      int
+	MaxWorkers     int
+	DateTimeFormat string // e.g. "yyyyMMddHHmmss"
+	TrimStrings    bool
+	TargetDBType   string // "postgres", "mysql", "oracle" — affects quoting and placeholders
+	Logger         *zap.Logger
 }
 
 // Importer reads CSV files and inserts data into a target database.
@@ -56,9 +56,16 @@ func New(db *sql.DB, cfg Config) *Importer {
 	return &Importer{db: db, cfg: cfg, logger: cfg.Logger}
 }
 
-// isMySQL returns true if the target database is MySQL.
+// isMySQL returns true if the target database is MySQL or a MySQL-compatible dialect.
 func (imp *Importer) isMySQL() bool {
-	return strings.EqualFold(imp.cfg.TargetDBType, "mysql")
+	t := strings.ToLower(imp.cfg.TargetDBType)
+	return t == "mysql" || strings.HasPrefix(t, "goldendb") || strings.HasPrefix(t, "oceanbase")
+}
+
+// isOracle returns true if the target database is Oracle or an Oracle-compatible dialect.
+func (imp *Importer) isOracle() bool {
+	t := strings.ToLower(imp.cfg.TargetDBType)
+	return t == "oracle" || strings.HasSuffix(t, "-oracle")
 }
 
 // ImportResult holds the result of importing one table.
@@ -133,6 +140,13 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		zap.String("target", fmt.Sprintf("%s.%s", targetSchema, tbl.TableName)),
 	)
 
+	// Set Oracle session date format for automatic string→DATE conversion
+	if imp.isOracle() {
+		if _, err := imp.db.ExecContext(ctx, "ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
+			imp.logger.Warn("Failed to set NLS_DATE_FORMAT", zap.Error(err))
+		}
+	}
+
 	// Read CSV file
 	filename := fmt.Sprintf("%s.%s.csv", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName))
 	filePath := filepath.Join(imp.cfg.SourceDir, filename)
@@ -179,11 +193,15 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	for i, h := range header {
 		quotedCols[i] = imp.quoteIdent(h)
 	}
-	// Generate placeholders: $1, $2, ... for PG/Oracle, ? for MySQL
+	// Generate placeholders: ? for MySQL, :1/:2 for Oracle, $1/$2 for PG
 	placeholders := make([]string, len(header))
 	if imp.isMySQL() {
 		for i := range placeholders {
 			placeholders[i] = "?"
+		}
+	} else if imp.isOracle() {
+		for i := range placeholders {
+			placeholders[i] = fmt.Sprintf(":%d", i+1)
 		}
 	} else {
 		for i := range placeholders {

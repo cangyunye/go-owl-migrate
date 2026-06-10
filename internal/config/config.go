@@ -21,11 +21,13 @@ var ValidDialects = map[string]bool{
 	"oceanbase":        true,
 	"oceanbase-mysql":  true,
 	"oceanbase-oracle": true,
+	"panweidb":         true,
+	"opengaussdb":      true,
 }
 
 // ValidMetadataTypes lists supported metadata source types.
 var ValidMetadataTypes = map[string]bool{
-	"csv": true,
+	"csv":      true,
 	"database": true,
 }
 
@@ -38,15 +40,15 @@ var ValidErrorPolicies = map[string]bool{
 
 // Config is the root configuration structure.
 type Config struct {
-	General    GeneralConfig    `yaml:"general"`
-	Metadata   MetadataConfig   `yaml:"metadata"`
-	Source     DBConfig         `yaml:"source"`
-	Target     DBConfig         `yaml:"target"`
-	DDL        DDLConfig        `yaml:"ddl"`
-	SelectGen  SelectGenConfig  `yaml:"select_gen"`
-	Export     ExportConfig     `yaml:"export"`
-	Import     ImportConfig     `yaml:"import"`
-	Extensions map[string]any   `yaml:"extensions"`
+	General    GeneralConfig   `yaml:"general"`
+	Metadata   MetadataConfig  `yaml:"metadata"`
+	Source     DBConfig        `yaml:"source"`
+	Target     DBConfig        `yaml:"target"`
+	DDL        DDLConfig       `yaml:"ddl"`
+	SelectGen  SelectGenConfig `yaml:"select_gen"`
+	Export     ExportConfig    `yaml:"export"`
+	Import     ImportConfig    `yaml:"import"`
+	Extensions map[string]any  `yaml:"extensions"`
 }
 
 // GeneralConfig holds top-level settings.
@@ -58,19 +60,19 @@ type GeneralConfig struct {
 
 // MetadataConfig holds metadata source configuration.
 type MetadataConfig struct {
-	Type  string     `yaml:"type"` // csv/xlsx/database
-	CSV   CSVConfig  `yaml:"csv"`
-	Files []string   `yaml:"files"`
+	Type  string    `yaml:"type"` // csv/xlsx/database
+	CSV   CSVConfig `yaml:"csv"`
+	Files []string  `yaml:"files"`
 }
 
 // CSVConfig holds CSV parsing settings.
 type CSVConfig struct {
-	Path                string `yaml:"path"`
-	Delimiter           string `yaml:"delimiter"`
-	Encoding            string `yaml:"encoding"`
-	HasHeader           bool   `yaml:"has_header"`
-	NullMarker          string `yaml:"null_marker"`
-	ColumnNameMatching  string `yaml:"column_name_matching"`
+	Path               string `yaml:"path"`
+	Delimiter          string `yaml:"delimiter"`
+	Encoding           string `yaml:"encoding"`
+	HasHeader          bool   `yaml:"has_header"`
+	NullMarker         string `yaml:"null_marker"`
+	ColumnNameMatching string `yaml:"column_name_matching"`
 }
 
 // DBConfig holds database connection settings.
@@ -103,7 +105,7 @@ type DDLConfig struct {
 
 // TableFilterConfig holds table include/exclude rules.
 type TableFilterConfig struct {
-	Include []string          `yaml:"include"`
+	Include []string           `yaml:"include"`
 	Exclude TableExcludeConfig `yaml:"exclude"`
 }
 
@@ -122,10 +124,10 @@ type PartitionConfig struct {
 
 // SelectGenConfig holds SELECT generation settings.
 type SelectGenConfig struct {
-	OutputDir         string      `yaml:"output_dir"`
-	Batch             BatchConfig `yaml:"batch"`
-	IncludeRowNumber  bool        `yaml:"include_row_number"`
-	AddExportColumns  bool        `yaml:"add_export_columns"`
+	OutputDir        string      `yaml:"output_dir"`
+	Batch            BatchConfig `yaml:"batch"`
+	IncludeRowNumber bool        `yaml:"include_row_number"`
+	AddExportColumns bool        `yaml:"add_export_columns"`
 }
 
 // ExportConfig holds data export settings.
@@ -140,38 +142,38 @@ type ExportConfig struct {
 
 // ExportCSVConfig holds export-specific CSV settings.
 type ExportCSVConfig struct {
-	Delimiter            string            `yaml:"delimiter"`
-	LineTerminator       string            `yaml:"line_terminator"`
-	QuoteChar            string            `yaml:"quote_char"`
-	EscapeChar           string            `yaml:"escape_char"`
-	Encoding             string            `yaml:"encoding"`
-	Header               bool              `yaml:"header"`
-	NullRepresentation   string            `yaml:"null_representation"`
-	NullOverrides        map[string]string `yaml:"null_overrides"`
-	EmptyStringToNull    bool              `yaml:"empty_string_to_null"`
-	QuotePolicy          string            `yaml:"quote_policy"`
-	NewlineHandling      string            `yaml:"newline_handling"`
+	Delimiter          string            `yaml:"delimiter"`
+	LineTerminator     string            `yaml:"line_terminator"`
+	QuoteChar          string            `yaml:"quote_char"`
+	EscapeChar         string            `yaml:"escape_char"`
+	Encoding           string            `yaml:"encoding"`
+	Header             bool              `yaml:"header"`
+	NullRepresentation string            `yaml:"null_representation"`
+	NullOverrides      map[string]string `yaml:"null_overrides"`
+	EmptyStringToNull  bool              `yaml:"empty_string_to_null"`
+	QuotePolicy        string            `yaml:"quote_policy"`
+	NewlineHandling    string            `yaml:"newline_handling"`
 }
 
 // ImportConfig holds data import settings.
 type ImportConfig struct {
-	SourceDir     string            `yaml:"source_dir"`
-	Format        string            `yaml:"format"`
-	CSV           ImportCSVConfig   `yaml:"csv"`
-	Target        ImportTargetConfig `yaml:"target"`
-	Batch         ImportBatchConfig `yaml:"batch"`
-	Parallel      ParallelConfig    `yaml:"parallel"`
-	DataTransforms DataTransforms   `yaml:"data_transforms"`
+	SourceDir      string             `yaml:"source_dir"`
+	Format         string             `yaml:"format"`
+	CSV            ImportCSVConfig    `yaml:"csv"`
+	Target         ImportTargetConfig `yaml:"target"`
+	Batch          ImportBatchConfig  `yaml:"batch"`
+	Parallel       ParallelConfig     `yaml:"parallel"`
+	DataTransforms DataTransforms     `yaml:"data_transforms"`
 }
 
 // ImportCSVConfig holds import-specific CSV settings.
 type ImportCSVConfig struct {
-	Delimiter          string              `yaml:"delimiter"`
-	Encoding           string              `yaml:"encoding"`
-	HasHeader          bool                `yaml:"has_header"`
-	NullMarker         string              `yaml:"null_marker"`
-	NullIdentifiers    NullIdentifierConfig `yaml:"null_identifiers"`
-	NullSemantics      NullSemanticsConfig  `yaml:"null_semantics"`
+	Delimiter       string               `yaml:"delimiter"`
+	Encoding        string               `yaml:"encoding"`
+	HasHeader       bool                 `yaml:"has_header"`
+	NullMarker      string               `yaml:"null_marker"`
+	NullIdentifiers NullIdentifierConfig `yaml:"null_identifiers"`
+	NullSemantics   NullSemanticsConfig  `yaml:"null_semantics"`
 }
 
 // NullIdentifierConfig holds NULL recognition rules.
@@ -189,10 +191,10 @@ type NullSemanticsConfig struct {
 
 // ImportTargetConfig holds import target table options.
 type ImportTargetConfig struct {
-	TruncateBefore      bool `yaml:"truncate_before"`
-	DisableConstraints  bool `yaml:"disable_constraints"`
-	DisableTriggers     bool `yaml:"disable_triggers"`
-	DropIndexes         bool `yaml:"drop_indexes"`
+	TruncateBefore     bool `yaml:"truncate_before"`
+	DisableConstraints bool `yaml:"disable_constraints"`
+	DisableTriggers    bool `yaml:"disable_triggers"`
+	DropIndexes        bool `yaml:"drop_indexes"`
 }
 
 // ImportBatchConfig holds batch insertion settings.
@@ -204,11 +206,11 @@ type ImportBatchConfig struct {
 
 // DataTransforms holds data transformation rules.
 type DataTransforms struct {
-	DatetimeFormat         string   `yaml:"datetime_format"`
-	DatetimeFormatFallback []string `yaml:"datetime_format_fallback"`
-	DatetimeTruncateToTarget bool   `yaml:"datetime_truncate_to_target"`
-	TrimStrings            bool     `yaml:"trim_strings"`
-	NullIf                 []string `yaml:"null_if"`
+	DatetimeFormat           string   `yaml:"datetime_format"`
+	DatetimeFormatFallback   []string `yaml:"datetime_format_fallback"`
+	DatetimeTruncateToTarget bool     `yaml:"datetime_truncate_to_target"`
+	TrimStrings              bool     `yaml:"trim_strings"`
+	NullIf                   []string `yaml:"null_if"`
 }
 
 // BatchConfig holds shared batch processing settings.
@@ -219,23 +221,23 @@ type BatchConfig struct {
 
 // ParallelConfig holds parallel execution settings.
 type ParallelConfig struct {
-	Enabled              bool `yaml:"enabled"`
-	MaxWorkers           int  `yaml:"max_workers"`
-	MaxTableWorkers      int  `yaml:"max_table_workers"`
-	RespectForeignKeys   bool `yaml:"respect_foreign_keys"`
+	Enabled            bool `yaml:"enabled"`
+	MaxWorkers         int  `yaml:"max_workers"`
+	MaxTableWorkers    int  `yaml:"max_table_workers"`
+	RespectForeignKeys bool `yaml:"respect_foreign_keys"`
 }
 
 // TableListConfig holds per-table configuration.
 type TableListConfig struct {
-	Include   []string                `yaml:"include"`
-	Exclude   TableExcludeConfig      `yaml:"exclude"`
+	Include   []string                 `yaml:"include"`
+	Exclude   TableExcludeConfig       `yaml:"exclude"`
 	Overrides map[string]TableOverride `yaml:"overrides"`
 }
 
 // TableOverride holds per-table override settings.
 type TableOverride struct {
-	PageSize         int `yaml:"page_size"`
-	MaxTableWorkers  int `yaml:"max_table_workers"`
+	PageSize        int `yaml:"page_size"`
+	MaxTableWorkers int `yaml:"max_table_workers"`
 }
 
 // Load reads and validates a YAML config file.
