@@ -73,7 +73,8 @@ Usage:
   owl-migrate gen-ddl [flags] -c <config>
 
 Flags:
-  -o, --output string   Output directory for DDL files (default "./output/ddl/")
+  -o, --output string              Output directory for DDL files (default "./output/ddl/")
+      --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
 The command generates **per-object** SQL files using the naming convention:
@@ -102,8 +103,9 @@ Usage:
 
 Flags:
   -o, --output string        Output directory for SELECT files (default "./output/select/")
-      --batch-method string  Pagination method: cursor/offset (default "cursor")
-  -n, --page-size int        Rows per batch (default 5000)
+      --batch-method string        Pagination method: cursor/offset (default "cursor")
+  -n, --page-size int              Rows per batch (default 5000)
+      --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
 Generated SQL files contain one SELECT statement per table with:
@@ -133,7 +135,8 @@ Flags:
   -d, --data string      Directory containing CSV data files (default "./output/data/")
       --dialect string   Target dialect: oracle/postgres/mysql (default "postgres")
   -n, --batch-size int   VALUES rows per INSERT statement (default 100)
-      --truncate         Add TRUNCATE TABLE before INSERT
+      --truncate                  Add TRUNCATE TABLE before INSERT
+      --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
 The command reads CSV data files named `{schema}.{table}.csv` and produces dialect-specific INSERT SQL:
@@ -188,6 +191,8 @@ Import CSV data files into the target database.
 ```
 Usage:
   owl-migrate import [flags] -c <config>
+Flags:
+      --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
 Key features:
@@ -216,8 +221,9 @@ Flags:
       --skip-ddl               Skip table creation in target (data-only migration)
       --continue-on-error      Continue processing remaining tables even if some fail
       --sql-out string         Output directory for INSERT SQL files (offline mode, skips target DB)
-      --resume                 Resume from previous migration state (skips completed tables)
-  -r, --report string          Migration report output path (default "./output/migration_report.json")
+      --resume                    Resume from previous migration state (skips completed tables)
+  -r, --report string             Migration report output path (default "./output/migration_report.json")
+      --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
 ### Migration Steps

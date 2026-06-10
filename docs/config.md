@@ -62,6 +62,8 @@ ddl:
   add_rowid_column: false                   # Add a ROWID column (Oracle targets)
   empty_string_to_null: false               # Convert '' to NULL (Oracle compatibility)
   boolean_mapping: {}                       # Custom boolean value mapping
+  no_quote_identifiers: false                # Output bare identifiers without quoting (compatibility)
+  no_quote_identifiers: false              # Output bare identifiers without quoting (compatibility)
   partition:
     migrate: false                          # Include partition DDL
 
