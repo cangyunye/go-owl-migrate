@@ -1,15 +1,24 @@
 # go-owl-migrate
 
-Database migration tool for Oracle → MySQL, PostgreSQL → MySQL, and cross-database schema & data migration. Part of the **owl** family of database tools.
+Database migration tool for cross-database schema & data migration: Oracle, PostgreSQL, MySQL, GoldenDB, OceanBase, PanWeiDB, OpenGaussDB. Part of the **owl** family of database tools.
+
+> 📚 **Full documentation**: See [docs/index.md](docs/index.md) for the complete documentation index.
 
 ## Features
 
-- **Offline-first**: Generate DDL and data migration scripts from CSV metadata without connecting to any database
+- **Offline-first**: Generate DDL, SELECT, and INSERT SQL from CSV metadata — no database connection required
 - **Live extraction**: Extract schema metadata directly from PostgreSQL, MySQL, or Oracle
-- **Cross-dialect DDL generation**: Convert source types (NUMBER→DECIMAL, VARCHAR2→VARCHAR, BOOLEAN→TINYINT, etc.)
-- **Data migration**: Export source data to CSV, import into target with batched transactions
-- **End-to-end migration**: Single `migrate` command does schema + data in one pass
-- **Migration report**: Detailed per-table row count, errors, and duration summary
+- **Cross-dialect DDL generation**: NUMBER↔DECIMAL↔INTEGER, VARCHAR2↔VARCHAR, BOOLEAN↔TINYINT(1), CLOB↔TEXT↔LONGTEXT, etc.
+- **Compound dialects**: GoldenDB (MySQL/Oracle mode), OceanBase (MySQL/Oracle mode), PanWeiDB, OpenGaussDB
+- **Data migration**: Export source data to CSV with cursor-based pagination, import with batched transactions
+- **Checkpoint/Resume**: Per-table state persists to disk — interrupted migrations pick up where they left off
+- **Continue on error**: Per-table error isolation — one failing table doesn't abort the whole migration
+- **SQL output mode**: Generate INSERT SQL files instead of writing directly to the target database
+- **Encoding conversion**: GBK, LATIN1, ISO-8859-*, Windows-1252 to UTF-8 conversion during import
+- **Data transforms**: Compact datetime (yyyyMMddHHmmss) auto-formatting, string trimming, boolean mapping, binary hex encoding
+- **Error policies**: Per-row error handling — stop, skip_row, or log_only
+- **Migration report**: Detailed JSON report with per-table row counts, errors, and duration
+- **Parallel export/import**: Concurrent table processing via worker pool
 
 ## Quick Start
 
@@ -17,86 +26,67 @@ Database migration tool for Oracle → MySQL, PostgreSQL → MySQL, and cross-da
 # Install
 go install github.com/cangyunye/go-owl-migrate/cmd/migrate@latest
 
-# Validate config
+# Or build from source
+make build
+go build -o owl-migrate ./cmd/migrate/main.go
+
+# Generate config from CLI parameters
+owl-migrate init --source-type oracle --source-dsn "oracle://u:p@host:1521/service" \
+  --source-schema SCOTT --target-type postgres \
+  --target-dsn "postgres://u:p@localhost:5432/migrate" --target-schema public \
+  -o ./migrate.yaml
+
+# Validate metadata
 owl-migrate validate -c ./migrate.yaml
 
-# Generate DDL scripts only
+# Generate DDL scripts for the target database
 owl-migrate gen-ddl -c ./migrate.yaml -o ./output/ddl/
 
-# Full end-to-end migration
-owl-migrate migrate -c ./migrate.yaml --temp-dir ./temp/ -r ./report.json
+# Run end-to-end migration (export + create tables + import)
+owl-migrate migrate -c ./migrate.yaml
+
+# Or use SQL output mode (no target database connection needed)
+owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 ```
 
-## Usage
-
-### 1. Configuration
-
-Create a YAML config file (see [docs/config.md](docs/config.md) for full reference):
-
-```yaml
-metadata:
-  type: database        # or "csv" for offline mode
-
-source:
-  type: postgres
-  dsn: "host=127.0.0.1 port=5432 dbname=mydb sslmode=disable"
-  schema: public
-
-target:
-  type: mysql
-  dsn: "user:pass@tcp(127.0.0.1:3306)/mydb"
-
-export:
-  batch:
-    page_size: 5000
-import:
-  batch:
-    commit_interval: 1000
-```
-
-### 2. Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
-| `validate` | Validate config and metadata source (CSV or database) |
-| `gen-ddl` | Generate CREATE TABLE DDL for the target dialect |
-| `gen-select` | Generate SELECT queries for data export |
-| `export` | Export source data to CSV files |
-| `import` | Import CSV data into target database |
-| `migrate` | End-to-end: export → create tables → import → report |
-
-### 3. Metadata Sources
-
-- **Database** (`metadata.type: database`): Live schema introspection from PostgreSQL, MySQL, Oracle, GoldenDB, OceanBase
-- **CSV** (`metadata.type: csv`): Pre-defined table/column definitions in CSV files (see `testdata/csv/` for format)
+| `init`       | Generate config file from CLI parameters |
+| `validate`   | Validate metadata (CSV or database) |
+| `gen-ddl`    | Generate CREATE TABLE/INDEX/VIEW DDL for target dialect |
+| `gen-select` | Generate paginated SELECT queries for data export |
+| `gen-insert` | Generate INSERT SQL from CSV data (offline mode) |
+| `export`     | Export source database data to CSV files |
+| `import`     | Import CSV data into target database |
+| `migrate`    | End-to-end: export → create tables → import → report |
 
 ## Supported Dialects
 
-| Source | Target |
-|--------|--------|
-| PostgreSQL 15+ | MySQL |
-| MySQL 8+ | MySQL (same-dialect) |
-| Oracle 19c/21c | MySQL |
-| GoldenDB (MySQL mode) | MySQL |
-| OceanBase (MySQL/Oracle mode) | MySQL |
+| Database | Source | Target | DDL | Export | Import |
+|---|---|---|---|---|---|
+| Oracle | ✓ | ✓ | ✓ | ✓ | ✓ |
+| PostgreSQL | ✓ | ✓ | ✓ | ✓ | ✓ |
+| MySQL | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GoldenDB (MySQL mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GoldenDB (Oracle mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OceanBase (MySQL mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OceanBase (Oracle mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
+| PanWeiDB | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OpenGaussDB | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-## Migration Report
+## Documentation
 
-After `migrate`, a JSON report is generated:
-
-```json
-{
-  "source_dialect": "postgres",
-  "target_dialect": "mysql",
-  "status": "SUCCESS",
-  "duration": "1.2s",
-  "tables": [
-    {"schema": "public", "table": "dept", "expected": 4, "actual": 4}
-  ],
-  "total_expected": 18,
-  "total_actual": 18
-}
-```
+| Document | Description |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Installation, quick start, workflows |
+| [CLI Commands](docs/cli-commands.md) | Full command reference with flags and examples |
+| [Configuration](docs/config.md) | All YAML configuration options |
+| [CSV Metadata Format](docs/csv-format.md) | CSV file format for offline schema definition |
+| [Migration Pipeline](docs/migration-pipeline.md) | Export/import, checkpoint/resume, encoding, error handling |
+| [Dialect & Type Mapping](docs/dialect-mapping.md) | Dialect system, type mapping, feature flags |
+| [Developer Guide](docs/development.md) | Project structure, testing, adding dialects |
 
 ## License
 
