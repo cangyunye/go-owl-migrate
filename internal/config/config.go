@@ -211,6 +211,8 @@ type DataTransforms struct {
 	DatetimeTruncateToTarget bool     `yaml:"datetime_truncate_to_target"`
 	TrimStrings              bool     `yaml:"trim_strings"`
 	NullIf                   []string `yaml:"null_if"`
+	SourceEncoding           string   `yaml:"source_encoding"` // e.g. "GBK", "" = UTF-8
+	TargetEncoding           string   `yaml:"target_encoding"` // e.g. "GBK", "" = UTF-8
 }
 
 // BatchConfig holds shared batch processing settings.

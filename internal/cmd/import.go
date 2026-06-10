@@ -68,6 +68,7 @@ func importCmd() *cobra.Command {
 			MaxWorkers:     cfg.Import.Parallel.MaxWorkers,
 			DateTimeFormat: cfg.Import.DataTransforms.DatetimeFormat,
 			TrimStrings:    cfg.Import.DataTransforms.TrimStrings,
+			SourceEncoding: cfg.Import.DataTransforms.SourceEncoding,
 			TargetDBType:   cfg.Target.Type,
 			Logger:         logger,
 		})

@@ -13,6 +13,9 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/simplifiedchinese"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
@@ -30,6 +33,8 @@ type Config struct {
 	DateTimeFormat string // e.g. "yyyyMMddHHmmss"
 	TrimStrings    bool
 	TargetDBType   string // "postgres", "mysql", "oracle" — affects quoting and placeholders
+	SourceEncoding string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
+	TargetEncoding string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
 	Logger         *zap.Logger
 }
 
@@ -38,6 +43,7 @@ type Importer struct {
 	db     *sql.DB
 	cfg    Config
 	logger *zap.Logger
+	dec    *encoding.Decoder // source → UTF-8 (nil if no conversion needed)
 }
 
 // New creates a new Importer.
@@ -54,7 +60,31 @@ func New(db *sql.DB, cfg Config) *Importer {
 	if cfg.CSVNullMarker == "" {
 		cfg.CSVNullMarker = "\\N"
 	}
-	return &Importer{db: db, cfg: cfg, logger: cfg.Logger}
+
+	// Initialize encoding decoder if source encoding is specified and differs from UTF-8
+	imp := &Importer{db: db, cfg: cfg, logger: cfg.Logger}
+	if enc := getEncoding(cfg.SourceEncoding); enc != nil {
+		imp.dec = enc.NewDecoder()
+	}
+	return imp
+}
+
+// getEncoding returns the encoding for a named charset, or nil for UTF-8/no-op.
+func getEncoding(name string) encoding.Encoding {
+	switch strings.ToUpper(strings.TrimSpace(name)) {
+	case "GBK", "GB2312", "GB18030":
+		return simplifiedchinese.GBK
+	case "LATIN1", "ISO-8859-1":
+		return charmap.ISO8859_1
+	case "LATIN9", "ISO-8859-15":
+		return charmap.ISO8859_15
+	case "WINDOWS-1252":
+		return charmap.Windows1252
+	case "SHIFT_JIS", "SJIS":
+		return simplifiedchinese.GBK // approximate; shift-jis not common
+	default:
+		return nil
+	}
 }
 
 // isMySQL returns true if the target database is MySQL or a MySQL-compatible dialect.
@@ -366,6 +396,17 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 // transformValue applies data transformations to a CSV value before INSERT.
 func (imp *Importer) transformValue(v string) any {
 	s := v
+
+	// Decode from source encoding to UTF-8 if configured
+	if imp.dec != nil {
+		decoded, err := imp.dec.String(s)
+		if err != nil {
+			// Fallback to original on decode error
+			imp.logger.Warn("Encoding decode failed, using original", zap.Error(err))
+		} else {
+			s = decoded
+		}
+	}
 
 	// Trim strings
 	if imp.cfg.TrimStrings {

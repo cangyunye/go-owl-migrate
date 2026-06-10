@@ -318,6 +318,7 @@ Use --resume to skip tables completed in a previous run.`,
 					MaxWorkers:     cfg.Import.Parallel.MaxWorkers,
 					DateTimeFormat: cfg.Import.DataTransforms.DatetimeFormat,
 					TrimStrings:    cfg.Import.DataTransforms.TrimStrings,
+					SourceEncoding: cfg.Import.DataTransforms.SourceEncoding,
 					TargetDBType:   cfg.Target.Type,
 					Logger:         impLogger,
 				})
@@ -330,15 +331,20 @@ Use --resume to skip tables completed in a previous run.`,
 
 			for _, tbl := range tablesToProcess {
 				key := tableKey(tbl)
+				// Compute target schema for matching
+				impSchema := tbl.TableSchema
+				if m, ok := cfg.DDL.SchemaMapping[impSchema]; ok {
+					impSchema = m
+				}
 				// Check if already successfully imported from state
 				if st, ok := ms.Tables[key]; ok && st.Status == "SUCCESS" {
 					report.AddTable(tbl.TableSchema, tbl.TableName, st.ExportedRows, st.ExportedRows, 0, 0, "")
 					fmt.Printf("  ✅ %s.%s: %d rows (from previous run)\n", tbl.TableSchema, tbl.TableName, st.ExportedRows)
 					continue
 				}
-				// Find result from current import
+				// Find result from current import (match against mapped target schema)
 				for _, r := range importResults {
-					if strings.EqualFold(r.Schema, tbl.TableSchema) && strings.EqualFold(r.Table, tbl.TableName) {
+					if strings.EqualFold(r.Schema, impSchema) && strings.EqualFold(r.Table, tbl.TableName) {
 						if r.Err != nil {
 							ms.markImported(key, 0, r.Err)
 							fmt.Printf("  FAIL %s.%s: %v\n", r.Schema, r.Table, r.Err)
