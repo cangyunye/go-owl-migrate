@@ -140,24 +140,16 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 	if m, ok := opts.SchemaMapping[schema]; ok {
 		schema = m
 	}
-
-	quote := func(name string) string {
-		if opts.QuoteAllIdentifiers {
-			return fmt.Sprintf("\"%s\"", name)
-		}
-		return fmt.Sprintf("`%s`", name)
-	}
-
 	b.WriteString("CREATE TABLE ")
 	if opts.IncludeIfNotExists {
 		b.WriteString("IF NOT EXISTS ")
 	}
-	b.WriteString(fmt.Sprintf("%s.%s", quote(schema), quote(t.TableName)))
+	b.WriteString(fmt.Sprintf("`%s`.`%s`", schema, t.TableName))
 	b.WriteString(" (\n")
 	cols := t.GetColumns()
 	for i, col := range cols {
 		b.WriteString("  ")
-		b.WriteString(quote(col.ColumnName))
+		b.WriteString(fmt.Sprintf("`%s`", col.ColumnName))
 		b.WriteString(" ")
 		b.WriteString(col.DataType)
 		if col.Nullable == "NO" {

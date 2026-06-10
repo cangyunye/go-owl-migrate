@@ -36,7 +36,6 @@ type Config struct {
 	SourceEncoding string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
 	TargetEncoding string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
 	Logger         *zap.Logger
-	QuoteAllIdentifiers bool
 }
 
 // Importer reads CSV files and inserts data into a target database.
@@ -481,9 +480,6 @@ func (imp *Importer) isBinaryColumn(tbl *md.TableDef, columnName string) bool {
 }
 
 func (imp *Importer) quoteIdent(name string) string {
-	if imp.cfg.QuoteAllIdentifiers {
-		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-	}
 	if imp.isMySQL() {
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 	}

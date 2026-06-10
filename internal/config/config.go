@@ -101,7 +101,6 @@ type DDLConfig struct {
 	EmptyStringToNull  bool              `yaml:"empty_string_to_null"`
 	BooleanMapping     map[string]bool   `yaml:"boolean_mapping"`
 	Partition          PartitionConfig   `yaml:"partition"`
-	QuoteAllIdentifiers bool             `yaml:"quote_all_identifiers"`
 }
 
 // TableFilterConfig holds table include/exclude rules.

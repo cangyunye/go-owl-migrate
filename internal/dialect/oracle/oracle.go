@@ -132,21 +132,13 @@ type OracleDDLBuilder struct{}
 
 func (OracleDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) (string, error) {
 	var b strings.Builder
-
-	quote := func(name string) string {
-		if opts.QuoteAllIdentifiers {
-			return fmt.Sprintf(`"%s"`, name)
-		}
-		return fmt.Sprintf(`"%s"`, strings.ToUpper(name))
-	}
-
 	b.WriteString("CREATE TABLE ")
-	b.WriteString(fmt.Sprintf("%s.%s", quote(t.TableSchema), quote(t.TableName)))
+	b.WriteString(fmt.Sprintf(`"%s"."%s"`, strings.ToUpper(t.TableSchema), strings.ToUpper(t.TableName)))
 	b.WriteString(" (\n")
 	cols := t.GetColumns()
 	for i, col := range cols {
 		b.WriteString("  ")
-		b.WriteString(quote(col.ColumnName))
+		b.WriteString(fmt.Sprintf(`"%s"`, strings.ToUpper(col.ColumnName)))
 		b.WriteString(" ")
 		b.WriteString(col.DataType)
 		if col.DataLength > 0 && col.DataType == "VARCHAR2" {
