@@ -37,13 +37,15 @@ Flow:
 	}
 
 	var (
-		tempDir    string
-		skipDDL    bool
-		reportFile string
+		tempDir         string
+		skipDDL         bool
+		continueOnError bool
+		reportFile      string
 	)
 
 	cmd.Flags().StringVar(&tempDir, "temp-dir", "./output/temp/", "temporary directory for CSV files")
 	cmd.Flags().BoolVar(&skipDDL, "skip-ddl", false, "skip table creation in target (data-only)")
+	cmd.Flags().BoolVar(&continueOnError, "continue-on-error", false, "exit with code 0 even if some tables have errors")
 	cmd.Flags().StringVarP(&reportFile, "report", "r", "./output/migration_report.json", "migration report output path")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -180,6 +182,25 @@ Flow:
 			data, _ := json.MarshalIndent(report, "", "  ")
 			os.WriteFile(reportFile, data, 0644)
 			fmt.Printf("Report saved to %s\n", reportFile)
+		}
+
+		// Return non-zero exit when per-table errors exist and --continue-on-error is off
+		if !continueOnError {
+			exportErrors := 0
+			for _, r := range exportResults {
+				if r.Error != nil {
+					exportErrors++
+				}
+			}
+			importErrors := 0
+			for _, r := range importResults {
+				if r.Err != nil {
+					importErrors++
+				}
+			}
+			if exportErrors > 0 || importErrors > 0 {
+				return fmt.Errorf("migration completed with %d export errors, %d import errors", exportErrors, importErrors)
+			}
 		}
 
 		return nil

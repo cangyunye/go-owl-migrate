@@ -97,7 +97,6 @@ func (e *Exporter) ExportTables(ctx context.Context, tables []*md.TableDef, prim
 		results []TableResult
 		mu      sync.Mutex
 		wg      sync.WaitGroup
-		errCh   = make(chan error, workers)
 	)
 
 	for i := 0; i < workers; i++ {
@@ -115,25 +114,11 @@ func (e *Exporter) ExportTables(ctx context.Context, tables []*md.TableDef, prim
 				mu.Lock()
 				results = append(results, result)
 				mu.Unlock()
-
-				if result.Error != nil {
-					errCh <- result.Error
-					return
-				}
 			}
 		}()
 	}
 
 	wg.Wait()
-	close(errCh)
-
-	// Check for errors
-	for err := range errCh {
-		if err != nil {
-			return results, err
-		}
-	}
-
 	return results, nil
 }
 
