@@ -73,8 +73,7 @@ Usage:
   owl-migrate gen-ddl [flags] -c <config>
 
 Flags:
-  -o, --output string           Output directory for DDL files (default "./output/ddl/")
-      --quote-all-identifiers   Force double-quote all identifiers, preserving case (default: false)
+  -o, --output string   Output directory for DDL files (default "./output/ddl/")
 ```
 
 The command generates **per-object** SQL files using the naming convention:
@@ -105,7 +104,6 @@ Flags:
   -o, --output string        Output directory for SELECT files (default "./output/select/")
       --batch-method string  Pagination method: cursor/offset (default "cursor")
   -n, --page-size int        Rows per batch (default 5000)
-      --quote-all-identifiers   Force double-quote all identifiers, preserving case (default: false)
 ```
 
 Generated SQL files contain one SELECT statement per table with:
@@ -131,12 +129,11 @@ Usage:
   owl-migrate gen-insert [flags]
 
 Flags:
-  -o, --output string         Output directory for INSERT SQL files (default "./output/insert/")
-  -d, --data string           Directory containing CSV data files (default "./output/data/")
-      --dialect string        Target dialect: oracle/postgres/mysql (default "postgres")
-  -n, --batch-size int        VALUES rows per INSERT statement (default 100)
-      --truncate              Add TRUNCATE TABLE before INSERT
-      --quote-all-identifiers Force double-quote all identifiers, preserving case (default: false)
+  -o, --output string    Output directory for INSERT SQL files (default "./output/insert/")
+  -d, --data string      Directory containing CSV data files (default "./output/data/")
+      --dialect string   Target dialect: oracle/postgres/mysql (default "postgres")
+  -n, --batch-size int   VALUES rows per INSERT statement (default 100)
+      --truncate         Add TRUNCATE TABLE before INSERT
 ```
 
 The command reads CSV data files named `{schema}.{table}.csv` and produces dialect-specific INSERT SQL:
@@ -191,9 +188,6 @@ Import CSV data files into the target database.
 ```
 Usage:
   owl-migrate import [flags] -c <config>
-
-Flags:
-      --quote-all-identifiers   Force double-quote all identifiers, preserving case (default: false)
 ```
 
 Key features:
@@ -218,13 +212,12 @@ Usage:
   owl-migrate migrate [flags] -c <config>
 
 Flags:
-      --temp-dir string           Temporary directory for CSV files (default "./output/temp/")
-      --skip-ddl                  Skip table creation in target (data-only migration)
-      --continue-on-error         Continue processing remaining tables even if some fail
-      --sql-out string            Output directory for INSERT SQL files (offline mode, skips target DB)
-      --resume                    Resume from previous migration state (skips completed tables)
-  -r, --report string             Migration report output path (default "./output/migration_report.json")
-      --quote-all-identifiers    Force double-quote all identifiers, preserving case (default: false)
+      --temp-dir string        Temporary directory for CSV files (default "./output/temp/")
+      --skip-ddl               Skip table creation in target (data-only migration)
+      --continue-on-error      Continue processing remaining tables even if some fail
+      --sql-out string         Output directory for INSERT SQL files (offline mode, skips target DB)
+      --resume                 Resume from previous migration state (skips completed tables)
+  -r, --report string          Migration report output path (default "./output/migration_report.json")
 ```
 
 ### Migration Steps
