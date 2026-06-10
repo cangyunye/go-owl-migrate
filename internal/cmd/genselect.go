@@ -22,11 +22,13 @@ func genSelectCmd() *cobra.Command {
 		outputDir   string
 		batchMethod string
 		pageSize    int
+		noQuote     bool
 	)
 
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/select/", "output directory for SELECT files")
 	cmd.Flags().StringVar(&batchMethod, "batch-method", "cursor", "pagination method: cursor/offset")
 	cmd.Flags().IntVarP(&pageSize, "page-size", "n", 5000, "rows per batch")
+	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
@@ -53,7 +55,11 @@ func genSelectCmd() *cobra.Command {
 			return err
 		}
 
-		gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, d.Quote)
+		quoteFn := d.Quote
+	if cmd.Flags().Changed("no-quote-identifiers") && noQuote {
+		quoteFn = func(s string) string { return s }
+	}
+	gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn)
 
 		files, err := gen.Generate(sm)
 		if err != nil {

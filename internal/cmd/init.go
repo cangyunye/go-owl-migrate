@@ -195,6 +195,7 @@ func buildConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, metaTyp
 			Partition: config.PartitionConfig{
 				Migrate: false,
 			},
+			NoQuoteIdentifiers: false,
 		},
 		SelectGen: config.SelectGenConfig{
 			OutputDir: "./output/select/",

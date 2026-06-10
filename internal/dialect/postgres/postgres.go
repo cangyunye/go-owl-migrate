@@ -135,18 +135,25 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 	if m, ok := opts.SchemaMapping[schema]; ok {
 		schema = m
 	}
+
+	quote := func(name string) string {
+		if opts.NoQuoteIdentifiers {
+			return name
+		}
+		return fmt.Sprintf(`"%s"`, strings.ToLower(name))
+	}
+
 	b.WriteString("CREATE TABLE ")
 	if opts.IncludeIfNotExists {
 		b.WriteString("IF NOT EXISTS ")
 	}
-	b.WriteString(fmt.Sprintf(`"%s"."%s"`, strings.ToLower(schema), strings.ToLower(t.TableName)))
+	b.WriteString(fmt.Sprintf("%s.%s", quote(schema), quote(t.TableName)))
 	b.WriteString(" (\n")
 	cols := t.GetColumns()
 	for i, col := range cols {
 		b.WriteString("  ")
-		b.WriteString(fmt.Sprintf(`"%s"`, strings.ToLower(col.ColumnName)))
+		b.WriteString(quote(col.ColumnName))
 		b.WriteString(" ")
-		// Use dialect mapping for type
 		b.WriteString(col.DataType)
 		if col.Nullable == "NO" {
 			b.WriteString(" NOT NULL")
@@ -161,7 +168,11 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 	}
 	b.WriteString(")")
 	if opts.IncludeComments && t.TableComment != "" {
-		b.WriteString(fmt.Sprintf(";\nCOMMENT ON TABLE %q.%q IS '%s'", schema, t.TableName, t.TableComment))
+		if opts.NoQuoteIdentifiers {
+			b.WriteString(fmt.Sprintf(";\nCOMMENT ON TABLE %s.%s IS '%s'", schema, t.TableName, t.TableComment))
+		} else {
+			b.WriteString(fmt.Sprintf(";\nCOMMENT ON TABLE %q.%q IS '%s'", schema, t.TableName, t.TableComment))
+		}
 	}
 	return b.String(), nil
 }

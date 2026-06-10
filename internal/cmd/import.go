@@ -17,16 +17,22 @@ import (
 )
 
 func importCmd() *cobra.Command {
+	var noQuote bool
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import CSV files into target database",
 		Long:  `Reads CSV data files and inserts rows into the target database using batched INSERT with transaction control.`,
 	}
 
+	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
+
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
+		}
+		if cmd.Flags().Changed("no-quote-identifiers") {
+			cfg.DDL.NoQuoteIdentifiers = noQuote
 		}
 
 		sm, err := loadSchemaModel(cfg)
@@ -71,6 +77,7 @@ func importCmd() *cobra.Command {
 			SourceEncoding: cfg.Import.DataTransforms.SourceEncoding,
 			TargetDBType:   cfg.Target.Type,
 			Logger:         logger,
+			NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
 		})
 
 		tables := sm.GetTables()
@@ -162,6 +169,9 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	}
 
 	q := func(name string) string {
+		if cfg.DDL.NoQuoteIdentifiers {
+			return name
+		}
 		if targetIsMySQL {
 			return "`" + name + "`"
 		}

@@ -20,7 +20,9 @@ func genDDLCmd() *cobra.Command {
 	}
 
 	var outputDir string
+	var noQuote bool
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/ddl/", "output directory for DDL files")
+	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
@@ -41,6 +43,9 @@ func genDDLCmd() *cobra.Command {
 		}
 
 		opts := toBuildOptions(cfg)
+		if cmd.Flags().Changed("no-quote-identifiers") {
+			opts.NoQuoteIdentifiers = noQuote
+		}
 		gen := generator.NewDDLGenerator(d, opts, outputDir)
 
 		files, err := gen.GenerateTables(sm)
@@ -77,5 +82,6 @@ func toBuildOptions(cfg *config.Config) dialect.BuildOptions {
 		AddRowIDColumn:     cfg.DDL.AddRowIDColumn,
 		IdentityToSerial:   cfg.DDL.IdentityToSerial,
 		SkipPartitions:     !cfg.DDL.Partition.Migrate,
+		NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
 	}
 }

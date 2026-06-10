@@ -47,6 +47,7 @@ Use --resume to skip tables completed in a previous run.`,
 		sqlOut          string
 		resume          bool
 		reportFile      string
+		noQuote         bool
 	)
 
 	cmd.Flags().StringVar(&tempDir, "temp-dir", "./output/temp/", "temporary directory for CSV files")
@@ -55,11 +56,15 @@ Use --resume to skip tables completed in a previous run.`,
 	cmd.Flags().StringVar(&sqlOut, "sql-out", "", "output directory for INSERT SQL files (offline mode, skips target DB)")
 	cmd.Flags().BoolVar(&resume, "resume", false, "resume from previous migration state (skips completed tables)")
 	cmd.Flags().StringVarP(&reportFile, "report", "r", "./output/migration_report.json", "migration report output path")
+	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
+		}
+		if cmd.Flags().Changed("no-quote-identifiers") {
+			cfg.DDL.NoQuoteIdentifiers = noQuote
 		}
 
 		report := NewMigrationReport(cfg.Source.Type, cfg.Target.Type)
@@ -272,6 +277,7 @@ Use --resume to skip tables completed in a previous run.`,
 				Dialect:      dialect,
 				NullMarker:   cfg.Import.CSV.NullMarker,
 				CSVDelimiter: cfg.Import.CSV.Delimiter,
+				NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
 			})
 			files, err := gen.Generate(tablesToProcess, exportDir)
 			if err != nil {
@@ -321,6 +327,7 @@ Use --resume to skip tables completed in a previous run.`,
 					SourceEncoding: cfg.Import.DataTransforms.SourceEncoding,
 					TargetDBType:   cfg.Target.Type,
 					Logger:         impLogger,
+					NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
 				})
 
 				importResults, err = imp.ImportTables(ctx, tablesToImport, cfg.DDL.SchemaMapping)

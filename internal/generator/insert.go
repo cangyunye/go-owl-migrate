@@ -18,6 +18,7 @@ type InsertConfig struct {
 	Dialect        string // oracle/postgres/mysql
 	NullMarker     string
 	CSVDelimiter   string
+	NoQuoteIdentifiers bool
 }
 
 // InsertGenerator reads CSV data files and generates INSERT SQL statements.
@@ -196,6 +197,9 @@ func (g *InsertGenerator) formatSQLValue(v string) string {
 }
 
 func (g *InsertGenerator) getQuoter() func(string) string {
+	if g.cfg.NoQuoteIdentifiers {
+		return func(s string) string { return s }
+	}
 	switch g.cfg.Dialect {
 	case "mysql":
 		return func(s string) string { return "`" + s + "`" }

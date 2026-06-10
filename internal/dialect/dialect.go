@@ -88,6 +88,7 @@ type BuildOptions struct {
 	AddRowIDColumn     bool
 	IdentityToSerial   bool
 	SkipPartitions     bool
+	NoQuoteIdentifiers  bool
 }
 
 // DDLBuilder generates DDL statements.
