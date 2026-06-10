@@ -109,9 +109,7 @@ func importCmd() *cobra.Command {
 
 func ensureTables(ctx context.Context, db *sql.DB, sm *md.SchemaModel, cfg *config.Config, schemaMapping map[string]string) error {
 	targetType := strings.ToLower(cfg.Target.Type)
-	targetIsMySQL := targetType == "mysql" ||
-		strings.HasPrefix(targetType, "goldendb") ||
-		strings.HasPrefix(targetType, "oceanbase")
+	targetIsMySQL := targetType == "mysql" || targetType == "goldendb" || strings.HasSuffix(targetType, "-mysql")
 
 	for _, tbl := range sm.GetTables() {
 		schema := tbl.TableSchema
@@ -153,8 +151,8 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	b.WriteString("CREATE TABLE ")
 
 	targetIsMySQL := strings.EqualFold(cfg.Target.Type, "mysql") ||
-		strings.HasPrefix(strings.ToLower(cfg.Target.Type), "goldendb") ||
-		strings.HasPrefix(strings.ToLower(cfg.Target.Type), "oceanbase")
+		strings.EqualFold(cfg.Target.Type, "goldendb") ||
+		strings.HasSuffix(strings.ToLower(cfg.Target.Type), "-mysql")
 	targetIsOracle := strings.EqualFold(cfg.Target.Type, "oracle") ||
 		strings.HasSuffix(strings.ToLower(cfg.Target.Type), "-oracle")
 
@@ -247,7 +245,7 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 		b.WriteString(q(col.ColumnName))
 		b.WriteString(" ")
 
-		upType := strings.ToUpper(col.DataType)
+		upType := normalizeColumnType(col.DataType)
 		var targetType string
 
 		if targetIsOracle {
@@ -333,4 +331,23 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 
 	b.WriteString(")")
 	return b.String()
+}
+
+func normalizeColumnType(dataType string) string {
+	t := strings.ToUpper(strings.TrimSpace(dataType))
+	t = strings.Join(strings.Fields(t), " ")
+	switch t {
+	case "TIMESTAMP WITHOUT TIME ZONE":
+		return "TIMESTAMP"
+	case "TIMESTAMP WITH TIME ZONE":
+		return "TIMESTAMPTZ"
+	case "CHARACTER VARYING":
+		return "VARCHAR"
+	case "DOUBLE PRECISION":
+		return "DOUBLE PRECISION"
+	case "USER-DEFINED":
+		return "TEXT"
+	default:
+		return t
+	}
 }

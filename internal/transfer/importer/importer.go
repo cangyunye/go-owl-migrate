@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/csv"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,7 +60,7 @@ func New(db *sql.DB, cfg Config) *Importer {
 // isMySQL returns true if the target database is MySQL or a MySQL-compatible dialect.
 func (imp *Importer) isMySQL() bool {
 	t := strings.ToLower(imp.cfg.TargetDBType)
-	return t == "mysql" || strings.HasPrefix(t, "goldendb") || strings.HasPrefix(t, "oceanbase")
+	return t == "mysql" || t == "goldendb" || strings.HasSuffix(t, "-mysql")
 }
 
 // isOracle returns true if the target database is Oracle or an Oracle-compatible dialect.
@@ -140,10 +141,16 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		zap.String("target", fmt.Sprintf("%s.%s", targetSchema, tbl.TableName)),
 	)
 
-	// Set Oracle session date format for automatic string→DATE conversion
+	// Set Oracle session date/timestamp formats for automatic string conversion
 	if imp.isOracle() {
 		if _, err := imp.db.ExecContext(ctx, "ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
 			imp.logger.Warn("Failed to set NLS_DATE_FORMAT", zap.Error(err))
+		}
+		if _, err := imp.db.ExecContext(ctx, "ALTER SESSION SET NLS_TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
+			imp.logger.Warn("Failed to set NLS_TIMESTAMP_FORMAT", zap.Error(err))
+		}
+		if _, err := imp.db.ExecContext(ctx, "ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT = 'YYYY-MM-DD HH24:MI:SS TZH:TZM'"); err != nil {
+			imp.logger.Warn("Failed to set NLS_TIMESTAMP_TZ_FORMAT", zap.Error(err))
 		}
 	}
 
@@ -257,6 +264,19 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 				vals[j] = nil
 			} else {
 				val := imp.transformValue(v)
+				if j < len(header) {
+					if imp.needsNumericBoolean(tbl, header[j]) {
+						val = numericBooleanValue(val)
+					}
+					if imp.isBinaryColumn(tbl, header[j]) {
+						decoded, err := hex.DecodeString(v)
+						if err != nil {
+							result.Err = fmt.Errorf("row %d column %s: decode hex: %w", i, header[j], err)
+							return result
+						}
+						val = decoded
+					}
+				}
 				vals[j] = val
 			}
 		}
@@ -377,6 +397,45 @@ func isAllDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+func (imp *Importer) needsNumericBoolean(tbl *md.TableDef, columnName string) bool {
+	if !imp.isMySQL() && !imp.isOracle() {
+		return false
+	}
+	for _, col := range tbl.GetColumns() {
+		if strings.EqualFold(col.ColumnName, columnName) {
+			return strings.EqualFold(col.DataType, "boolean")
+		}
+	}
+	return false
+}
+
+func numericBooleanValue(v any) any {
+	s, ok := v.(string)
+	if !ok {
+		return v
+	}
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "t", "yes", "y":
+		return "1"
+	case "false", "f", "no", "n":
+		return "0"
+	default:
+		return v
+	}
+}
+
+func (imp *Importer) isBinaryColumn(tbl *md.TableDef, columnName string) bool {
+	for _, col := range tbl.GetColumns() {
+		if strings.EqualFold(col.ColumnName, columnName) {
+			switch strings.ToUpper(strings.TrimSpace(col.DataType)) {
+			case "BLOB", "BYTEA", "RAW", "BINARY", "VARBINARY":
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (imp *Importer) quoteIdent(name string) string {

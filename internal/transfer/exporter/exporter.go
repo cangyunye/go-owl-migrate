@@ -3,6 +3,7 @@ package exporter
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,17 +18,17 @@ import (
 
 // Config holds exporter configuration.
 type Config struct {
-	OutputDir          string
-	Format             string // csv
-	CSVDelimiter       string
-	CSVQuoteChar       string
-	CSVNullRep         string
-	CSVHeader          bool
-	CSVLineTerminator  string
-	PageSize           int
-	MaxWorkers         int
-	DBType             string // oracle/postgres/mysql
-	Logger             *zap.Logger
+	OutputDir         string
+	Format            string // csv
+	CSVDelimiter      string
+	CSVQuoteChar      string
+	CSVNullRep        string
+	CSVHeader         bool
+	CSVLineTerminator string
+	PageSize          int
+	MaxWorkers        int
+	DBType            string // oracle/postgres/mysql
+	Logger            *zap.Logger
 }
 
 // Exporter reads data from a database and writes to files.
@@ -154,7 +155,6 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 	}
 
 	pkCols := primaryKeys[key]
-
 	// Build output file
 	filename := fmt.Sprintf("%s.%s.csv", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName))
 	filepath := filepath.Join(e.cfg.OutputDir, filename)
@@ -263,28 +263,58 @@ func (e *Exporter) getColumns(ctx context.Context, tbl *md.TableDef) ([]ColumnIn
 	return columns, nil
 }
 
+func (e *Exporter) isMySQL() bool {
+	t := strings.ToLower(e.cfg.DBType)
+	return t == "mysql" || t == "goldendb" || strings.HasSuffix(t, "-mysql")
+}
+
+func (e *Exporter) isOracle() bool {
+	t := strings.ToLower(e.cfg.DBType)
+	return t == "oracle" || strings.HasSuffix(t, "-oracle")
+}
+
+func (e *Exporter) isPostgres() bool {
+	t := strings.ToLower(e.cfg.DBType)
+	return t == "postgres" || t == "postgresql" || t == "opengaussdb" || t == "panweidb"
+}
+
 func (e *Exporter) limitClause() string {
-	switch strings.ToLower(e.cfg.DBType) {
-	case "oracle":
+	if e.isOracle() {
 		return fmt.Sprintf("FETCH NEXT %d ROWS ONLY", e.cfg.PageSize)
-	default:
-		return fmt.Sprintf("LIMIT %d", e.cfg.PageSize)
 	}
+	return fmt.Sprintf("LIMIT %d", e.cfg.PageSize)
 }
 
 func (e *Exporter) placeholder(idx int) string {
-	switch strings.ToLower(e.cfg.DBType) {
-	case "oracle":
+	if e.isOracle() {
 		return fmt.Sprintf(":%d", idx+1)
-	default:
-		return "?"
 	}
+	if e.isPostgres() {
+		return fmt.Sprintf("$%d", idx+1)
+	}
+	return "?"
 }
 
 func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []ColumnInfo, pkCols []string, lastVals []any) ([][]any, []any, error) {
 	colNames := make([]string, len(columns))
+	colByName := make(map[string]string, len(columns))
 	for i, c := range columns {
 		colNames[i] = e.quoteIdent(c.Name)
+		colByName[strings.ToLower(c.Name)] = c.Name
+	}
+
+	// Resolve PK column names against actual column casing from DB
+	resolvePK := func(pk string) string {
+		if actual, ok := colByName[strings.ToLower(pk)]; ok {
+			return actual
+		}
+		return pk
+	}
+
+	// Build ORDER BY clause using correctly-cased column names
+	quotedPKs := make([]string, len(pkCols))
+	for i, pk := range pkCols {
+		quotedPKs[i] = e.quoteIdent(resolvePK(pk))
 	}
 
 	var query string
@@ -293,13 +323,13 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 		// Cursor-based
 		conds := make([]string, len(pkCols))
 		for i, pk := range pkCols {
-			conds[i] = fmt.Sprintf("%s > %s", e.quoteIdent(pk), e.placeholder(i))
+			conds[i] = fmt.Sprintf("%s > %s", e.quoteIdent(resolvePK(pk)), e.placeholder(i))
 		}
 		query = fmt.Sprintf("SELECT %s FROM %s.%s WHERE %s ORDER BY %s %s",
 			strings.Join(colNames, ", "),
 			e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName),
 			strings.Join(conds, " AND "),
-			strings.Join(pkCols, ", "),
+			strings.Join(quotedPKs, ", "),
 			limit,
 		)
 	} else if len(pkCols) > 0 {
@@ -307,7 +337,7 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 		query = fmt.Sprintf("SELECT %s FROM %s.%s ORDER BY %s %s",
 			strings.Join(colNames, ", "),
 			e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName),
-			strings.Join(pkCols, ", "),
+			strings.Join(quotedPKs, ", "),
 			limit,
 		)
 	} else {
@@ -363,12 +393,12 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 func (e *Exporter) rowToCSV(row []any, columns []ColumnInfo) string {
 	vals := make([]string, len(row))
 	for i, v := range row {
-		vals[i] = e.formatCSVValue(v)
+		vals[i] = e.formatCSVValue(v, columns[i])
 	}
 	return e.csvLine(vals)
 }
 
-func (e *Exporter) formatCSVValue(v any) string {
+func (e *Exporter) formatCSVValue(v any, col ColumnInfo) string {
 	if v == nil {
 		return e.cfg.CSVNullRep
 	}
@@ -376,7 +406,11 @@ func (e *Exporter) formatCSVValue(v any) string {
 	var s string
 	switch t := v.(type) {
 	case []byte:
-		s = string(t)
+		if isBinaryType(col.TypeName) {
+			s = hex.EncodeToString(t)
+		} else {
+			s = string(t)
+		}
 	case time.Time:
 		s = t.Format("20060102150405")
 	case string:
@@ -403,6 +437,15 @@ func (e *Exporter) csvLine(vals []string) string {
 	return strings.Join(vals, e.cfg.CSVDelimiter) + e.cfg.CSVLineTerminator
 }
 
+func isBinaryType(typeName string) bool {
+	switch strings.ToUpper(strings.TrimSpace(typeName)) {
+	case "BLOB", "BYTEA", "RAW", "BINARY", "VARBINARY":
+		return true
+	default:
+		return false
+	}
+}
+
 // QuoteStyle determines identifier quoting for different databases.
 type QuoteStyle int
 
@@ -412,19 +455,9 @@ const (
 )
 
 // quoteIdent quotes an identifier for SQL.
-func (e *Exporter) dquote(name string) string {
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-}
-
-func (e *Exporter) bquote(name string) string {
-	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
-}
-
 func (e *Exporter) quoteIdent(name string) string {
-	switch strings.ToLower(e.cfg.DBType) {
-	case "mysql":
+	if e.isMySQL() {
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
-	default:
-		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
