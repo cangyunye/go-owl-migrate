@@ -23,6 +23,7 @@ func importCmd() *cobra.Command {
 		Long:  `Reads CSV data files and inserts rows into the target database using batched INSERT with transaction control.`,
 	}
 
+	cmd.Flags().BoolVar(new(bool), "quote-all-identifiers", false, "force double-quote all identifiers, preserve case")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
@@ -71,6 +72,7 @@ func importCmd() *cobra.Command {
 			SourceEncoding: cfg.Import.DataTransforms.SourceEncoding,
 			TargetDBType:   cfg.Target.Type,
 			Logger:         logger,
+			QuoteAllIdentifiers: cfg.DDL.QuoteAllIdentifiers,
 		})
 
 		tables := sm.GetTables()
@@ -162,6 +164,9 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	}
 
 	q := func(name string) string {
+		if cfg.DDL.QuoteAllIdentifiers {
+			return `"` + name + `"`
+		}
 		if targetIsMySQL {
 			return "`" + name + "`"
 		}

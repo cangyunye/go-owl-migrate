@@ -20,7 +20,9 @@ func genDDLCmd() *cobra.Command {
 	}
 
 	var outputDir string
+	var quoteAll bool
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/ddl/", "output directory for DDL files")
+	cmd.Flags().BoolVar(&quoteAll, "quote-all-identifiers", false, "force double-quote all identifiers, preserve case")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
@@ -41,6 +43,9 @@ func genDDLCmd() *cobra.Command {
 		}
 
 		opts := toBuildOptions(cfg)
+		if cmd.Flags().Changed("quote-all-identifiers") {
+			opts.QuoteAllIdentifiers = quoteAll
+		}
 		gen := generator.NewDDLGenerator(d, opts, outputDir)
 
 		files, err := gen.GenerateTables(sm)
@@ -76,6 +81,7 @@ func toBuildOptions(cfg *config.Config) dialect.BuildOptions {
 		IncludeIfNotExists: cfg.DDL.IncludeIfNotExists,
 		AddRowIDColumn:     cfg.DDL.AddRowIDColumn,
 		IdentityToSerial:   cfg.DDL.IdentityToSerial,
-		SkipPartitions:     !cfg.DDL.Partition.Migrate,
+		SkipPartitions:      !cfg.DDL.Partition.Migrate,
+		QuoteAllIdentifiers: cfg.DDL.QuoteAllIdentifiers,
 	}
 }

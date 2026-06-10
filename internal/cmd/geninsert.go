@@ -25,6 +25,7 @@ The CSV files are read from the data directory and INSERT SQL is written to the 
 		dialect        string
 		batchSize      int
 		truncateBefore bool
+		quoteAll       bool
 	)
 
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/insert/", "output directory for INSERT SQL files")
@@ -32,6 +33,7 @@ The CSV files are read from the data directory and INSERT SQL is written to the 
 	cmd.Flags().StringVar(&dialect, "dialect", "postgres", "target dialect: oracle/postgres/mysql")
 	cmd.Flags().IntVarP(&batchSize, "batch-size", "n", 100, "VALUES rows per INSERT statement")
 	cmd.Flags().BoolVar(&truncateBefore, "truncate", false, "add TRUNCATE TABLE before INSERT")
+	cmd.Flags().BoolVar(&quoteAll, "quote-all-identifiers", false, "force double-quote all identifiers, preserve case")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
@@ -52,6 +54,7 @@ The CSV files are read from the data directory and INSERT SQL is written to the 
 			BatchSize:      batchSize,
 			TruncateBefore: truncateBefore,
 			Dialect:        dialect,
+			QuoteAllIdentifiers: quoteAll,
 		})
 
 		tables := sm.GetTables()
