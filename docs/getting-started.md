@@ -16,21 +16,39 @@ make build/windows
 
 ## Workflows
 
-### Workflow A: Config-Driven (Recommended)
+### Workflow A: Interactive Config Generation (Recommended)
 
-Use `init` to generate a complete config file from CLI parameters, then run:
+Run `init` without arguments for a guided interview:
+
+```text
+$ owl-migrate init
+
+=== owl-migrate Configuration Generator ===
+
+What is your metadata source (csv/xlsx/database): csv
+Path to CSV metadata directory (default: ./testdata/csv/): ./my_metadata/
+Target database dialect for DDL generation (oracle/postgres/mysql/...): postgres
+Target database DSN (optional, leave blank for DDL-only): 
+What do you want to generate (ddl/data/all): all
+
+Configuration written to ./migrate.yaml
+```
+
+### Workflow B: Flag-Driven Config
+
+Use `init` with flags for automation or CI:
 
 ```bash
-# 1. Generate configuration
+# Online mode — live database metadata
 owl-migrate init \
-  --source-type oracle \
-  --source-dsn "oracle://user:pass@host:1521/service" \
-  --source-schema SCOTT \
-  --target-type postgres \
-  --target-dsn "postgres://user:pass@localhost:5432/migrate" \
-  --target-schema public \
-  --metadata-type database \
-  -o ./migrate.yaml
+  --source-type oracle --source-dsn "oracle://user:pass@host:1521/service" \
+  --source-schema SCOTT --target-type postgres -o ./migrate.yaml
+
+# Offline mode — CSV metadata, no database needed
+owl-migrate init --metadata-type csv --target-type postgres -o ./migrate.yaml
+
+# Offline mode — Excel metadata
+owl-migrate init --metadata-type xlsx --target-type postgres -o ./migrate.yaml
 
 # 2. Validate metadata (checks FK references, missing tables, etc.)
 owl-migrate validate -c ./migrate.yaml
@@ -61,7 +79,39 @@ owl-migrate gen-insert \
   --dialect postgres
 ```
 
-### Workflow C: CSV Metadata + SQL Output Mode
+### Workflow C: CSV → INSERT SQL (Zero Config)
+
+This is the simplest way to generate INSERT SQL from CSV data files.
+**No configuration file, no database connection needed.**
+
+```bash
+# 1. Prepare your CSV data files
+#    File naming: {schema}.{table}.csv
+#    Example: scott.emp.csv, scott.dept.csv
+#    First row = column headers, remaining rows = data
+#    (see docs/csv-format.md for format details)
+
+# 2. Generate INSERT SQL (standalone mode)
+owl-migrate gen-insert \
+  -d ./data/ \                    # Directory with CSV files
+  -o ./sql/ \                     # Output directory for INSERT SQL
+  --dialect postgres               # oracle | postgres | mysql
+
+# 3. Review the generated SQL files
+cat ./sql/scott.emp.insert.sql
+# BEGIN;
+# INSERT INTO "scott"."emp" ("id", "name")
+# VALUES
+#   (1, 'foo'),
+#   (2, 'bar');
+# COMMIT;
+
+# With a config file (for precise type mapping):
+owl-migrate init --metadata-type csv --target-type postgres -o ./migrate.yaml
+owl-migrate gen-insert -c ./migrate.yaml -d ./data/ -o ./sql/
+```
+
+### Workflow D: CSV Metadata + SQL Output Mode
 
 Use the `migrate` command with `--sql-out` to generate INSERT SQL files instead of writing directly to the target database:
 
