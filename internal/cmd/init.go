@@ -108,11 +108,12 @@ func ask(r *bufio.Reader, prompt, def string) string {
 
 func askChoice(r *bufio.Reader, prompt string, options []string, def string) string {
 	for {
-		p := prompt
+		fmt.Printf("%s\n  Options: %s\n", prompt, strings.Join(options, ", "))
+		p := ""
 		if def != "" {
 			p = p + fmt.Sprintf(" (default: %s)", def)
 		}
-		fmt.Printf("%s: ", p)
+		fmt.Printf("  Enter%s: ", p)
 		text, _ := r.ReadString('\n')
 		text = strings.ToLower(strings.TrimSpace(text))
 		if text == "" && def != "" {
@@ -123,7 +124,7 @@ func askChoice(r *bufio.Reader, prompt string, options []string, def string) str
 				return opt
 			}
 		}
-		fmt.Printf("Please enter one of: %s\n", strings.Join(options, ", "))
+		fmt.Printf("  Invalid. Please enter one of: %s\n", strings.Join(options, ", "))
 	}
 }
 
@@ -131,17 +132,13 @@ func runInteractive(outputPath string) error {
 	r := bufio.NewReader(os.Stdin)
 
 	// Step 1: What do you want to do?
-	fmt.Println("What do you want to do?")
-	fmt.Println("  gen-ddl          - Generate DDL from metadata (offline)")
-	fmt.Println("  gen-insert       - Generate INSERT SQL from CSV data (zero-config)")
-	fmt.Println("  export           - Export data from source database to CSV")
-	fmt.Println("  import           - Import CSV data into target database")
-	fmt.Println("  migrate          - End-to-end: export → create tables → import")
-	fmt.Println("  export-metadata  - Export metadata from live DB to CSV/xlsx/SQL")
-	fmt.Println("  validate         - Validate metadata configuration")
-	fmt.Println("  full             - Full configuration (all options with hints)")
-	action := askChoice(r, "", []string{"gen-ddl", "gen-insert", "export", "import", "migrate",
-		"export-metadata", "validate", "full"}, "")
+	action := askChoice(r, "What do you want to do?", []string{
+		"gen-ddl", "gen-insert", "export", "import", "migrate",
+		"export-metadata", "validate", "full",
+	}, "")
+	fmt.Println("  (gen-ddl=DDL from metadata, gen-insert=INSERT from CSV, export=export data to CSV)")
+	fmt.Println("  (import=import CSV into DB, migrate=end-to-end, export-metadata=metadata to CSV/xlsx/SQL)")
+	fmt.Println("  (validate=check config, full=all options with hints)")
 
 	switch action {
 	case "gen-insert":
