@@ -6,6 +6,135 @@ import (
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
+// ── Metadata Query SQL ──
+// These constants expose the SQL used by each query method.
+// They are referenced by the show-query command and by the method implementations.
+
+const queryOracleTables = `SELECT table_name, tablespace_name, num_rows
+FROM all_tables
+WHERE owner = UPPER(:1)
+ORDER BY table_name`
+
+const queryOracleColumns = `SELECT
+	table_name,
+	column_name,
+	column_id AS ordinal_position,
+	data_type,
+	COALESCE(data_length, 0) AS data_length,
+	COALESCE(data_precision, 0) AS data_precision,
+	COALESCE(data_scale, 0) AS data_scale,
+	nullable,
+	data_default,
+	NVL(comments, '') AS comments,
+	COALESCE(char_used, '') AS char_used,
+	COALESCE(character_set_name, '') AS charset,
+	COALESCE(collation, '') AS collation,
+	identity_column
+FROM all_tab_columns c
+LEFT JOIN all_col_comments USING (owner, table_name, column_name)
+WHERE owner = UPPER(:1)
+ORDER BY table_name, column_id`
+
+const queryOraclePrimaryKeys = `SELECT
+	cc.table_name,
+	cc.constraint_name,
+	cc.column_name,
+	cc.position
+FROM all_cons_columns cc
+JOIN all_constraints c
+	ON cc.owner = c.owner
+	AND cc.constraint_name = c.constraint_name
+	AND cc.table_name = c.table_name
+WHERE c.constraint_type = 'P'
+	AND cc.owner = UPPER(:1)
+ORDER BY cc.table_name, cc.constraint_name, cc.position`
+
+const queryOracleIndexes = `SELECT
+	i.table_name,
+	i.index_name,
+	CASE WHEN i.uniqueness = 'UNIQUE' THEN 'UNIQUE' ELSE 'NONUNIQUE' END AS uniqueness,
+	ic.column_name,
+	ic.column_position,
+	CASE WHEN i.index_type = 'BITMAP' THEN 'BITMAP' ELSE 'BTREE' END AS index_type
+FROM all_indexes i
+JOIN all_ind_columns ic
+	ON i.owner = ic.index_owner
+	AND i.index_name = ic.index_name
+	AND i.table_name = ic.table_name
+WHERE i.owner = UPPER(:1)
+ORDER BY i.table_name, i.index_name, ic.column_position`
+
+const queryOracleForeignKeys = `SELECT
+	cc.table_name,
+	cc.constraint_name,
+	cc.column_name,
+	c.r_owner AS ref_owner,
+	(SELECT table_name FROM all_constraints WHERE owner = c.r_owner AND constraint_name = c.r_constraint_name) AS ref_table,
+	(SELECT column_name FROM all_cons_columns WHERE owner = c.r_owner AND constraint_name = c.r_constraint_name AND position = cc.position) AS ref_column,
+	COALESCE(c.delete_rule, 'NO ACTION') AS delete_rule,
+	COALESCE(c.deferrable, 'NOT DEFERRABLE') AS deferrable
+FROM all_cons_columns cc
+JOIN all_constraints c
+	ON cc.owner = c.owner
+	AND cc.constraint_name = c.constraint_name
+	AND cc.table_name = c.table_name
+WHERE c.constraint_type = 'R'
+	AND cc.owner = UPPER(:1)
+ORDER BY cc.table_name, cc.constraint_name, cc.position`
+
+const queryOracleViews = `SELECT
+	v.view_name,
+	v.text AS view_definition,
+	NVL(t.comments, '') AS view_comment,
+	'NO' AS is_updatable,
+	'' AS check_option,
+	v.owner
+FROM all_views v
+LEFT JOIN all_tab_comments t
+	ON v.owner = t.owner AND v.view_name = t.table_name
+WHERE v.owner = UPPER(:1)
+ORDER BY v.view_name`
+
+const queryOracleSequences = `SELECT
+	sequence_name,
+	COALESCE(increment_by, 1) AS increment_by,
+	COALESCE(min_value, 1) AS min_value,
+	COALESCE(max_value, 9999999999999999999999999999) AS max_value,
+	CASE WHEN cycle_flag = 'Y' THEN 'YES' ELSE 'NO' END AS cycle_flag,
+	COALESCE(cache_size, 20) AS cache_size,
+	COALESCE(last_number, 0) AS last_number,
+	COALESCE(order_flag, 'NO') AS order_flag
+FROM all_sequences
+WHERE sequence_owner = UPPER(:1)
+ORDER BY sequence_name`
+
+const queryOracleTriggers = `SELECT
+	trigger_name,
+	table_owner,
+	table_name,
+	trigger_type,
+	triggering_event,
+	trigger_body,
+	status,
+	CASE WHEN trigger_type LIKE '%EACH ROW%' THEN 'ROW' ELSE 'STATEMENT' END AS for_each,
+	COALESCE(when_clause, '') AS when_clause,
+	COALESCE(description, '') AS description
+FROM all_triggers
+WHERE owner = UPPER(:1)
+ORDER BY trigger_name`
+
+const queryOracleSynonyms = `SELECT
+	synonym_name,
+	owner,
+	table_owner,
+	table_name,
+	CASE WHEN owner = 'PUBLIC' THEN 'YES' ELSE 'NO' END AS is_public
+FROM all_synonyms
+WHERE owner = UPPER(:1)
+	OR table_owner = UPPER(:1)
+ORDER BY synonym_name`
+
+
 // OracleMetadataQuerier implements MetadataQuerier for Oracle using ALL_* dictionary views.
 type OracleMetadataQuerier struct{}
 

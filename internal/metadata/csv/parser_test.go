@@ -52,9 +52,9 @@ SCOTT,EMP,,1,NUMBER`
 }
 
 func TestParseTables_Basic(t *testing.T) {
-	input := `TABLE_SCHEMA,TABLE_NAME,TABLE_TYPE,TABLE_COMMENT,ROW_COUNT
-SCOTT,EMP,TABLE,Employee table,14
-HR,DEPT,TABLE,Department table,4`
+	input := `TABLE_SCHEMA,TABLE_NAME,TABLE_TYPE,TABLE_COMMENT
+SCOTT,EMP,TABLE,Employee table
+HR,DEPT,TABLE,Department table`
 
 	tables, err := ParseTables(strings.NewReader(input))
 	if err != nil {
@@ -65,9 +65,6 @@ HR,DEPT,TABLE,Department table,4`
 	}
 	if tables[0].TableName != "EMP" {
 		t.Errorf("table[0] = %q", tables[0].TableName)
-	}
-	if tables[0].RowCount != 14 {
-		t.Errorf("table[0] rowcount = %d", tables[0].RowCount)
 	}
 	if tables[1].TableSchema != "HR" {
 		t.Errorf("table[1] schema = %q", tables[1].TableSchema)

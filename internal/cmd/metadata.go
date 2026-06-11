@@ -11,18 +11,40 @@ import (
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
+	xlsxpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/xlsx"
 )
 
-// loadSchemaModel loads metadata from CSV files or live database based on config.
+// loadSchemaModel loads metadata from CSV files, xlsx, or live database based on config.
 func loadSchemaModel(cfg *config.Config) (*md.SchemaModel, error) {
 	switch cfg.Metadata.Type {
 	case "csv":
 		return loadCSVModel(cfg.Metadata.CSV.Path)
+	case "xlsx":
+		return loadXLSXModel(cfg.Metadata.XLSX.Path, cfg.Metadata.XLSX.DataOutputDir)
 	case "database":
 		return loadDBModel(cfg.Source.Type, cfg.Source.DSN, cfg.Source.Schema)
 	default:
 		return nil, fmt.Errorf("unsupported metadata type %q", cfg.Metadata.Type)
 	}
+}
+
+// loadXLSXModel loads metadata from an xlsx file with @sheet data.
+func loadXLSXModel(xlsxPath, dataOutputDir string) (*md.SchemaModel, error) {
+	if xlsxPath == "" {
+		return nil, fmt.Errorf("metadata.xlsx.path is required")
+	}
+	if dataOutputDir == "" {
+		dataOutputDir = "./output/data/"
+	}
+	sm, err := xlsxpkg.Load(xlsxpkg.Config{
+		FilePath:      xlsxPath,
+		DataOutputDir: dataOutputDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load xlsx %q: %w", xlsxPath, err)
+	}
+	fmt.Printf("Loaded %d tables from xlsx\n", len(sm.GetTables()))
+	return sm, nil
 }
 
 // loadCSVModel loads metadata from CSV files in the given directory.

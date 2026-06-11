@@ -30,7 +30,6 @@ When using `metadata.type: csv`, the tool reads table/column definitions from CS
 | `TABLE_NAME` | string | Table name (required) |
 | `TABLE_TYPE` | string | TABLE / VIEW / MVIEW (default: TABLE) |
 | `TABLE_COMMENT` | string | Table comment |
-| `ROW_COUNT` | number | Approximate row count |
 | `ENGINE` | string | Storage engine (MySQL) |
 | `TABLESPACE` | string | Tablespace name |
 | `PARTITIONED` | string | YES / NO |

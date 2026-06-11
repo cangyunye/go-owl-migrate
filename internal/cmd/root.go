@@ -47,6 +47,8 @@ func init() {
 	rootCmd.AddCommand(importCmd())
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(genInsertCmd())
+	rootCmd.AddCommand(showQueryCmd())
+	rootCmd.AddCommand(exportMetadataCmd())
 }
 
 // GetConfigFile returns the global config file path.

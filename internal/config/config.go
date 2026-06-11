@@ -28,6 +28,7 @@ var ValidDialects = map[string]bool{
 // ValidMetadataTypes lists supported metadata source types.
 var ValidMetadataTypes = map[string]bool{
 	"csv":      true,
+	"xlsx":     true,
 	"database": true,
 }
 
@@ -62,7 +63,14 @@ type GeneralConfig struct {
 type MetadataConfig struct {
 	Type  string    `yaml:"type"` // csv/xlsx/database
 	CSV   CSVConfig `yaml:"csv"`
+	XLSX  XLSXConfig `yaml:"xlsx"`
 	Files []string  `yaml:"files"`
+}
+
+// XLSXConfig holds xlsx loading settings.
+type XLSXConfig struct {
+	Path          string `yaml:"path"`            // path to .xlsx file
+	DataOutputDir string `yaml:"data_output_dir"` // output directory for @sheet CSV data
 }
 
 // CSVConfig holds CSV parsing settings.
@@ -310,6 +318,9 @@ func (c *Config) validate() error {
 		if c.Source.DSN == "" {
 			return fmt.Errorf("source.dsn is required when metadata.type is 'database'")
 		}
+	}
+	if c.Metadata.Type == "xlsx" && c.Metadata.XLSX.Path == "" {
+		return fmt.Errorf("metadata.xlsx.path is required when metadata.type is 'xlsx'")
 	}
 	if c.DDL.TargetDialect == "" {
 		return fmt.Errorf("ddl.target_dialect is required")

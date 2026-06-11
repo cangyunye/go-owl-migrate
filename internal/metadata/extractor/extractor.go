@@ -178,3 +178,49 @@ func Extract(db *sql.DB, dbType, schema string) (*md.SchemaModel, error) {
 
 	return sm, nil
 }
+
+// GetQuerySQL returns the SQL query used for a given dialect and object type.
+// Object type values: tables, columns, pk, indexes, fk, views, sequences, triggers, synonyms.
+// Returns empty string if unknown.
+func GetQuerySQL(dbType, objectType string) string {
+	base := normalizeDBType(dbType)
+	ot := strings.ToLower(objectType)
+
+	if base == "oracle" {
+		switch ot {
+		case "tables":    return queryOracleTables
+		case "columns":   return queryOracleColumns
+		case "pk", "primary_keys": return queryOraclePrimaryKeys
+		case "indexes":   return queryOracleIndexes
+		case "fk", "foreign_keys": return queryOracleForeignKeys
+		case "views":     return queryOracleViews
+		case "sequences": return queryOracleSequences
+		case "triggers":  return queryOracleTriggers
+		case "synonyms":  return queryOracleSynonyms
+		}
+	}
+	if base == "postgres" {
+		switch ot {
+		case "tables":    return queryPGTables
+		case "columns":   return queryPGColumns
+		case "pk", "primary_keys": return queryPGPrimaryKeys
+		case "indexes":   return queryPGIndexes
+		case "fk", "foreign_keys": return queryPGForeignKeys
+		case "views":     return queryPGViews
+		case "sequences": return queryPGSequences
+		case "triggers":  return queryPGTriggers
+		}
+	}
+	if base == "mysql" {
+		switch ot {
+		case "tables":    return queryMySQLTables
+		case "columns":   return queryMySQLColumns
+		case "pk", "primary_keys": return queryMySQLPrimaryKeys
+		case "indexes":   return queryMySQLIndexes
+		case "fk", "foreign_keys": return queryMySQLForeignKeys
+		case "views":     return queryMySQLViews
+		case "triggers":  return queryMySQLTriggers
+		}
+	}
+	return ""
+}

@@ -19,7 +19,7 @@ general:
   log_format: text                          # text | json
 
 metadata:
-  type: database                            # "csv" | "database"
+  type: database                            # "csv" | "xlsx" | "database"
   csv:
     path: ./metadata/                       # required when type=csv
     delimiter: ","                          # CSV field delimiter (default: ",")
@@ -27,6 +27,9 @@ metadata:
     has_header: true                        # CSV has header row (default: true)
     null_marker: "\\N"                      # NULL representation in CSV (default: "\N")
     column_name_matching: "case_insensitive" # Column name matching mode
+  xlsx:
+    path: ./metadata/schema.xlsx             # required when type=xlsx
+    data_output_dir: ./output/data/          # @sheet data CSV output
 
 source:
   type: postgres                            # postgres | mysql | oracle | goldendb | oceanbase | panweidb | opengaussdb
@@ -158,6 +161,16 @@ Load table/column definitions from CSV files. Required files in the metadata dir
 - `synonyms.csv` — synonym definitions (optional, Oracle)
 
 See [CSV Metadata Format](csv-format.md) for detailed column specifications.
+
+### `type: xlsx`
+
+Load metadata from a single Excel (.xlsx) file. Sheets are parsed as follows:
+
+- **Metadata sheets** (`tables`, `columns`, `primary_keys`, `indexes`, `foreign_keys`, `views`, `sequences`, `triggers`, `functions`, `synonyms`) — define the database schema, same format as CSV files
+- **Data sheets** (`@TableName`) — provide data for a specific table; first row = column headers, remaining rows = data; the `@` prefix distinguishes data sheets from metadata sheets
+- Cell types are converted to CSV values automatically
+
+A `tables` sheet is **required**.
 
 ### `type: database`
 

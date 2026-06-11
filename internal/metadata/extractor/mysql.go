@@ -7,6 +7,104 @@ import (
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
+// ── Metadata Query SQL ──
+
+const queryMySQLTables = `SELECT table_name, engine, table_comment, row_format, table_collation,
+	COALESCE(create_options, ''),
+	COALESCE(IF(row_format = 'TEMPORARY', 'YES', 'NO'), 'NO') AS temporary
+FROM information_schema.tables
+WHERE table_schema = ?
+	AND table_type = 'BASE TABLE'
+ORDER BY table_name`
+
+const queryMySQLColumns = `SELECT
+	table_name,
+	column_name,
+	ordinal_position,
+	data_type,
+	COALESCE(character_maximum_length, 0) AS char_length,
+	COALESCE(numeric_precision, 0) AS num_precision,
+	COALESCE(numeric_scale, 0) AS num_scale,
+	is_nullable,
+	COALESCE(column_default, '') AS column_default,
+	COALESCE(column_comment, '') AS column_comment,
+	COALESCE(extra, '') AS extra,
+	COALESCE(character_set_name, '') AS charset,
+	COALESCE(collation_name, '') AS collation,
+	COALESCE(column_type, '') AS column_type_raw
+FROM information_schema.columns
+WHERE table_schema = ?
+ORDER BY table_name, ordinal_position`
+
+const queryMySQLPrimaryKeys = `SELECT
+	tc.table_name,
+	tc.constraint_name,
+	kcu.column_name,
+	kcu.ordinal_position
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+	ON tc.constraint_schema = kcu.constraint_schema
+	AND tc.constraint_name = kcu.constraint_name
+	AND tc.table_name = kcu.table_name
+WHERE tc.constraint_type = 'PRIMARY KEY'
+	AND tc.table_schema = ?
+ORDER BY tc.table_name, kcu.ordinal_position`
+
+const queryMySQLIndexes = `SELECT
+	table_name,
+	index_name,
+	CASE WHEN non_unique = 0 THEN 'UNIQUE' ELSE 'NONUNIQUE' END AS uniqueness,
+	column_name,
+	seq_in_index,
+	COALESCE(index_type, 'BTREE') AS index_type,
+	COALESCE(expression, '') AS expression
+FROM information_schema.statistics
+WHERE table_schema = ?
+ORDER BY table_name, index_name, seq_in_index`
+
+const queryMySQLForeignKeys = `SELECT
+	kcu.table_name,
+	kcu.constraint_name,
+	kcu.column_name,
+	kcu.referenced_table_schema,
+	kcu.referenced_table_name,
+	kcu.referenced_column_name,
+	COALESCE(rc.delete_rule, '') AS delete_rule,
+	COALESCE(rc.update_rule, '') AS update_rule
+FROM information_schema.key_column_usage kcu
+LEFT JOIN information_schema.referential_constraints rc
+	ON kcu.constraint_schema = rc.constraint_schema
+	AND kcu.constraint_name = rc.constraint_name
+WHERE kcu.table_schema = ?
+	AND kcu.referenced_table_name IS NOT NULL
+ORDER BY kcu.table_name, kcu.constraint_name, kcu.ordinal_position`
+
+const queryMySQLViews = `SELECT
+	v.table_name,
+	v.view_definition,
+	COALESCE(t.table_comment, '') AS view_comment,
+	CASE WHEN v.is_updatable = 'YES' THEN 'YES' ELSE 'NO' END AS is_updatable,
+	CASE WHEN v.check_option = 'NONE' THEN '' ELSE COALESCE(v.check_option, '') END AS check_option
+FROM information_schema.views v
+LEFT JOIN information_schema.tables t
+	ON v.table_schema = t.table_schema AND v.table_name = t.table_name
+WHERE v.table_schema = ?
+ORDER BY v.table_name`
+
+const queryMySQLTriggers = `SELECT
+	trigger_name,
+	event_object_table AS table_name,
+	action_timing AS trigger_type,
+	event_manipulation AS trigger_event,
+	action_statement AS trigger_body,
+	action_condition AS when_clause,
+	'',
+	'PLSQL' AS language
+FROM information_schema.triggers
+WHERE trigger_schema = ?
+ORDER BY trigger_name`
+
+
 // MySQLMetadataQuerier implements MetadataQuerier for MySQL using information_schema.
 type MySQLMetadataQuerier struct{}
 
