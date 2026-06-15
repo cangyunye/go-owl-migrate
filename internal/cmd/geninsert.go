@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"encoding/csv"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
+	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
 func genInsertCmd() *cobra.Command {
@@ -15,8 +20,8 @@ func genInsertCmd() *cobra.Command {
 		Short: "Generate INSERT SQL from CSV data files (offline)",
 		Long: `Reads CSV data files and generates INSERT SQL statements for the target dialect.
 
-This is offline mode — no database connection required.
-The CSV files are read from the data directory and INSERT SQL is written to the output directory.`,
+	This is offline mode — no database connection required.
+	The CSV files are read from the data directory and INSERT SQL is written to the output directory.`,
 	}
 
 	var (
@@ -36,28 +41,35 @@ The CSV files are read from the data directory and INSERT SQL is written to the 
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		// Try loading config; if not available, auto-detect from CSV data files
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
-			// Config optional for gen-insert; use flags
 			cfg = &config.Config{}
-			cfg.DDL.TargetDialect = dialect
+			if dialect != "" {
+				cfg.DDL.TargetDialect = dialect
+			}
 		}
 
-		// Load metadata from CSV or database
+		// Load metadata — for standalone mode, infer tables from CSV file names
+		var tables []*md.TableDef
 		sm, err := loadSchemaModel(cfg)
-		if err != nil {
-			return fmt.Errorf("load metadata: %w", err)
+		if err != nil || len(sm.GetTables()) == 0 {
+			tables, err = detectTablesFromCSV(dataDir)
+			if err != nil {
+				return fmt.Errorf("no config file and no CSV files found in %s: %w", dataDir, err)
+			}
+		} else {
+			tables = sm.GetTables()
 		}
 
 		gen := generator.NewInsertGenerator(generator.InsertConfig{
-			OutputDir:      outputDir,
-			BatchSize:      batchSize,
-			TruncateBefore: truncateBefore,
-			Dialect:        dialect,
-			NoQuoteIdentifiers: noQuote,
+			OutputDir:           outputDir,
+			BatchSize:           batchSize,
+			TruncateBefore:      truncateBefore,
+			Dialect:             dialect,
+			NoQuoteIdentifiers:  noQuote,
 		})
 
-		tables := sm.GetTables()
 		files, err := gen.Generate(tables, dataDir)
 		if err != nil {
 			return err
@@ -70,4 +82,58 @@ The CSV files are read from the data directory and INSERT SQL is written to the 
 	}
 
 	return cmd
+}
+
+// detectTablesFromCSV scans a directory for CSV files and creates TableDef
+// entries with ColumnDef inferred from CSV headers.
+func detectTablesFromCSV(dir string) ([]*md.TableDef, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read data directory %q: %w", dir, err)
+	}
+
+	var tables []*md.TableDef
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
+			continue
+		}
+		// Parse filename: schema.table.csv
+		name := strings.TrimSuffix(entry.Name(), ".csv")
+		parts := strings.SplitN(name, ".", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		schema := parts[0]
+		tableName := parts[1]
+
+		// Read header to infer columns
+		f, err := os.Open(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("open %s: %w", entry.Name(), err)
+		}
+		r := csv.NewReader(f)
+		header, err := r.Read()
+		f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read header from %s: %w", entry.Name(), err)
+		}
+
+		tbl, err := md.NewTableDef(schema, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("create table def for %s: %w", entry.Name(), err)
+		}
+		for i, colName := range header {
+			col, err := md.NewColumnDef(schema, tableName, colName, i+1, "VARCHAR")
+			if err != nil {
+				return nil, fmt.Errorf("create column %s: %w", colName, err)
+			}
+			tbl.AddColumn(col)
+		}
+		tables = append(tables, tbl)
+	}
+
+	if len(tables) == 0 {
+		return nil, fmt.Errorf("no CSV files found in %q", dir)
+	}
+	return tables, nil
 }
