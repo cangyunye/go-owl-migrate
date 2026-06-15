@@ -57,8 +57,8 @@ export:
   tables:
     include: ["*"]
 
-import:
-  source_dir: ./output/data/
+import:  # 数据导入配置（仅 import 命令使用）
+  source_dir: ./output/data/  # CSV 目录（仅 import 使用；migrate 走 --temp-dir，gen-insert 走 -d/--data）
   format: csv
   csv:
     delimiter: ","
