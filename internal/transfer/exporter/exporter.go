@@ -255,12 +255,17 @@ func (e *Exporter) isMySQL() bool {
 
 func (e *Exporter) isOracle() bool {
 	t := strings.ToLower(e.cfg.DBType)
+	// PanWeiDB uses PG wire protocol ($N placeholders), not Oracle's :N
+	if t == "panweidb-oracle" {
+		return false
+	}
 	return t == "oracle" || strings.HasSuffix(t, "-oracle")
 }
 
 func (e *Exporter) isPostgres() bool {
 	t := strings.ToLower(e.cfg.DBType)
-	return t == "postgres" || t == "postgresql" || t == "opengaussdb" || t == "panweidb"
+	return t == "postgres" || t == "postgresql" || t == "opengaussdb" ||
+		t == "panweidb" || t == "panweidb-mysql" || t == "panweidb-oracle"
 }
 
 func (e *Exporter) limitClause() string {

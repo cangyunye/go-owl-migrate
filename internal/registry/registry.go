@@ -28,6 +28,8 @@ func init() {
 	Register("oceanbase-mysql", oceanbase.NewMySQL())
 	Register("oceanbase-oracle", oceanbase.NewOracle())
 	Register("panweidb", panweidb.New())
+	Register("panweidb-mysql", panweidb.NewMySQL())
+	Register("panweidb-oracle", panweidb.NewOracle())
 	Register("opengaussdb", opengaussdb.New())
 }
 

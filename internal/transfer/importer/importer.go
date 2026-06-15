@@ -91,12 +91,20 @@ func getEncoding(name string) encoding.Encoding {
 // isMySQL returns true if the target database is MySQL or a MySQL-compatible dialect.
 func (imp *Importer) isMySQL() bool {
 	t := strings.ToLower(imp.cfg.TargetDBType)
+	// PanWeiDB uses PG wire protocol, not MySQL
+	if t == "panweidb-mysql" {
+		return false
+	}
 	return t == "mysql" || t == "goldendb" || strings.HasSuffix(t, "-mysql")
 }
 
 // isOracle returns true if the target database is Oracle or an Oracle-compatible dialect.
 func (imp *Importer) isOracle() bool {
 	t := strings.ToLower(imp.cfg.TargetDBType)
+	// PanWeiDB uses PG wire protocol ($N placeholders), not Oracle's :N
+	if t == "panweidb-oracle" {
+		return false
+	}
 	return t == "oracle" || strings.HasSuffix(t, "-oracle")
 }
 

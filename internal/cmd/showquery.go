@@ -17,7 +17,12 @@ func showQueryCmd() *cobra.Command {
 		Short: "Show metadata extraction SQL queries for a dialect",
 		Long: `Prints the SQL queries used to extract metadata from a database.
 
-Dialect is required: oracle, postgres, mysql (also accepts goldendb, oceanbase, etc.)
+Dialect is required. Supported dialects:
+
+  Oracle-based:     oracle, goldendb-oracle, oceanbase-oracle, panweidb-oracle
+  PostgreSQL-based: postgres, panweidb, opengaussdb
+  MySQL-based:      mysql, goldendb-mysql, oceanbase-mysql, panweidb-mysql
+  Short aliases:    goldendb, oceanbase
 
 Object type is optional. If omitted, all queries for the dialect are shown.
 Valid object types: tables, columns, pk, indexes, fk, views, sequences, triggers, synonyms
@@ -41,7 +46,14 @@ Examples:
 					}
 				}
 				if !valid {
-					fmt.Fprintf(os.Stderr, "Error: unsupported dialect %q\n", dialect)
+					supportedDialects := []string{
+						"oracle", "postgres", "mysql",
+						"goldendb", "goldendb-mysql", "goldendb-oracle",
+						"oceanbase", "oceanbase-mysql", "oceanbase-oracle",
+						"panweidb", "panweidb-mysql", "panweidb-oracle", "opengaussdb",
+					}
+					fmt.Fprintf(os.Stderr, "Error: unsupported dialect %q\nSupported dialects: %s\n",
+						dialect, strings.Join(supportedDialects, ", "))
 					return fmt.Errorf("unsupported dialect %q", dialect)
 				}
 			}

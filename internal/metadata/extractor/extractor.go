@@ -62,9 +62,9 @@ func Get(dbType string) (MetadataQuerier, error) {
 // to their base querier type.
 func normalizeDBType(t string) string {
 	switch strings.ToLower(t) {
-	case "goldendb", "goldendb-mysql", "oceanbase-mysql":
+	case "goldendb", "goldendb-mysql", "oceanbase-mysql", "panweidb-mysql":
 		return "mysql"
-	case "goldendb-oracle", "oceanbase-oracle":
+	case "goldendb-oracle", "oceanbase-oracle", "panweidb-oracle":
 		return "oracle"
 	case "panweidb", "opengaussdb":
 		return "postgres"

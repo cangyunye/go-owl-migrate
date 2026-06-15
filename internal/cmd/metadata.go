@@ -112,7 +112,7 @@ func openDB(dbType, dsn string) (*sql.DB, error) {
 	switch strings.ToLower(dbType) {
 	case "mysql", "goldendb", "goldendb-mysql", "oceanbase-mysql":
 		return sql.Open("mysql", dsn)
-	case "postgres", "postgresql", "opengaussdb", "panweidb":
+	case "postgres", "postgresql", "opengaussdb", "panweidb", "panweidb-mysql", "panweidb-oracle":
 		return sql.Open("postgres", dsn)
 	case "oracle", "goldendb-oracle", "oceanbase-oracle":
 		return sql.Open("oracle", dsn)

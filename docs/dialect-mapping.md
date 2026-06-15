@@ -20,7 +20,9 @@ go-owl-migrate supports a dialect system built from composable interfaces. Each 
 | **GoldenDB (Oracle)** | `goldendb-oracle` | Oracle | Same as Oracle |
 | **OceanBase (MySQL)** | `oceanbase`, `oceanbase-mysql` | MySQL | TRUNCATE is transactional, no FULLTEXT indexes, no MyISAM engine, supports SEQUENCE |
 | **OceanBase (Oracle)** | `oceanbase-oracle` | Oracle | TRUNCATE is transactional, no BFILE support, partition syntax differences, no Bitmap indexes |
-| **PanWeiDB** | `panweidb` | PostgreSQL | Uses PG driver, same DML syntax |
+| **PanWeiDB (PG)** | `panweidb` | PostgreSQL | Uses PG driver, same DML syntax |
+| **PanWeiDB (MySQL B)** | `panweidb-mysql` | MySQL | Dolphin plugin, backtick quoting, ENGINE= ignored, uses PG driver/port |
+| **PanWeiDB (Oracle A)** | `panweidb-oracle` | Oracle | Oracle DDL/DML syntax, TRUNCATE transactional, uses PG driver/port |
 | **OpenGaussDB** | `opengaussdb` | PostgreSQL | Uses PG driver, same DML syntax |
 
 ### Metadata Extraction Steps
@@ -65,8 +67,9 @@ Dialect {
 
 | Dialect | Style | Example |
 |---|---|---|
-| MySQL, GoldenDB, OceanBase-MySQL | Backtick | `` `table_name` `` |
-| Oracle, PostgreSQL, GoldenDB-Oracle, OceanBase-Oracle | Double-quote | `"table_name"` |
+| MySQL, GoldenDB, OceanBase-MySQL, **PanWeiDB-MySQL** | Backtick | `` `table_name` `` |
+| Oracle, PostgreSQL, GoldenDB-Oracle, OceanBase-Oracle, **PanWeiDB-Oracle** | Double-quote (UPPER) | `"TABLE_NAME"` |
+| PanWeiDB (PG) | Double-quote (lower) | `"table_name"` |
 
 ### Feature Flags
 
@@ -79,6 +82,9 @@ Dialect {
 | GoldenDB (Oracle) | ✗ | ✗ | — | ✗ |
 | OceanBase (MySQL) | ✗ | ✓ | — | ✓ |
 | OceanBase (Oracle) | ✗ | ✗ | — | ✓ |
+| **PanWeiDB (PG)** | **✓** | **✓** | **63** | **✓** |
+| **PanWeiDB (MySQL B)** | **✓** | **✓** | **63** | **✓** |
+| **PanWeiDB (Oracle A)** | **✓** | **✓** | **63** | **✓** |
 
 ## Type Mapping
 
