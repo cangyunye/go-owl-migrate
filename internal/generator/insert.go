@@ -168,66 +168,9 @@ func (g *InsertGenerator) generateForTable(tbl *md.TableDef, sourceDir string) (
 }
 
 func (g *InsertGenerator) formatSQLValue(v string) string {
-	if v == g.cfg.NullMarker {
-		return "NULL"
-	}
-
-	// Detect numeric — don't quote
-	if isNumeric(v) {
-		return v
-	}
-
-	// Escape single quotes
-	escaped := strings.ReplaceAll(v, "'", "''")
-
-	switch g.cfg.Dialect {
-	case "oracle":
-		// Oracle uses '' for empty string (which is NULL in Oracle)
-		if escaped == "" {
-			return "NULL"
-		}
-		return "'" + escaped + "'"
-	case "postgres":
-		return "'" + escaped + "'"
-	case "mysql":
-		return "'" + escaped + "'"
-	default:
-		return "'" + escaped + "'"
-	}
+	return FormatSQLValue(v, g.cfg.NullMarker, g.cfg.Dialect)
 }
 
 func (g *InsertGenerator) getQuoter() func(string) string {
-	if g.cfg.NoQuoteIdentifiers {
-		return func(s string) string { return s }
-	}
-	switch g.cfg.Dialect {
-	case "mysql":
-		return func(s string) string { return "`" + s + "`" }
-	default:
-		return func(s string) string { return `"` + s + `"` }
-	}
-}
-
-func isNumeric(s string) bool {
-	if s == "" {
-		return false
-	}
-	dots := 0
-	start := 0
-	if s[0] == '-' {
-		start = 1
-	}
-	for i := start; i < len(s); i++ {
-		if s[i] == '.' {
-			dots++
-			if dots > 1 {
-				return false
-			}
-			continue
-		}
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return len(s) > start
+	return GetQuoter(g.cfg.Dialect, g.cfg.NoQuoteIdentifiers)
 }
