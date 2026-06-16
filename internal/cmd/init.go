@@ -45,12 +45,22 @@ Use --scenario to control which sections appear in the generated config:
   import          — data import only
   export-metadata — metadata export only`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			hasFlags := cmd.Flags().Changed("target-type")
-			if !hasFlags {
+			hasTarget := cmd.Flags().Changed("target-type")
+			hasScenario := cmd.Flags().Changed("scenario")
+
+			if !hasTarget && !hasScenario {
 				return runInteractive(outputFile)
 			}
 
-			// ── Non-interactive mode ──
+			// ── Non-interactive / semi-interactive mode ──
+			// If --scenario is set but not --target-type, enter interactive mode
+			// for the chosen scenario directly (skip the action prompt).
+			if hasScenario && !hasTarget {
+				r := bufio.NewReader(os.Stdin)
+				return runScenarioInteractive(r, scenario, outputFile)
+			}
+
+			// ── Fully non-interactive (--target-type set) ──
 			mt := strings.ToLower(metadataType)
 
 			if mt == "database" {
@@ -97,12 +107,33 @@ Use --scenario to control which sections appear in the generated config:
 	cmd.Flags().StringVar(&targetSchema, "target-schema", "", "target database schema (defaults to source-schema if empty)")
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "./migrate.yaml", "output configuration file path")
 	cmd.Flags().StringVarP(&metadataType, "metadata-type", "m", "database", "metadata source: csv, xlsx, or database")
-	cmd.Flags().StringVarP(&scenario, "scenario", "S", "migrate", "config scenario: migrate, gen-ddl, gen-insert, export, import, export-metadata")
+	cmd.Flags().StringVarP(&scenario, "scenario", "S", "migrate", "config scenario: export-ddl, export-insert, export, import, migrate, export-metadata, validate, full")
 
 	return cmd
 }
 
 // ── Interactive mode ──
+
+// runScenarioInteractive enters the interactive flow for a pre-selected scenario,
+// skipping the "What do you want to do?" prompt.
+func runScenarioInteractive(r *bufio.Reader, scenario, outputPath string) error {
+	switch strings.ToLower(scenario) {
+	case "export-insert":
+		return interactiveGenInsert(r, outputPath)
+	case "export-ddl", "validate":
+		return interactiveGenDDL(r, outputPath)
+	case "export":
+		return interactiveExport(r, outputPath)
+	case "import":
+		return interactiveImport(r, outputPath)
+	case "migrate":
+		return interactiveMigrate(r, outputPath)
+	case "export-metadata":
+		return interactiveExportMetadata(r, outputPath)
+	default:
+		return interactiveFull(r, outputPath)
+	}
+}
 
 func ask(r *bufio.Reader, prompt, def string) string {
 	if def != "" {
@@ -168,17 +199,17 @@ func runInteractive(outputPath string) error {
 	r := bufio.NewReader(os.Stdin)
 
 	action := askChoice(r, "What do you want to do?", []string{
-		"gen-ddl", "gen-insert", "export", "import", "migrate",
+		"export-ddl", "export-insert", "export", "import", "migrate",
 		"export-metadata", "validate", "full",
 	}, "")
-	fmt.Println("  (gen-ddl=DDL from metadata, gen-insert=INSERT from CSV, export=export data to CSV)")
+	fmt.Println("  (export-ddl=DDL from metadata, export-insert=INSERT from CSV, export=export data to CSV/SQL/XLSX)")
 	fmt.Println("  (import=import CSV into DB, migrate=end-to-end, export-metadata=metadata to CSV/xlsx/SQL)")
 	fmt.Println("  (validate=check config, full=all options with hints)")
 
 	switch action {
-	case "gen-insert":
+	case "export-insert":
 		return interactiveGenInsert(r, outputPath)
-	case "gen-ddl", "validate":
+	case "export-ddl", "validate":
 		return interactiveGenDDL(r, outputPath)
 	case "export":
 		return interactiveExport(r, outputPath)
@@ -407,7 +438,7 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 
 func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, metaType string) *config.Config {
 	switch scenario {
-	case "gen-ddl", "validate":
+	case "export-ddl", "validate":
 		csvPath := ""
 		xlsxPath := ""
 		if metaType == "csv" {
@@ -417,7 +448,7 @@ func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, 
 			xlsxPath = "./metadata/schema.xlsx"
 		}
 		return buildDDLConfig(metaType, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
-	case "gen-insert":
+	case "export-insert":
 		cfg := &config.Config{
 			General: config.GeneralConfig{LogLevel: "info"},
 			DDL:     config.DDLConfig{TargetDialect: tgtType},
@@ -432,7 +463,7 @@ func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, 
 				},
 			}
 		default:
-			// csv: gen-insert reads data dir from CLI -d/--data flag.
+			// csv: export insert reads data dir from CLI -d/--data flag.
 			cfg.Metadata = config.MetadataConfig{Type: "csv"}
 		}
 		return cfg
@@ -698,8 +729,8 @@ var fieldComments = map[string]string{
 	// ddl
 	"ddl":                       "# DDL 生成器配置",
 	"ddl.target_dialect":        "# 【必填】目标方言, 决定 CREATE TABLE / INSERT 语法",
-	"ddl.include_comments":      "# 仅 gen-ddl: 是否生成 COMMENT ON 语句 (PG)",
-	"ddl.include_if_not_exists": "# 仅 gen-ddl/import: CREATE TABLE 是否加 IF NOT EXISTS",
+	"ddl.include_comments":      "# 仅 export ddl: 是否生成 COMMENT ON 语句 (PG)",
+	"ddl.include_if_not_exists": "# 仅 export ddl/import: CREATE TABLE 是否加 IF NOT EXISTS",
 	"ddl.schema_mapping":        "# schema 映射: {源 schema: 目标 schema}",
 	"ddl.no_quote_identifiers":  "# true 时标识符不加引号 (SCOTT.EMP 而非 \"SCOTT\".\"EMP\")",
 
@@ -711,9 +742,9 @@ var fieldComments = map[string]string{
 	"select_gen.batch.page_size": "# 每页行数",
 
 	// export
-	"export":                          "# 数据导出配置（仅 export/migrate 命令使用）",
-	"export.output_dir":               "# 仅 export 独立运行时使用; migrate 用 --temp-dir",
-	"export.format":                   "# 输出格式: 当前仅支持 csv",
+	"export":                          "# 数据导出配置（仅 export data/migrate 命令使用）",
+	"export.output_dir":               "# 仅 export data 独立运行时使用; migrate 用 --temp-dir",
+	"export.format":                   "# 输出格式: csv(默认), sql, xlsx",
 	"export.csv":                      "# 导出 CSV 格式选项",
 	"export.csv.delimiter":            "# CSV 分隔符",
 	"export.csv.quote_char":           "# CSV 引号字符",
@@ -817,7 +848,7 @@ func writeConfig(cfg *config.Config, outputPath string) error {
 	header := "# Auto-generated by owl-migrate init\n" +
 		"# Edit this file to fine-tune migration settings, then run:\n" +
 		"#   owl-migrate validate -c " + outputPath + "\n" +
-		"#   owl-migrate gen-ddl  -c " + outputPath + "\n" +
+		"#   owl-migrate export ddl  -c " + outputPath + "\n" +
 		"#   owl-migrate migrate  -c " + outputPath + "\n\n"
 
 	content := append([]byte(header), annotated...)
