@@ -13,6 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
@@ -210,6 +211,99 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 	)
 
 	return result
+}
+
+// ExportTablesFromData exports data from offline sources (CSV or XLSX) using ExportWriter.
+// Unlike ExportTables, this does not require a database connection.
+func (e *Exporter) ExportTablesFromData(tables []*DataTable) ([]TableResult, error) {
+	if err := os.MkdirAll(e.cfg.OutputDir, 0755); err != nil {
+		return nil, fmt.Errorf("create output dir: %w", err)
+	}
+
+	var results []TableResult
+	for _, dt := range tables {
+		result := e.exportOneDataTable(dt)
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func (e *Exporter) exportOneDataTable(dt *DataTable) TableResult {
+	start := time.Now()
+	result := TableResult{Schema: dt.Table.TableSchema, Table: dt.Table.TableName}
+	writer, err := e.createWriter(dt.Table, dt.Columns)
+	if err != nil {
+		result.Error = fmt.Errorf("create writer: %w", err)
+		return result
+	}
+
+	if err := writer.WriteHeader(dt.Columns); err != nil {
+		result.Error = fmt.Errorf("write header: %w", err)
+		return result
+	}
+
+	for _, row := range dt.Rows {
+		if err := writer.WriteRow(row, dt.Columns); err != nil {
+			result.Error = fmt.Errorf("write row: %w", err)
+			return result
+		}
+	}
+
+	if err := writer.Close(); err != nil {
+		result.Error = fmt.Errorf("close writer: %w", err)
+		return result
+	}
+
+	result.Rows = int64(len(dt.Rows))
+	result.Batches = 1
+	result.Duration = time.Since(start)
+	result.OutputFile = writer.OutputFile()
+	return result
+}
+
+// createWriter creates an ExportWriter for the given table based on the exporter config.
+func (e *Exporter) createWriter(tbl *md.TableDef, columns []ColumnInfo) (ExportWriter, error) {
+	ext := "csv"
+	delim := e.cfg.CSVDelimiter
+	quote := e.cfg.CSVQuoteChar
+	nullRep := e.cfg.CSVNullRep
+	term := e.cfg.CSVLineTerminator
+	header := e.cfg.CSVHeader
+
+	switch strings.ToLower(e.cfg.Format) {
+	case "sql":
+		ext = "insert.sql"
+		// SQL writer needs dialect info — default to postgres
+		dialect := e.cfg.DBType
+		if dialect == "" {
+			dialect = "postgres"
+		}
+		return &sqlWriter{
+			path:       filepath.Join(e.cfg.OutputDir, fmt.Sprintf("%s.%s.%s", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName), ext)),
+			schema:     tbl.TableSchema,
+			table:      tbl.TableName,
+			quoter:     generator.GetQuoter(dialect, false),
+			dialect:    dialect,
+			nullMarker: nullRep,
+			batchSize:  100,
+		}, nil
+	case "xlsx":
+		ext = "xlsx"
+		return &xlsxWriter{
+			path:   filepath.Join(e.cfg.OutputDir, fmt.Sprintf("%s.%s.%s", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName), ext)),
+			schema: tbl.TableSchema,
+			table:  tbl.TableName,
+		}, nil
+	default: // csv
+		return &csvWriter{
+			path:    filepath.Join(e.cfg.OutputDir, fmt.Sprintf("%s.%s.%s", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName), ext)),
+			delim:   delim,
+			quote:   quote,
+			nullRep: nullRep,
+			term:    term,
+			header:  header,
+		}, nil
+	}
 }
 
 // ColumnInfo is lightweight column metadata from the database.
