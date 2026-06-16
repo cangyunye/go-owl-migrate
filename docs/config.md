@@ -79,8 +79,8 @@ select_gen:
   add_export_columns: false                 # Add export helper columns
 
 export:
-  output_dir: ./output/data/                # Output directory for CSV files
-  format: csv                               # Output format
+  output_dir: ./output/data/                # Output directory for exported data files
+  format: csv                               # Output format: csv (default), sql, xlsx
   csv:
     delimiter: ","
     quote_char: "\""

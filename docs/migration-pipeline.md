@@ -282,7 +282,7 @@ Behavior changes:
 | Checkpoint | Tables marked as imported after SQL generation |
 | Migration report | Generated normally (all rows considered imported) |
 
-Generated SQL files follow the same format as `gen-insert`:
+Generated SQL files follow the same format as `export insert`:
 
 - `{schema}.{table}.insert.sql`
 - Batched INSERT statements with transaction wrappers (BEGIN/COMMIT for PG/Oracle)

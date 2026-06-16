@@ -40,7 +40,7 @@ owl-migrate init --source-type oracle --source-dsn "oracle://u:p@host:1521/servi
 owl-migrate validate -c ./migrate.yaml
 
 # Generate DDL scripts for the target database
-owl-migrate gen-ddl -c ./migrate.yaml -o ./output/ddl/
+owl-migrate export ddl -c ./migrate.yaml -o ./output/ddl/
 
 # Run end-to-end migration (export + create tables + import)
 owl-migrate migrate -c ./migrate.yaml
@@ -55,12 +55,12 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 |---------|-------------|
 | `init`       | Generate config file from CLI parameters |
 | `validate`   | Validate metadata (CSV or database) |
-| `gen-ddl`    | Generate CREATE TABLE/INDEX/VIEW DDL for target dialect |
-| `gen-select` | Generate paginated SELECT queries for data export |
-| `gen-insert` | Generate INSERT SQL from CSV data (offline mode) |
-| `export`     | Export source database data to CSV files |
-| `import`     | Import CSV data into target database |
-| `migrate`    | End-to-end: export → create tables → import → report |
+| `export ddl`    | Generate CREATE TABLE/INDEX/VIEW DDL for target dialect |
+| `export data`   | Export source database data to CSV/SQL/XLSX files |
+| `export insert` | Generate INSERT SQL from CSV data (offline mode) |
+| `gen-select`    | Generate paginated SELECT queries for data export |
+| `import`        | Import CSV data into target database |
+| `migrate`       | End-to-end: export → create tables → import → report |
 
 ## Supported Dialects
 

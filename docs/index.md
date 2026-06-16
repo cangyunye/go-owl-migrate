@@ -7,7 +7,7 @@ Offline-first database migration tool for Oracle, PostgreSQL, MySQL, and derivat
 | Document | Description |
 |---|---|
 | [Getting Started](getting-started.md) | Installation, quick start, first migration |
-| [CLI Commands](cli-commands.md) | Full command reference (validate, gen-ddl, gen-select, gen-insert, export, import, migrate) |
+| [CLI Commands](cli-commands.md) | Full command reference (export ddl, export data, export insert, gen-select, import, migrate) |
 | [Configuration](config.md) | All configuration options with examples |
 | [CSV Metadata Format](csv-format.md) | CSV file format for offline schema definition |
 | [Migration Pipeline](migration-pipeline.md) | End-to-end export/import pipeline, checkpoint/resume, error handling, encoding |
@@ -26,7 +26,7 @@ owl-migrate init --source-type oracle --source-dsn "oracle://user:pass@host:1521
 owl-migrate validate -c ./migrate.yaml
 
 # 2. Generate DDL for target database
-owl-migrate gen-ddl -c ./migrate.yaml
+owl-migrate export ddl -c ./migrate.yaml
 
 # 3. Generate SELECT statements for data export
 owl-migrate gen-select -c ./migrate.yaml

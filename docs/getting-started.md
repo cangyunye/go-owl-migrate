@@ -54,7 +54,7 @@ owl-migrate init --metadata-type xlsx --target-type postgres -o ./migrate.yaml
 owl-migrate validate -c ./migrate.yaml
 
 # 3. Generate DDL for the target database
-owl-migrate gen-ddl -c ./migrate.yaml -o ./output/ddl/
+owl-migrate export ddl -c ./migrate.yaml -o ./output/ddl/
 
 # 4. Run full migration (export data → create tables → import)
 owl-migrate migrate -c ./migrate.yaml
@@ -64,7 +64,7 @@ owl-migrate export -c ./migrate.yaml -o ./output/data/
 owl-migrate import -c ./migrate.yaml
 ```
 
-### Workflow B: Offline-Only (No Database Connections)
+### Workflow C: Offline-Only (No Database Connections)
 
 Use CSV files for both metadata and data — no source or target database needed:
 
@@ -72,14 +72,14 @@ Use CSV files for both metadata and data — no source or target database needed
 # 1. Place CSV metadata files in a directory (see csv-format.md)
 # 2. Place CSV data files in a data directory
 # 3. Generate INSERT SQL files (offline)
-owl-migrate gen-insert \
+owl-migrate export insert \
   -c ./migrate.yaml \
   -d ./output/data/ \
   -o ./output/insert/ \
   --dialect postgres
 ```
 
-### Workflow C: CSV → INSERT SQL (Zero Config)
+### Workflow D: CSV → INSERT SQL (Zero Config)
 
 This is the simplest way to generate INSERT SQL from CSV data files.
 **No configuration file, no database connection needed.**
@@ -92,7 +92,7 @@ This is the simplest way to generate INSERT SQL from CSV data files.
 #    (see docs/csv-format.md for format details)
 
 # 2. Generate INSERT SQL (standalone mode)
-owl-migrate gen-insert \
+owl-migrate export insert \
   -d ./data/ \                    # Directory with CSV files
   -o ./sql/ \                     # Output directory for INSERT SQL
   --dialect postgres               # oracle | postgres | mysql
@@ -108,10 +108,10 @@ cat ./sql/scott.emp.insert.sql
 
 # With a config file (for precise type mapping):
 owl-migrate init --metadata-type csv --target-type postgres -o ./migrate.yaml
-owl-migrate gen-insert -c ./migrate.yaml -d ./data/ -o ./sql/
+owl-migrate export insert -c ./migrate.yaml -d ./data/ -o ./sql/
 ```
 
-### Workflow D: CSV Metadata + SQL Output Mode
+### Workflow E: CSV Metadata + SQL Output Mode
 
 Use the `migrate` command with `--sql-out` to generate INSERT SQL files instead of writing directly to the target database:
 
@@ -121,7 +121,7 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 
 This produces ready-to-execute SQL files that can be reviewed and applied manually.
 
-### Workflow D: Quick Start with Test Data
+### Workflow F: Quick Start with Test Data
 
 The project includes SCOTT schema test data (EMP, DEPT, BONUS tables):
 
@@ -130,7 +130,7 @@ The project includes SCOTT schema test data (EMP, DEPT, BONUS tables):
 owl-migrate validate -c ./configs/migrate.example.yaml
 
 # Generate DDL from test metadata
-owl-migrate gen-ddl -c ./configs/migrate.example.yaml
+owl-migrate export ddl -c ./configs/migrate.example.yaml
 
 # Generate SELECT statements
 owl-migrate gen-select -c ./configs/migrate.example.yaml

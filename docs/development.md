@@ -12,15 +12,18 @@
 ```
 cmd/migrate/main.go          # Entry point
 internal/
-  cmd/                       # Cobra commands (validate, gen-ddl, gen-select, gen-insert, export, import, migrate)
+  cmd/                       # Cobra commands (validate, export ddl/data/insert, gen-select, import, migrate)
     root.go                  # Root command, flag definitions, subcommand registration
     init.go                  # owl-migrate init — config generation from CLI params
     metadata.go              # Unified metadata loader (CSV ↔ database dispatch)
     validate.go              # owl-migrate validate — metadata validation
-    genddl.go                # owl-migrate gen-ddl — DDL generation
+    export_root.go           # owl-migrate export — parent command
+    export_ddl.go            # owl-migrate export ddl — DDL generation
+    export_data.go           # owl-migrate export data — data export (CSV/SQL/XLSX)
+    export_insert.go         # owl-migrate export insert — INSERT SQL from CSV
+    genddl.go                # owl-migrate gen-ddl (hidden alias for export ddl)
     genselect.go             # owl-migrate gen-select — SELECT statement generation
-    geninsert.go             # owl-migrate gen-insert — INSERT SQL from CSV
-    export.go                # owl-migrate export — data export to CSV
+    geninsert.go             # owl-migrate gen-insert (hidden alias for export insert)
     import.go                # owl-migrate import — data import from CSV
     migrate_cmd.go           # owl-migrate migrate — end-to-end migration
   metadata/                  # Core data types
@@ -45,8 +48,9 @@ internal/
     select.go                # SelectGenerator — paginated SELECT generation
     insert.go                # InsertGenerator — INSERT SQL from CSV data
   transfer/                  # Data transfer pipeline
-    exporter/                # CSV export (cursor-paginated reads, parallel workers)
-      exporter.go            # Exporter with cursor pagination, CSV formatting, binary encoding
+    exporter/                # CSV/SQL/XLSX export (cursor-paginated reads, parallel workers)
+      exporter.go            # Exporter with cursor pagination, CSV/SQL/XLSX output via ExportWriter
+      writer.go              # ExportWriter interface + csvWriter, sqlWriter, xlsxWriter
     importer/                # CSV import (batched transactions, data transforms)
       importer.go            # Importer with encoding conversion, datetime transform,
                              # boolean mapping, binary decoding, error policies
@@ -102,7 +106,8 @@ GoldenDB and OceanBase dialects inherit from core dialects via file-level embedd
 **Exporter** (`internal/transfer/exporter/`):
 - Reads data from source DB using cursor-based pagination (keyset pagination on PK)
 - Falls back to simple LIMIT pagination for tables without PKs
-- Writes CSV files with configurable delimiter, quoting, null representation
+- Supports multiple output formats via ExportWriter interface: CSV, SQL (INSERT), XLSX (Excel)
+- Configurable delimiter, quoting, null representation for CSV; dialect-aware formatting for SQL
 - Hex-encodes binary columns (BLOB/BYTEA/RAW)
 - Supports parallel table export via worker pool
 

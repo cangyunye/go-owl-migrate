@@ -39,7 +39,7 @@ make lint                           # golangci-lint (if installed)
 
 # Run CLI
 go run ./cmd/migrate/main.go validate -c ./configs/migrate.example.yaml
-go run ./cmd/migrate/main.go gen-ddl -c ./configs/migrate.example.yaml
+go run ./cmd/migrate/main.go export ddl -c ./configs/migrate.example.yaml
 go run ./cmd/migrate/main.go gen-select -c ./configs/migrate.example.yaml
 go run ./cmd/migrate/main.go init --help
 
@@ -52,7 +52,7 @@ go run ./cmd/migrate/main.go migrate -c ./configs/migrate.example.yaml --sql-out
 ```
 cmd/migrate/main.go          # Entry point
 internal/
-  cmd/                       # Cobra commands (init, validate, gen-ddl, gen-select, gen-insert, export, import, migrate)
+  cmd/                       # Cobra commands (init, validate, export ddl/data/insert, gen-select, import, migrate)
     migrate_cmd.go           # End-to-end pipeline with checkpoint/resume, SQL output mode
     init.go                  # Config file generator from CLI parameters
     import.go                # Target table creation with cross-dialect type mapping

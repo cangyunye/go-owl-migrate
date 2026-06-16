@@ -41,7 +41,7 @@ select_gen:
 
 export:
   output_dir: ./output/data/
-  format: csv
+  format: csv  # Output format: csv (default), sql, xlsx
   csv:
     delimiter: ","
     quote_char: "\""

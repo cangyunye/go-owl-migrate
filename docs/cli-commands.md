@@ -64,13 +64,27 @@ Validation found 2 issue(s):
   [WARNING] table SCOTT.BONUS has no primary key
 ```
 
-## owl-migrate gen-ddl
+## owl-migrate export
+
+Unified export command with three subcommands for DDL, data, and INSERT SQL generation.
+
+```
+Usage:
+  owl-migrate export [command]
+
+Available Commands:
+  ddl         Generate DDL from metadata
+  data        Export data from source database to CSV/SQL/XLSX files
+  insert      Generate INSERT SQL from CSV data files (offline)
+```
+
+### owl-migrate export ddl
 
 Generate DDL (CREATE TABLE/INDEX/VIEW) from metadata for the target dialect.
 
 ```
 Usage:
-  owl-migrate gen-ddl [flags] -c <config>
+  owl-migrate export ddl [flags] -c <config>
 
 Flags:
   -o, --output string              Output directory for DDL files (default "./output/ddl/")
@@ -93,42 +107,51 @@ Generated object types:
 
 DDL generation behavior is controlled by `ddl.*` config options — see [Configuration Reference](config.md).
 
-## owl-migrate gen-select
+The old `gen-ddl` command is preserved as a hidden alias for backward compatibility.
 
-Generate paginated SELECT statements for data export. Supports two pagination methods.
+### owl-migrate export data
+
+Export data from the source database to CSV (default), SQL, or XLSX files.
 
 ```
 Usage:
-  owl-migrate gen-select [flags] -c <config>
+  owl-migrate export data [flags] -c <config>
 
 Flags:
-  -o, --output string        Output directory for SELECT files (default "./output/select/")
-      --batch-method string        Pagination method: cursor/offset (default "cursor")
-  -n, --page-size int              Rows per batch (default 5000)
+  -o, --output string   Output directory for export files (default "./output/data/")
       --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
-Generated SQL files contain one SELECT statement per table with:
+Key features:
 
-- **Cursor-based pagination** (default): Uses PK columns in ORDER BY with WHERE pk > last_value. Efficient for large tables.
-- **Offset-based pagination**: Uses LIMIT/OFFSET. Simpler but less efficient for deep pages.
+- **Multi-format output**: CSV (default), SQL (INSERT statements), XLSX (Excel workbook).
+- **Cursor-based pagination**: When primary keys are available, uses keyset pagination (WHERE pk > last_value) for efficient large-table export.
+- **Fallback to LIMIT**: Tables without primary keys use LIMIT-only pagination (less efficient but works for any table).
+- **Parallel export**: Multiple tables exported concurrently (controlled by `export.parallel.max_workers`).
+- **Binary data handling**: BLOB/BYTEA/RAW columns are hex-encoded in CSV.
+- **Datetime formatting**: Timestamps are exported in compact `yyyyMMddHHmmss` format.
+- **RFC 4180 CSV**: Values containing delimiters, quotes, or newlines are properly quoted.
+- **Continue on error**: By default, one failing table doesn't abort the entire export (table-level error isolation).
 
-Example output (`./output/select/scott.emp.select.sql`):
+Output files by format:
 
-```sql
-SELECT "EMPNO", "ENAME", "JOB", "MGR", "HIREDATE", "SAL", "COMM", "DEPTNO"
-FROM "SCOTT"."EMP"
-ORDER BY "EMPNO"
-LIMIT 5000;
-```
+| Format | File pattern |
+|---|---|
+| CSV | `{schema}.{table}.csv` |
+| SQL | `{schema}.{table}.insert.sql` |
+| XLSX | `{schema}.{table}.xlsx` |
 
-## owl-migrate gen-insert
+The format is controlled by `export.format` in the config file (`csv`, `sql`, or `xlsx`).
+
+The old `export` command is now `export data`.
+
+### owl-migrate export insert
 
 Generate INSERT SQL statements from CSV data files. **Offline mode** — no database connection required.
 
 ```
 Usage:
-  owl-migrate gen-insert [flags]
+  owl-migrate export insert [flags]
 
 Flags:
   -o, --output string    Output directory for INSERT SQL files (default "./output/insert/")
@@ -160,29 +183,36 @@ VALUES
 COMMIT;
 ```
 
-## owl-migrate export
+The old `gen-insert` command is preserved as a hidden alias for backward compatibility.
 
-Export data from the source database to CSV files.
+## owl-migrate gen-select
+
+Generate paginated SELECT statements for data export. Supports two pagination methods.
 
 ```
 Usage:
-  owl-migrate export [flags] -c <config>
+  owl-migrate gen-select [flags] -c <config>
 
 Flags:
-  -o, --output string   Output directory for CSV files (default "./output/data/")
+  -o, --output string        Output directory for SELECT files (default "./output/select/")
+      --batch-method string        Pagination method: cursor/offset (default "cursor")
+  -n, --page-size int              Rows per batch (default 5000)
+      --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
-Key features:
+Generated SQL files contain one SELECT statement per table with:
 
-- **Cursor-based pagination**: When primary keys are available, uses keyset pagination (WHERE pk > last_value) for efficient large-table export.
-- **Fallback to LIMIT**: Tables without primary keys use LIMIT-only pagination (less efficient but works for any table).
-- **Parallel export**: Multiple tables exported concurrently (controlled by `export.parallel.max_workers`).
-- **Binary data handling**: BLOB/BYTEA/RAW columns are hex-encoded in CSV.
-- **Datetime formatting**: Timestamps are exported in compact `yyyyMMddHHmmss` format.
-- **RFC 4180 CSV**: Values containing delimiters, quotes, or newlines are properly quoted.
-- **Continue on error**: By default, one failing table doesn't abort the entire export (table-level error isolation).
+- **Cursor-based pagination** (default): Uses PK columns in ORDER BY with WHERE pk > last_value. Efficient for large tables.
+- **Offset-based pagination**: Uses LIMIT/OFFSET. Simpler but less efficient for deep pages.
 
-Output files: `{schema}.{table}.csv`
+Example output (`./output/select/scott.emp.select.sql`):
+
+```sql
+SELECT "EMPNO", "ENAME", "JOB", "MGR", "HIREDATE", "SAL", "COMM", "DEPTNO"
+FROM "SCOTT"."EMP"
+ORDER BY "EMPNO"
+LIMIT 5000;
+```
 
 ## owl-migrate import
 
