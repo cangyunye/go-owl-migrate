@@ -43,7 +43,6 @@ func init() {
 	rootCmd.AddCommand(validateCmd())
 	rootCmd.AddCommand(genDDLCmd())
 	rootCmd.AddCommand(genSelectCmd())
-	rootCmd.AddCommand(exportCmd())
 	rootCmd.AddCommand(importCmd())
 	rootCmd.AddCommand(migrateCmd())
 	rootCmd.AddCommand(genInsertCmd())
