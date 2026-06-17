@@ -53,14 +53,3 @@ func Get(name string) (dialect.Dialect, error) {
 	}
 	return d, nil
 }
-
-// List returns all registered dialect names.
-func List() []string {
-	mu.RLock()
-	defer mu.RUnlock()
-	names := make([]string, 0, len(reg))
-	for name := range reg {
-		names = append(names, name)
-	}
-	return names
-}

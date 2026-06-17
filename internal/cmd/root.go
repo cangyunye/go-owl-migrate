@@ -23,7 +23,7 @@ var rootCmd = &cobra.Command{
 and generates DDL, SELECT, INSERT statements and data export/import pipelines.
 
 Supported dialects: oracle, postgres, mysql
-Supported metadata sources: csv (xlsx and live database coming soon)`,
+Supported metadata sources: csv, xlsx, database`,
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commitID, buildTime),
 }
 
@@ -48,14 +48,4 @@ func init() {
 	rootCmd.AddCommand(genInsertCmd())
 	rootCmd.AddCommand(showQueryCmd())
 	rootCmd.AddCommand(exportMetadataCmd())
-}
-
-// GetConfigFile returns the global config file path.
-func GetConfigFile() string {
-	return cfgFile
-}
-
-// GetLogLevel returns the global log level override.
-func GetLogLevel() string {
-	return logLevel
 }

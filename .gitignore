@@ -42,3 +42,4 @@ coverage.out
 
 # Claude memory
 memory/
+.reasonix/
