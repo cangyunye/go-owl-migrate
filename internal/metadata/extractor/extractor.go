@@ -61,12 +61,14 @@ func Get(dbType string) (MetadataQuerier, error) {
 // normalizeDBType maps compound dialect names (e.g. "goldendb-mysql", "oceanbase-oracle")
 // to their base querier type.
 func normalizeDBType(t string) string {
-	switch strings.ToLower(t) {
-	case "goldendb", "goldendb-mysql", "oceanbase-mysql", "panweidb-mysql":
+	switch {
+	case strings.HasSuffix(t, "-mysql"):
 		return "mysql"
-	case "goldendb-oracle", "oceanbase-oracle", "panweidb-oracle":
+	case strings.HasSuffix(t, "-oracle"):
 		return "oracle"
-	case "panweidb", "opengaussdb":
+	case t == "goldendb", t == "oceanbase":
+		return "mysql"
+	case t == "panweidb", t == "opengaussdb":
 		return "postgres"
 	default:
 		return t

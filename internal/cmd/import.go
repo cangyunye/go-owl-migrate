@@ -13,6 +13,7 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
 )
 
@@ -116,8 +117,8 @@ func importCmd() *cobra.Command {
 }
 
 func ensureTables(ctx context.Context, db *sql.DB, sm *md.SchemaModel, cfg *config.Config, schemaMapping map[string]string) error {
-	targetType := strings.ToLower(cfg.Target.Type)
-	targetIsMySQL := targetType == "mysql" || targetType == "goldendb" || strings.HasSuffix(targetType, "-mysql")
+	targetType := registry.Normalize(strings.ToLower(cfg.Target.Type))
+	targetIsMySQL := targetType == "mysql" || strings.HasSuffix(targetType, "-mysql")
 
 	for _, tbl := range sm.GetTables() {
 		schema := tbl.TableSchema
@@ -158,11 +159,9 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	var b strings.Builder
 	b.WriteString("CREATE TABLE ")
 
-	targetIsMySQL := strings.EqualFold(cfg.Target.Type, "mysql") ||
-		strings.EqualFold(cfg.Target.Type, "goldendb") ||
-		strings.HasSuffix(strings.ToLower(cfg.Target.Type), "-mysql")
-	targetIsOracle := strings.EqualFold(cfg.Target.Type, "oracle") ||
-		strings.HasSuffix(strings.ToLower(cfg.Target.Type), "-oracle")
+	targetType := registry.Normalize(strings.ToLower(cfg.Target.Type))
+	targetIsMySQL := strings.HasSuffix(targetType, "-mysql")
+	targetIsOracle := strings.HasSuffix(targetType, "-oracle")
 
 	if cfg.DDL.IncludeIfNotExists && !targetIsOracle {
 		b.WriteString("IF NOT EXISTS ")

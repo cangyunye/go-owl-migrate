@@ -11,6 +11,7 @@ import (
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	xlsxpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/xlsx"
 )
 
@@ -109,10 +110,10 @@ func loadDBModel(dbType, dsn, schema string) (*md.SchemaModel, error) {
 
 // openDB opens a database connection by type.
 func openDB(dbType, dsn string) (*sql.DB, error) {
-	switch strings.ToLower(dbType) {
-	case "mysql", "goldendb", "goldendb-mysql", "oceanbase-mysql":
+	switch registry.Normalize(strings.ToLower(dbType)) {
+	case "mysql", "goldendb-mysql", "oceanbase-mysql":
 		return sql.Open("mysql", dsn)
-	case "postgres", "postgresql", "opengaussdb", "panweidb", "panweidb-mysql", "panweidb-oracle":
+	case "postgres", "postgresql", "panweidb", "panweidb-mysql", "panweidb-oracle", "opengaussdb":
 		return sql.Open("postgres", dsn)
 	case "oracle", "goldendb-oracle", "oceanbase-oracle":
 		return sql.Open("oracle", dsn)

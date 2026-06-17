@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
@@ -43,8 +44,25 @@ func Register(name string, d dialect.Dialect) {
 	reg[name] = d
 }
 
+// Normalize maps bare compound dialect names to their qualified form.
+// Returns the name unchanged if no mapping exists.
+//   "goldendb"  → "goldendb-mysql"
+//   "oceanbase" → "oceanbase-mysql"
+func Normalize(name string) string {
+	switch strings.ToLower(name) {
+	case "goldendb":
+		return "goldendb-mysql"
+	case "oceanbase":
+		return "oceanbase-mysql"
+	default:
+		return name
+	}
+}
+
 // Get returns a registered dialect by name.
+// Bare compound names (e.g. "goldendb") are normalized automatically.
 func Get(name string) (dialect.Dialect, error) {
+	name = Normalize(name)
 	mu.RLock()
 	defer mu.RUnlock()
 	d, ok := reg[name]
