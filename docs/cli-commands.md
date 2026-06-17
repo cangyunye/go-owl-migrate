@@ -80,7 +80,8 @@ Available Commands:
 
 ### owl-migrate export ddl
 
-Generate DDL (CREATE TABLE/INDEX/VIEW) from metadata for the target dialect.
+Generate DDL (CREATE TABLE / INDEX / VIEW / SEQUENCE / TRIGGER / FUNCTION / PACKAGE / etc.)
+from metadata for the target dialect.
 
 ```
 Usage:
@@ -97,13 +98,21 @@ The command generates **per-object** SQL files using the naming convention:
 {schema}.{object_name}.{type}.sql
 ```
 
-Generated object types:
+Generated object types (all three core dialects support Table/Index/View/Trigger/Function;
+Oracle additionally supports Sequence/Synonym/MView/Package):
 
-| Type | File pattern | Description |
-|---|---|---|
-| Table | `scott.emp.table.sql` | CREATE TABLE |
-| Index | `scott.idx_emp_ename.index.sql` | CREATE INDEX / UNIQUE INDEX |
-| View | `scott.emp_view.view.sql` | CREATE VIEW |
+| Type | File pattern | Description | MySQL | Oracle | PG |
+|---|---|---|---|---|---|
+| Table | `scott.emp.table.sql` | CREATE TABLE | ✅ | ✅ | ✅ |
+| Index | `scott.idx_emp_ename.index.sql` | CREATE INDEX / UNIQUE INDEX / BITMAP | ✅ | ✅ | ✅ |
+| View | `scott.emp_view.view.sql` | CREATE VIEW | ✅ | ✅ | ✅ |
+| Sequence | `scott.seq_emp_id.sequence.sql` | CREATE SEQUENCE | — | ✅ | ✅ |
+| Synonym | `scott.emp_syn.synonym.sql` | CREATE [PUBLIC] SYNONYM | — | ✅ | — |
+| Materialized View | `scott.emp_mv.mview.sql` | CREATE MATERIALIZED VIEW | — | ✅ | ✅ |
+| Trigger | `scott.trg_emp_sal.trigger.sql` | CREATE [OR REPLACE] TRIGGER | ✅ | ✅ | ✅ |
+| Function | `scott.get_emp_count.function.sql` | CREATE [OR REPLACE] FUNCTION | ✅ | ✅ | ✅ |
+| Package | `scott.pkg_emp.package.sql` | CREATE OR REPLACE PACKAGE | — | ✅ | — |
+| Package Body | `scott.pkg_emp.package_body.sql` | CREATE OR REPLACE PACKAGE BODY | — | ✅ | — |
 
 DDL generation behavior is controlled by `ddl.*` config options — see [Configuration Reference](config.md).
 

@@ -152,6 +152,55 @@ When using `metadata.type: csv`, the tool reads table/column definitions from CS
 | `IS_PUBLIC` | string | YES / NO — public synonym |
 | `TARGET_TYPE` | string | Type of the referenced object (TABLE, VIEW, etc.) |
 
+### mviews.csv
+
+| Column | Type | Description |
+|---|---|---|
+| `MVIEW_SCHEMA` | string | Schema name |
+| `MVIEW_NAME` | string | Materialized view name |
+| `MVIEW_QUERY` | string | The SELECT query that defines the view |
+| `REFRESH_METHOD` | string | COMPLETE / FAST / FORCE |
+| `REFRESH_MODE` | string | DEMAND / COMMIT |
+| `REFRESH_INTERVAL` | string | Refresh interval expression |
+| `BUILD_MODE` | string | IMMEDIATE / DEFERRED |
+| `MVIEW_COMMENT` | string | Description |
+
+### functions.csv
+
+| Column | Type | Description |
+|---|---|---|
+| `FUNCTION_SCHEMA` | string | Schema name |
+| `FUNCTION_NAME` | string | Function or procedure name |
+| `FUNCTION_TYPE` | string | FUNCTION / PROCEDURE |
+| `RETURN_TYPE` | string | Return data type (for functions) |
+| `FUNCTION_BODY` | string | Full function source code |
+| `LANGUAGE` | string | PLSQL / PLPGSQL |
+| `STATUS` | string | ENABLED / DISABLED |
+| `ARGUMENTS` | string | JSON-formatted argument list |
+| `AUTH_ID` | string | DEFINER / CURRENT_USER |
+| `DETERMINISTIC` | string | YES / NO |
+| `PARALLEL` | string | YES / NO |
+
+### packages.csv
+
+| Column | Type | Description |
+|---|---|---|
+| `PACKAGE_SCHEMA` | string | Schema name |
+| `PACKAGE_NAME` | string | Package name |
+| `PACKAGE_SPEC` | string | Full package specification (header) |
+| `STATUS` | string | ENABLED / DISABLED |
+| `AUTH_ID` | string | DEFINER / CURRENT_USER |
+| `DESCRIPTION` | string | Description |
+
+### package_bodies.csv
+
+| Column | Type | Description |
+|---|---|---|
+| `PACKAGE_SCHEMA` | string | Schema name |
+| `PACKAGE_NAME` | string | Package name |
+| `PACKAGE_BODY` | string | Full package body (implementation) |
+| `STATUS` | string | ENABLED / DISABLED |
+
 ## Example: SCOTT Schema
 
 ### tables.csv
