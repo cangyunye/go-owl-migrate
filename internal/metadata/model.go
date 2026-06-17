@@ -335,6 +335,8 @@ type SchemaModel struct {
 	allTriggers    []*TriggerDef
 	allFunctions   []*FunctionDef
 	allSequences   []*SequenceDef
+	allPackages    []*PackageDef
+	allPackageBodies []*PackageBodyDef
 
 	// Track FK/trigger refs for validation
 	tableSet map[string]bool
@@ -515,6 +517,48 @@ func (sm *SchemaModel) GetSynonyms(schema string) []*SynonymDef {
 	for _, syn := range sm.Synonyms {
 		if syn.SynonymSchema == schema {
 			result = append(result, syn)
+		}
+	}
+	return result
+}
+
+// AddMView adds a materialized view definition.
+func (sm *SchemaModel) AddMView(mv *MViewDef) {
+	sm.MViews = append(sm.MViews, mv)
+}
+
+// GetMViews returns all materialized views.
+func (sm *SchemaModel) GetMViews() []*MViewDef {
+	return sm.MViews
+}
+
+// AddPackage adds a package definition.
+func (sm *SchemaModel) AddPackage(pkg *PackageDef) {
+	sm.allPackages = append(sm.allPackages, pkg)
+}
+
+// GetPackages returns packages in a given schema.
+func (sm *SchemaModel) GetPackages(schema string) []*PackageDef {
+	var result []*PackageDef
+	for _, pkg := range sm.allPackages {
+		if pkg.PackageSchema == schema {
+			result = append(result, pkg)
+		}
+	}
+	return result
+}
+
+// AddPackageBody adds a package body definition.
+func (sm *SchemaModel) AddPackageBody(pkg *PackageBodyDef) {
+	sm.allPackageBodies = append(sm.allPackageBodies, pkg)
+}
+
+// GetPackageBodies returns package bodies in a given schema.
+func (sm *SchemaModel) GetPackageBodies(schema string) []*PackageBodyDef {
+	var result []*PackageBodyDef
+	for _, pkg := range sm.allPackageBodies {
+		if pkg.PackageSchema == schema {
+			result = append(result, pkg)
 		}
 	}
 	return result

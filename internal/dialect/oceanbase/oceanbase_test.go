@@ -69,7 +69,7 @@ func TestOBMySQL_SequenceSupport(t *testing.T) {
 		Cycle:          "NO",
 		CacheSize:      20,
 	}
-	sql, err := d.BuildCreateSequence(seq)
+	sql, err := d.BuildCreateSequence(seq, dialect.BuildOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestOBOracle_FulltextAndBitmapIndexes(t *testing.T) {
 		IndexName: "IDX_BITMAP", ColumnName: "DEPTNO",
 		IndexType: "BITMAP", OrdinalPosition: 1,
 	}
-	sql, err := d.BuildCreateIndex(idx)
+	sql, err := d.BuildCreateIndex([]*md.IndexDef{idx}, dialect.BuildOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

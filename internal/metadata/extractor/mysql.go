@@ -420,7 +420,8 @@ func (MySQLMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trig
 
 	var triggers []*md.TriggerDef
 	for rows.Next() {
-		var triggerName, tableName, triggerType, triggerEvent, triggerBody, whenClause, description, language string
+		var triggerName, tableName, triggerType, triggerEvent, triggerBody, description, language string
+		var whenClause sql.NullString
 		if err := rows.Scan(&triggerName, &tableName, &triggerType, &triggerEvent,
 			&triggerBody, &whenClause, &description, &language); err != nil {
 			return nil, err
@@ -435,7 +436,7 @@ func (MySQLMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trig
 			TriggerBody:   triggerBody,
 			Status:        "ENABLED",
 			ForEach:       "ROW",
-			WhenClause:    whenClause,
+			WhenClause:    whenClause.String,
 			Description:   description,
 			Language:      language,
 		})

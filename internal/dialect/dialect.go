@@ -94,15 +94,15 @@ type BuildOptions struct {
 // DDLBuilder generates DDL statements.
 type DDLBuilder interface {
 	BuildCreateTable(t *md.TableDef, opts BuildOptions) (string, error)
-	BuildCreateIndex(idx *md.IndexDef) (string, error)
-	BuildCreateView(v *md.ViewDef) (string, error)
-	BuildCreateTrigger(trg *md.TriggerDef) (string, error)
-	BuildCreateFunction(fn *md.FunctionDef) (string, error)
-	BuildCreateSequence(seq *md.SequenceDef) (string, error)
-	BuildCreateMView(mv *md.MViewDef) (string, error)
-	BuildCreateSynonym(syn *md.SynonymDef) (string, error)
-	BuildCreatePackage(pkg *md.PackageDef) (string, error)
-	BuildCreatePackageBody(pkg *md.PackageBodyDef) (string, error)
+	BuildCreateIndex(idxs []*md.IndexDef, opts BuildOptions) (string, error)
+	BuildCreateView(v *md.ViewDef, opts BuildOptions) (string, error)
+	BuildCreateTrigger(trg *md.TriggerDef, opts BuildOptions) (string, error)
+	BuildCreateFunction(fn *md.FunctionDef, opts BuildOptions) (string, error)
+	BuildCreateSequence(seq *md.SequenceDef, opts BuildOptions) (string, error)
+	BuildCreateMView(mv *md.MViewDef, opts BuildOptions) (string, error)
+	BuildCreateSynonym(syn *md.SynonymDef, opts BuildOptions) (string, error)
+	BuildCreatePackage(pkg *md.PackageDef, opts BuildOptions) (string, error)
+	BuildCreatePackageBody(pkg *md.PackageBodyDef, opts BuildOptions) (string, error)
 }
 
 // DMLHelper generates DML syntax.

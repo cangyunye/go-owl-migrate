@@ -1,0 +1,16 @@
+general:
+  log_level: info
+
+metadata:
+  type: database
+
+source:
+  type: mysql
+  dsn: "root:root123456@tcp(127.0.0.1:3306)/default_db"
+  schema: default_db
+
+ddl:
+  target_dialect: mysql
+  include_if_not_exists: false
+  schema_mapping:
+    default_db: default_db

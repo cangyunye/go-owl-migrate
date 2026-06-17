@@ -167,32 +167,150 @@ func (OracleDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptio
 	return b.String(), nil
 }
 
-func (OracleDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {
+	if len(idxs) == 0 {
+		return "", nil
+	}
+	first := idxs[0]
+
+	// Apply schema mapping
+	schema := first.TableSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + strings.ToUpper(s) + `"`
+	}
+
+	var b strings.Builder
+	b.WriteString("CREATE ")
+
+	// Oracle: BITMAP is an index type, not a uniqueness qualifier
+	if strings.EqualFold(first.IndexType, "BITMAP") {
+		b.WriteString("BITMAP ")
+	} else if first.Uniqueness == "UNIQUE" {
+		b.WriteString("UNIQUE ")
+	}
+	b.WriteString("INDEX ")
+	b.WriteString(quote(first.IndexName))
+	b.WriteString(" ON ")
+	b.WriteString(quote(schema) + "." + quote(first.TableName))
+	b.WriteString(" (")
+	for i, idx := range idxs {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(quote(idx.ColumnName))
+	}
+	b.WriteString(")")
+	return b.String(), nil
 }
-func (OracleDDLBuilder) BuildCreateView(v *md.ViewDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreateView(v *md.ViewDef, opts dialect.BuildOptions) (string, error) {
+	schema := v.ViewSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + strings.ToUpper(s) + `"`
+	}
+	return fmt.Sprintf("CREATE VIEW %s.%s AS %s", quote(schema), quote(v.ViewName), v.ViewDefinition), nil
 }
-func (OracleDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.BuildOptions) (string, error) {
+	schema := trg.TableSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + strings.ToUpper(s) + `"`
+	}
+	triggerType := trg.TriggerType // BEFORE/AFTER/INSTEAD OF
+	triggerEvent := trg.TriggerEvent
+	forEach := trg.ForEach
+	if forEach == "" {
+		forEach = "ROW"
+	}
+	return fmt.Sprintf("CREATE OR REPLACE TRIGGER %s\n%s %s\nON %s.%s\nFOR EACH %s\n%s",
+		quote(trg.TriggerName), triggerType, triggerEvent,
+		quote(schema), quote(trg.TableName), forEach, trg.TriggerBody), nil
 }
-func (OracleDDLBuilder) BuildCreateFunction(fn *md.FunctionDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error) {
+	if fn.FunctionType == "PROCEDURE" {
+		return fmt.Sprintf("CREATE OR REPLACE PROCEDURE %s %s", fn.FunctionName, fn.FunctionBody), nil
+	}
+	return fmt.Sprintf("CREATE OR REPLACE FUNCTION %s RETURN %s AS %s", fn.FunctionName, fn.ReturnType, fn.FunctionBody), nil
 }
-func (OracleDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error) {
+	schema := seq.SequenceSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + strings.ToUpper(s) + `"`
+	}
+	cycle := "NOCYCLE"
+	if strings.EqualFold(seq.Cycle, "YES") {
+		cycle = "CYCLE"
+	}
+	return fmt.Sprintf("CREATE SEQUENCE %s.%s START WITH %d INCREMENT BY %d MINVALUE %d MAXVALUE %d %s CACHE %d",
+		quote(schema), quote(seq.SequenceName),
+		seq.StartValue, seq.IncrementBy, seq.MinValue, seq.MaxValue,
+		cycle, seq.CacheSize), nil
 }
-func (OracleDDLBuilder) BuildCreateMView(mv *md.MViewDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error) {
+	schema := mv.MViewSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + strings.ToUpper(s) + `"`
+	}
+	return fmt.Sprintf("CREATE MATERIALIZED VIEW %s.%s AS %s", quote(schema), quote(mv.MViewName), mv.MViewQuery), nil
 }
-func (OracleDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error) {
+	schema := syn.SynonymSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	targetSchema := syn.TargetSchema
+	if m, ok := opts.SchemaMapping[targetSchema]; ok {
+		targetSchema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + strings.ToUpper(s) + `"`
+	}
+	sql := "CREATE"
+	if strings.EqualFold(syn.IsPublic, "YES") {
+		sql += " PUBLIC"
+	}
+	sql += fmt.Sprintf(" SYNONYM %s.%s FOR %s.%s",
+		quote(schema), quote(syn.SynonymName),
+		quote(targetSchema), quote(syn.TargetName))
+	return sql, nil
 }
-func (OracleDDLBuilder) BuildCreatePackage(pkg *md.PackageDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error) {
+	return fmt.Sprintf("CREATE OR REPLACE PACKAGE %s AS\n%s\nEND %s;", pkg.PackageName, pkg.PackageSpec, pkg.PackageName), nil
 }
-func (OracleDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef) (string, error) {
-	return "", nil
+func (OracleDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) {
+	return fmt.Sprintf("CREATE OR REPLACE PACKAGE BODY %s AS\n%s\nEND %s;", pkg.PackageName, pkg.PackageBody, pkg.PackageName), nil
 }
 
 // ── DML Helper ──

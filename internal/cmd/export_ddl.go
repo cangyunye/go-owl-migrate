@@ -63,7 +63,52 @@ func exportDDLCmd() *cobra.Command {
 			fmt.Printf("  %s\n", f)
 		}
 
-		fmt.Printf("Generated %d DDL files\n", len(files)+len(idxFiles)+len(viewFiles))
+		// Determine schema for sequences from config or loaded metadata
+		schema := cfg.Source.Schema
+		if schema == "" {
+			if tables := sm.GetTables(); len(tables) > 0 {
+				schema = tables[0].TableSchema
+			}
+		}
+		seqFiles, _ := gen.GenerateSequences(sm, schema)
+		for _, f := range seqFiles {
+			fmt.Printf("  %s\n", f)
+		}
+
+		synFiles, _ := gen.GenerateSynonyms(sm, schema)
+		for _, f := range synFiles {
+			fmt.Printf("  %s\n", f)
+		}
+
+		mvFiles, _ := gen.GenerateMViews(sm)
+		for _, f := range mvFiles {
+			fmt.Printf("  %s\n", f)
+		}
+
+		trgFiles, _ := gen.GenerateTriggers(sm)
+		for _, f := range trgFiles {
+			fmt.Printf("  %s\n", f)
+		}
+
+		fnFiles, _ := gen.GenerateFunctions(sm, schema)
+		for _, f := range fnFiles {
+			fmt.Printf("  %s\n", f)
+		}
+
+		pkgFiles, _ := gen.GeneratePackages(sm, schema)
+		for _, f := range pkgFiles {
+			fmt.Printf("  %s\n", f)
+		}
+
+		pkgBodyFiles, _ := gen.GeneratePackageBodies(sm, schema)
+		for _, f := range pkgBodyFiles {
+			fmt.Printf("  %s\n", f)
+		}
+
+		total := len(files) + len(idxFiles) + len(viewFiles) + len(seqFiles) +
+			len(synFiles) + len(mvFiles) + len(trgFiles) + len(fnFiles) +
+			len(pkgFiles) + len(pkgBodyFiles)
+		fmt.Printf("Generated %d DDL files\n", total)
 		return nil
 	}
 

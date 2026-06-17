@@ -178,15 +178,80 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 	return b.String(), nil
 }
 
-func (MySQLDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error)             { return "", nil }
-func (MySQLDDLBuilder) BuildCreateView(v *md.ViewDef) (string, error)                 { return "", nil }
-func (MySQLDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef) (string, error)         { return "", nil }
-func (MySQLDDLBuilder) BuildCreateFunction(fn *md.FunctionDef) (string, error)        { return "", nil }
-func (MySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error)       { return "", nil }
-func (MySQLDDLBuilder) BuildCreateMView(mv *md.MViewDef) (string, error)              { return "", nil }
-func (MySQLDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef) (string, error)         { return "", nil }
-func (MySQLDDLBuilder) BuildCreatePackage(pkg *md.PackageDef) (string, error)         { return "", nil }
-func (MySQLDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef) (string, error) { return "", nil }
+func (MySQLDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {
+	if len(idxs) == 0 {
+		return "", nil
+	}
+	first := idxs[0]
+
+	// Apply schema mapping
+	schema := first.TableSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return "`" + s + "`"
+	}
+
+	var b strings.Builder
+	b.WriteString("CREATE ")
+	if first.Uniqueness == "UNIQUE" {
+		b.WriteString("UNIQUE ")
+	}
+	b.WriteString("INDEX ")
+	b.WriteString(fmt.Sprintf("%s ON %s.%s (", quote(first.IndexName), quote(schema), quote(first.TableName)))
+	for i, idx := range idxs {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(quote(idx.ColumnName))
+	}
+	b.WriteString(")")
+	return b.String(), nil
+}
+func (MySQLDDLBuilder) BuildCreateView(v *md.ViewDef, opts dialect.BuildOptions) (string, error) {
+	schema := v.ViewSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return "`" + s + "`"
+	}
+	return fmt.Sprintf("CREATE VIEW %s.%s AS %s", quote(schema), quote(v.ViewName), v.ViewDefinition), nil
+}
+func (MySQLDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.BuildOptions) (string, error) {
+	schema := trg.TableSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return "`" + s + "`"
+	}
+	return fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s.%s FOR EACH ROW %s",
+		quote(trg.TriggerName), trg.TriggerType, trg.TriggerEvent,
+		quote(schema), quote(trg.TableName), trg.TriggerBody), nil
+}
+func (MySQLDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error) {
+	if fn.FunctionType == "PROCEDURE" {
+		return fmt.Sprintf("CREATE PROCEDURE `%s` %s", fn.FunctionName, fn.FunctionBody), nil
+	}
+	return fmt.Sprintf("CREATE FUNCTION `%s` RETURNS %s %s", fn.FunctionName, fn.ReturnType, fn.FunctionBody), nil
+}
+func (MySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error)       { return "", nil }
+func (MySQLDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error)              { return "", nil }
+func (MySQLDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
+func (MySQLDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
+func (MySQLDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) { return "", nil }
 
 type MySQLDMLHelper struct{}
 

@@ -1,0 +1,16 @@
+general:
+  log_level: info
+
+metadata:
+  type: database
+
+source:
+  type: postgres
+  dsn: "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
+  schema: public
+
+ddl:
+  target_dialect: postgres
+  include_if_not_exists: false
+  schema_mapping:
+    public: public

@@ -369,10 +369,10 @@ func (OracleMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDe
 	rows, err := db.Query(`
 		SELECT
 			v.view_name,
-			v.text AS view_definition,
+			NVL(v.text, '') AS view_definition,
 			NVL(t.comments, '') AS view_comment,
-			'NO' AS is_updatable,
-			'' AS check_option,
+			'NONE' AS is_updatable,
+			'NONE' AS check_option,
 			v.owner
 		FROM all_views v
 		LEFT JOIN all_tab_comments t
@@ -386,15 +386,17 @@ func (OracleMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDe
 
 	var views []*md.ViewDef
 	for rows.Next() {
-		var viewName, viewDef, viewComment, updatable, checkOption, owner string
+		var viewName, viewDef, updatable, checkOption, owner string
+		var viewComment sql.NullString
 		if err := rows.Scan(&viewName, &viewDef, &viewComment, &updatable, &checkOption, &owner); err != nil {
 			return nil, err
 		}
+		vc := viewComment.String
 		views = append(views, &md.ViewDef{
 			ViewSchema:     schema,
 			ViewName:       viewName,
 			ViewDefinition: viewDef,
-			ViewComment:    viewComment,
+			ViewComment:    vc,
 			IsUpdatable:    updatable,
 			CheckOption:    checkOption,
 			Owner:          owner,
@@ -468,7 +470,8 @@ func (OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Tri
 
 	var triggers []*md.TriggerDef
 	for rows.Next() {
-		var triggerName, tableOwner, tableName, triggerType, triggerEvent, triggerBody, status, forEach, whenClause, description string
+		var triggerName, tableOwner, tableName, triggerType, triggerEvent, triggerBody, status, forEach string
+		var whenClause, description sql.NullString
 		if err := rows.Scan(&triggerName, &tableOwner, &tableName, &triggerType, &triggerEvent,
 			&triggerBody, &status, &forEach, &whenClause, &description); err != nil {
 			return nil, err
@@ -483,8 +486,8 @@ func (OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Tri
 			TriggerBody:   triggerBody,
 			Status:        status,
 			ForEach:       forEach,
-			WhenClause:    whenClause,
-			Description:   description,
+			WhenClause:    whenClause.String,
+			Description:   description.String,
 			Language:      "PLSQL",
 		})
 	}

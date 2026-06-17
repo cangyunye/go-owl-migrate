@@ -101,6 +101,24 @@ func (l *Loader) Load() (*md.SchemaModel, error) {
 		sm.AddSynonym(syn)
 	}
 
+	// Materialized Views
+	mviews, _ := l.parseMViews()
+	for _, mv := range mviews {
+		sm.AddMView(mv)
+	}
+
+	// Packages
+	pkgs, _ := l.parsePackages()
+	for _, pkg := range pkgs {
+		sm.AddPackage(pkg)
+	}
+
+	// Package Bodies
+	bodies, _ := l.parsePackageBodies()
+	for _, body := range bodies {
+		sm.AddPackageBody(body)
+	}
+
 	return sm, nil
 }
 
@@ -191,4 +209,28 @@ func (l *Loader) parseSynonyms() ([]*md.SynonymDef, error) {
 		return nil, nil
 	}
 	return ParseSynonyms(r)
+}
+
+func (l *Loader) parseMViews() ([]*md.MViewDef, error) {
+	r, ok := l.files["mviews.csv"]
+	if !ok {
+		return nil, nil
+	}
+	return ParseMViews(r)
+}
+
+func (l *Loader) parsePackages() ([]*md.PackageDef, error) {
+	r, ok := l.files["packages.csv"]
+	if !ok {
+		return nil, nil
+	}
+	return ParsePackages(r)
+}
+
+func (l *Loader) parsePackageBodies() ([]*md.PackageBodyDef, error) {
+	r, ok := l.files["package_bodies.csv"]
+	if !ok {
+		return nil, nil
+	}
+	return ParsePackageBodies(r)
 }

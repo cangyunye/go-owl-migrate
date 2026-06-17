@@ -402,3 +402,87 @@ func ParseSynonyms(r io.Reader) ([]*md.SynonymDef, error) {
 	}
 	return synonyms, nil
 }
+
+// ParseMViews parses a mviews.csv reader.
+func ParseMViews(r io.Reader) ([]*md.MViewDef, error) {
+	records, err := readAllRecords(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) < 1 {
+		return nil, nil
+	}
+	headers := records[0]
+	var mviews []*md.MViewDef
+	for _, rec := range records[1:] {
+		if skipLine(rec) {
+			continue
+		}
+		m := recordToMap(headers, rec)
+		mviews = append(mviews, &md.MViewDef{
+			MViewSchema:     m["MVIEW_SCHEMA"],
+			MViewName:       m["MVIEW_NAME"],
+			MViewQuery:      m["MVIEW_QUERY"],
+			RefreshMethod:   m["REFRESH_METHOD"],
+			RefreshMode:     m["REFRESH_MODE"],
+			RefreshInterval: m["REFRESH_INTERVAL"],
+			BuildMode:       m["BUILD_MODE"],
+			MViewComment:    m["MVIEW_COMMENT"],
+		})
+	}
+	return mviews, nil
+}
+
+// ParsePackages parses a packages.csv reader.
+func ParsePackages(r io.Reader) ([]*md.PackageDef, error) {
+	records, err := readAllRecords(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) < 1 {
+		return nil, nil
+	}
+	headers := records[0]
+	var pkgs []*md.PackageDef
+	for _, rec := range records[1:] {
+		if skipLine(rec) {
+			continue
+		}
+		m := recordToMap(headers, rec)
+		pkgs = append(pkgs, &md.PackageDef{
+			PackageSchema: m["PACKAGE_SCHEMA"],
+			PackageName:   m["PACKAGE_NAME"],
+			PackageSpec:   m["PACKAGE_SPEC"],
+			Status:        m["STATUS"],
+			AuthID:        m["AUTH_ID"],
+			Description:   m["DESCRIPTION"],
+		})
+	}
+	return pkgs, nil
+}
+
+// ParsePackageBodies parses a package_bodies.csv reader.
+func ParsePackageBodies(r io.Reader) ([]*md.PackageBodyDef, error) {
+	records, err := readAllRecords(r)
+	if err != nil {
+		return nil, err
+	}
+	if len(records) < 1 {
+		return nil, nil
+	}
+	headers := records[0]
+	var bodies []*md.PackageBodyDef
+	for _, rec := range records[1:] {
+		if skipLine(rec) {
+			continue
+		}
+		m := recordToMap(headers, rec)
+		bodies = append(bodies, &md.PackageBodyDef{
+			PackageSchema: m["PACKAGE_SCHEMA"],
+			PackageName:   m["PACKAGE_NAME"],
+			PackageBody:   m["PACKAGE_BODY"],
+			Status:        m["STATUS"],
+		})
+	}
+	return bodies, nil
+}

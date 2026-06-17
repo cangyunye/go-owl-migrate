@@ -177,15 +177,125 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 	return b.String(), nil
 }
 
-func (PGDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error)             { return "", nil }
-func (PGDDLBuilder) BuildCreateView(v *md.ViewDef) (string, error)                 { return "", nil }
-func (PGDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef) (string, error)         { return "", nil }
-func (PGDDLBuilder) BuildCreateFunction(fn *md.FunctionDef) (string, error)        { return "", nil }
-func (PGDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error)       { return "", nil }
-func (PGDDLBuilder) BuildCreateMView(mv *md.MViewDef) (string, error)              { return "", nil }
-func (PGDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef) (string, error)         { return "", nil }
-func (PGDDLBuilder) BuildCreatePackage(pkg *md.PackageDef) (string, error)         { return "", nil }
-func (PGDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef) (string, error) { return "", nil }
+func (PGDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {
+	if len(idxs) == 0 {
+		return "", nil
+	}
+	first := idxs[0]
+
+	// Apply schema mapping
+	schema := first.TableSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + s + `"`
+	}
+
+	var b strings.Builder
+	b.WriteString("CREATE ")
+	if first.Uniqueness == "UNIQUE" {
+		b.WriteString("UNIQUE ")
+	}
+	b.WriteString("INDEX ")
+	b.WriteString(quote(first.IndexName))
+	b.WriteString(" ON ")
+	b.WriteString(quote(schema) + "." + quote(first.TableName))
+	b.WriteString(" (")
+	for i, idx := range idxs {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(quote(idx.ColumnName))
+	}
+	b.WriteString(")")
+	return b.String(), nil
+}
+func (PGDDLBuilder) BuildCreateView(v *md.ViewDef, opts dialect.BuildOptions) (string, error) {
+	schema := v.ViewSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + s + `"`
+	}
+	return fmt.Sprintf("CREATE VIEW %s.%s AS %s", quote(schema), quote(v.ViewName), v.ViewDefinition), nil
+}
+func (PGDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.BuildOptions) (string, error) {
+	schema := trg.TableSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + s + `"`
+	}
+	forEach := trg.ForEach
+	if forEach == "" {
+		forEach = "ROW"
+	}
+	// PostgreSQL triggers use EXECUTE FUNCTION (or PROCEDURE) with the trigger body
+	return fmt.Sprintf("CREATE TRIGGER %s %s %s ON %s.%s FOR EACH %s EXECUTE FUNCTION %s",
+		quote(trg.TriggerName), trg.TriggerType, trg.TriggerEvent,
+		quote(schema), quote(trg.TableName), forEach, trg.TriggerBody), nil
+}
+func (PGDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error) {
+	lang := fn.Language
+	if lang == "" {
+		lang = "plpgsql"
+	}
+	if fn.FunctionType == "PROCEDURE" {
+		return fmt.Sprintf("CREATE OR REPLACE PROCEDURE %s AS $$ %s $$ LANGUAGE %s",
+			fn.FunctionName, fn.FunctionBody, lang), nil
+	}
+	return fmt.Sprintf("CREATE OR REPLACE FUNCTION %s RETURNS %s AS $$ %s $$ LANGUAGE %s",
+		fn.FunctionName, fn.ReturnType, fn.FunctionBody, lang), nil
+}
+func (PGDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error) {
+	schema := seq.SequenceSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + s + `"`
+	}
+	cycle := "NO CYCLE"
+	if strings.EqualFold(seq.Cycle, "YES") {
+		cycle = "CYCLE"
+	}
+	return fmt.Sprintf("CREATE SEQUENCE %s.%s START WITH %d INCREMENT BY %d MINVALUE %d MAXVALUE %d %s CACHE %d",
+		quote(schema), quote(seq.SequenceName),
+		seq.StartValue, seq.IncrementBy, seq.MinValue, seq.MaxValue,
+		cycle, seq.CacheSize), nil
+}
+func (PGDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error) {
+	schema := mv.MViewSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
+	quote := func(s string) string {
+		if opts.NoQuoteIdentifiers {
+			return s
+		}
+		return `"` + s + `"`
+	}
+	return fmt.Sprintf("CREATE MATERIALIZED VIEW %s.%s AS %s", quote(schema), quote(mv.MViewName), mv.MViewQuery), nil
+}
+func (PGDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
+func (PGDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
+func (PGDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) { return "", nil }
 
 type PGDMLHelper struct{}
 

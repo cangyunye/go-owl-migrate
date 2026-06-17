@@ -1,0 +1,16 @@
+general:
+  log_level: info
+
+metadata:
+  type: database
+
+source:
+  type: oracle
+  dsn: "oracle://scott:tiger@127.0.0.1:1521/XEPDB1"
+  schema: SCOTT
+
+ddl:
+  target_dialect: oracle
+  include_if_not_exists: false
+  schema_mapping:
+    SCOTT: SCOTT

@@ -25,7 +25,7 @@ func (obMySQLFeatures) TruncateIsTransactional() bool { return true } // ← OB 
 
 type obMySQLDDLBuilder struct{ mysql.MySQLDDLBuilder }
 
-func (b obMySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef) (string, error) {
+func (b obMySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error) {
 	return fmt.Sprintf("CREATE SEQUENCE `%s`.`%s` START WITH %d INCREMENT BY %d MAXVALUE %d NOCYCLE CACHE %d",
 		seq.SequenceSchema, seq.SequenceName, seq.StartValue, seq.IncrementBy, seq.MaxValue, seq.CacheSize), nil
 }
@@ -57,13 +57,20 @@ func (obOracleFeatures) TruncateIsTransactional() bool { return true } // ← OB
 
 type obOracleDDLBuilder struct{ oracle.OracleDDLBuilder }
 
-func (b obOracleDDLBuilder) BuildCreateIndex(idx *md.IndexDef) (string, error) {
+func (b obOracleDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {
 	// OceanBase Oracle mode does not support Bitmap indexes
-	if strings.ToUpper(idx.IndexType) == "BITMAP" {
-		return fmt.Sprintf("-- MANUAL: Bitmap index not supported in OceanBase Oracle; CREATE INDEX %s ON %s (%s)",
-			idx.IndexName, idx.TableName, idx.ColumnName), nil
+	for _, idx := range idxs {
+		if strings.ToUpper(idx.IndexType) == "BITMAP" {
+			// Build column list for diagnostic comment
+			cols := make([]string, len(idxs))
+			for i, ix := range idxs {
+				cols[i] = ix.ColumnName
+			}
+			return fmt.Sprintf("-- MANUAL: Bitmap index not supported in OceanBase Oracle; CREATE INDEX %s ON %s (%s)",
+				idxs[0].IndexName, idxs[0].TableName, strings.Join(cols, ", ")), nil
+		}
 	}
-	return b.OracleDDLBuilder.BuildCreateIndex(idx)
+	return b.OracleDDLBuilder.BuildCreateIndex(idxs, opts)
 }
 
 type obOracleDMLHelper struct{ oracle.OracleDMLHelper }
