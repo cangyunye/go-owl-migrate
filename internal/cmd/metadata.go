@@ -113,6 +113,8 @@ func openDB(dbType, dsn string) (*sql.DB, error) {
 	switch registry.Normalize(strings.ToLower(dbType)) {
 	case "mysql", "goldendb-mysql", "oceanbase-mysql":
 		return sql.Open("mysql", dsn)
+	case "sqlite3":
+		return sql.Open("sqlite3", dsn)
 	case "postgres", "postgresql", "panweidb", "panweidb-mysql", "panweidb-oracle", "opengaussdb":
 		return sql.Open("postgres", dsn)
 	case "oracle", "goldendb-oracle", "oceanbase-oracle":

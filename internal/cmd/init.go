@@ -160,6 +160,8 @@ func dsnExample(dialect string) string {
 		return "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable"
 	case "oceanbase":
 		return "user:pass@tcp(host:2881)/dbname  (or oracle:// for Oracle mode)"
+	case "sqlite3":
+		return "/path/to/database.db"
 	default:
 		return ""
 	}
@@ -718,7 +720,7 @@ var fieldComments = map[string]string{
 
 	// source / target
 	"source":        "# 源数据库连接（type=database 或 export/migrate 时使用）",
-	"source.type":   "# 源数据库方言: oracle/postgres/mysql/...",
+	"source.type":   "# 源数据库方言: oracle/postgres/mysql/sqlite3/...",
 	"source.dsn":    "# 源数据库 DSN 连接串",
 	"source.schema": "# 源 schema/数据库名（Oracle: 用户名; MySQL: db 名; PG: schema 名）",
 	"target":        "# 目标数据库连接（import/migrate 时使用）",

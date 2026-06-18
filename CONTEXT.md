@@ -37,11 +37,16 @@ Dialects that inherit from a core dialect and override specific behaviors:
 - **PanWeiDB** — PostgreSQL mode (inherits PG), MySQL B mode (inherits MySQL), or Oracle A mode (inherits Oracle)
 - **OpenGaussDB** — inherits PostgreSQL
 
+### Embedded Dialects
+Dialects for embedded databases that run in-process with no external server:
+- **SQLite3** — double-quote quoting, CGo binding (mattn/go-sqlite3), metadata via sqlite_master + PRAGMA
+- **DuckDB** — double-quote quoting, in-process analytical database, information_schema compatible (planned)
+
 ## Pipeline Architecture
 
 ### Generator (offline code generation)
 Produces SQL text files without connecting to any database:
-- **DDLGenerator** — `CREATE TABLE/INDEX/VIEW` files from SchemaModel
+- **DDLGenerator** — per-object SQL files (TABLE, INDEX, VIEW, SEQUENCE, TRIGGER, FUNCTION, SYNONYM, PACKAGE, etc.) from SchemaModel
 - **SelectGenerator** — paginated SELECT statements for data export
 - **InsertGenerator** — dialect-aware INSERT SQL from CSV data
 
@@ -64,15 +69,15 @@ End-to-end pipeline: extract metadata from source → create target tables → e
 
 ## Object Types
 
-| Object | SchemaModel Storage | DDLBuilder Method | Status |
-|--------|-------------------|-------------------|--------|
-| Table | Tables map (keyed by `SCHEMA.NAME`) | `BuildCreateTable` | ✅ Implemented in all dialects |
-| Index | Per-table IndexDef list | `BuildCreateIndex` | ⚪ Stub (P0 priority) |
-| View | SchemaModel.Views slice | `BuildCreateView` | ⚪ Stub (P0) |
-| Sequence | SchemaModel.allSequences | `BuildCreateSequence` | ⚪ Stub (P1) |
-| Trigger | SchemaModel.allTriggers | `BuildCreateTrigger` | ⚪ Stub (P3) |
-| Function | SchemaModel.allFunctions | `BuildCreateFunction` | ⚪ Stub (P3) |
-| Materialized View | SchemaModel.MViews | `BuildCreateMView` | ⚪ Stub (P2) |
-| Synonym | SchemaModel.Synonyms | `BuildCreateSynonym` | ⚪ Stub (Oracle only, P2) |
-| Package spec | SchemaModel (via Functions) | `BuildCreatePackage` | ⚪ Stub (Oracle only, P2) |
-| Package body | SchemaModel (via Functions) | `BuildCreatePackageBody` | ⚪ Stub (Oracle only, P2) |
+| Object | SchemaModel Storage | DDLBuilder Method | MySQL | Oracle | PostgreSQL | SQLite3 |
+|--------|-------------------|-------------------|-------|--------|------------|---------|
+| Table | Tables map (keyed by `SCHEMA.NAME`) | `BuildCreateTable` | ✅ | ✅ | ✅ | ✅ |
+| Index | Per-table IndexDef list | `BuildCreateIndex` | ✅ | ✅ | ✅ | ✅ |
+| View | SchemaModel.Views slice | `BuildCreateView` | ✅ | ✅ | ✅ | ✅ |
+| Sequence | SchemaModel.allSequences | `BuildCreateSequence` | — | ✅ | ✅ | — |
+| Synonym | SchemaModel.Synonyms | `BuildCreateSynonym` | — | ✅ | — | — |
+| Materialized View | SchemaModel.MViews | `BuildCreateMView` | — | ✅ | ✅ | — |
+| Trigger | SchemaModel.allTriggers | `BuildCreateTrigger` | ✅ | ✅ | ✅ | ✅ |
+| Function | SchemaModel.allFunctions | `BuildCreateFunction` | ✅ | ✅ | ✅ | — |
+| Package spec | SchemaModel.allPackages | `BuildCreatePackage` | — | ✅ | — | — |
+| Package body | SchemaModel.allPackageBodies | `BuildCreatePackageBody` | — | ✅ | — | — |

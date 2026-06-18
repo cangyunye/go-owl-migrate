@@ -117,6 +117,7 @@ var ValidDialects = map[string]bool{
 	"oracle":           true,
 	"postgres":         true,
 	"mysql":            true,
+	"sqlite3":          true,
 	"goldendb":         true,
 	"goldendb-mysql":   true,
 	"goldendb-oracle":  true,
