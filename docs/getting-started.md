@@ -147,7 +147,7 @@ metadata:
     path: ./metadata/
 
 ddl:
-  target_dialect: postgres               # oracle | postgres | mysql | goldendb | oceanbase | ...
+  target_dialect: postgres               # oracle | postgres | mysql | sqlite3 | duckdb | goldendb | oceanbase | ...
 
 source:
   type: oracle

@@ -51,3 +51,5 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 | OceanBase (Oracle) | ✓ | ✓ | ✓ | ✓ | ✓ (embeds Oracle) |
 | PanWeiDB | ✓ | ✓ | ✓ | ✓ | ✓ (same as PG driver) |
 | OpenGaussDB | ✓ | ✓ | ✓ | ✓ | ✓ (same as PG driver) |
+| SQLite3 | ✓ | ✓ | ✓ | ✓ | — (embedded) |
+| DuckDB | ✓ | ✓ | ✓ | ✓ | — (embedded) |

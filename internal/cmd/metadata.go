@@ -115,6 +115,8 @@ func openDB(dbType, dsn string) (*sql.DB, error) {
 		return sql.Open("mysql", dsn)
 	case "sqlite3":
 		return sql.Open("sqlite3", dsn)
+	case "duckdb":
+		return sql.Open("duckdb", dsn)
 	case "postgres", "postgresql", "panweidb", "panweidb-mysql", "panweidb-oracle", "opengaussdb":
 		return sql.Open("postgres", dsn)
 	case "oracle", "goldendb-oracle", "oceanbase-oracle":

@@ -162,6 +162,8 @@ func dsnExample(dialect string) string {
 		return "user:pass@tcp(host:2881)/dbname  (or oracle:// for Oracle mode)"
 	case "sqlite3":
 		return "/path/to/database.db"
+	case "duckdb":
+		return "/path/to/database.db"
 	default:
 		return ""
 	}

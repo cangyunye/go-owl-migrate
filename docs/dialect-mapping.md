@@ -25,6 +25,15 @@ go-owl-migrate supports a dialect system built from composable interfaces. Each 
 | **PanWeiDB (Oracle A)** | `panweidb-oracle` | Oracle | Oracle DDL/DML syntax, TRUNCATE transactional, uses PG driver/port |
 | **OpenGaussDB** | `opengaussdb` | PostgreSQL | Uses PG driver, same DML syntax |
 
+### Embedded Dialects
+
+Serverless, in-process databases:
+
+| Dialect | Identifier | Quoting | DDL Driver | Extractor |
+|---|---|---|---|---|
+| **SQLite3** | `sqlite3` | `"name"` (double-quote) | mattn/go-sqlite3 | sqlite_master + PRAGMA |
+| **DuckDB** | `duckdb` | `"name"` (double-quote) | duckdb/duckdb-go | information_schema |
+
 ### Metadata Extraction Steps
 
 When extracting metadata from a live database (`metadata.type: database`), the pipeline queries:
