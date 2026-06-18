@@ -88,7 +88,7 @@ Use --scenario to control which sections appear in the generated config:
 				if sourceDSN == "" {
 					return fmt.Errorf("--source-dsn is required when --metadata-type is 'database'")
 				}
-				if sourceSchema == "" {
+				if sourceSchema == "" && !isEmbedded(sourceType) {
 					return fmt.Errorf("--source-schema is required when --metadata-type is 'database'")
 				}
 			}
@@ -175,6 +175,41 @@ func askDSN(r *bufio.Reader, prompt, dialect, def string) string {
 		fmt.Printf("  # 格式示例: %s\n", ex)
 	}
 	return ask(r, prompt, def)
+}
+
+// askSchema prompts for a schema name, with a note if the target is embedded.
+func askSchema(r *bufio.Reader, prompt, dialect, def string) string {
+	if isEmbedded(dialect) {
+		return "" // schema ignored for embedded databases
+	}
+	return ask(r, prompt, def)
+}
+
+// isEmbedded returns true for databases that don't use host-based connections.
+func isEmbedded(dialect string) bool {
+	switch strings.ToLower(dialect) {
+	case "sqlite3", "duckdb":
+		return true
+	default:
+		return false
+	}
+}
+
+// askTables prompts for table names, returning all (*) if empty.
+func askTables(r *bufio.Reader, prompt string) []string {
+	answer := ask(r, prompt, "*")
+	answer = strings.TrimSpace(answer)
+	if answer == "" || answer == "*" {
+		return []string{"*"}
+	}
+	var tables []string
+	for _, t := range strings.Split(answer, ",") {
+		t = strings.TrimSpace(t)
+		if t != "" {
+			tables = append(tables, t)
+		}
+	}
+	return tables
 }
 
 func askChoice(r *bufio.Reader, prompt string, options []string, def string) string {
@@ -273,7 +308,7 @@ func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
 	case "database":
 		srcType = askChoice(r, "Source database type", sortedDialectKeys(), "")
 		srcDSN = askDSN(r, "Source database DSN", srcType, "")
-		srcSchema = ask(r, "Source schema name", "")
+		srcSchema = askSchema(r, "Source schema name", srcType, "")
 	}
 
 	tgtType := askChoice(r, "Target database dialect", sortedDialectKeys(), "postgres")
@@ -285,7 +320,8 @@ func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
 func interactiveExport(r *bufio.Reader, outputPath string) error {
 	srcType := askChoice(r, "Source database type", sortedDialectKeys(), "")
 	srcDSN := askDSN(r, "Source database DSN", srcType, "")
-	srcSchema := ask(r, "Source schema name", "")
+	srcSchema := askSchema(r, "Source schema name", srcType, "")
+	tables := askTables(r, "Tables to migrate (comma-separated, or * for all)")
 
 	cfg := &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
@@ -306,7 +342,7 @@ func interactiveExport(r *bufio.Reader, outputPath string) error {
 				MaxWorkers: 4,
 			},
 			Tables: config.TableListConfig{
-				Include: []string{"*"},
+				Include: tables,
 			},
 		},
 	}
@@ -317,7 +353,7 @@ func interactiveImport(r *bufio.Reader, outputPath string) error {
 	dataDir := ask(r, "CSV data files directory", "./output/data/")
 	tgtType := askChoice(r, "Target database type", sortedDialectKeys(), "")
 	tgtDSN := askDSN(r, "Target database DSN", tgtType, "")
-	tgtSchema := ask(r, "Target schema name", "")
+	tgtSchema := askSchema(r, "Target schema name", tgtType, "")
 
 	cfg := &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
@@ -354,15 +390,17 @@ func interactiveImport(r *bufio.Reader, outputPath string) error {
 func interactiveMigrate(r *bufio.Reader, outputPath string) error {
 	srcType := askChoice(r, "Source database type", sortedDialectKeys(), "")
 	srcDSN := askDSN(r, "Source database DSN", srcType, "")
-	srcSchema := ask(r, "Source schema name", "")
+	srcSchema := askSchema(r, "Source schema name", srcType, "")
+	tables := askTables(r, "Tables to migrate (comma-separated, or * for all)")
 	tgtType := askChoice(r, "Target database type", sortedDialectKeys(), "")
 	tgtDSN := askDSN(r, "Target database DSN", tgtType, "")
-	tgtSchema := ask(r, "Target schema name (default: source schema)", "")
+	tgtSchema := askSchema(r, "Target schema name", tgtType, "")
 	if tgtSchema == "" {
 		tgtSchema = srcSchema
 	}
 
 	cfg := buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema)
+	cfg.Export.Tables = config.TableListConfig{Include: tables}
 	return writeConfig(cfg, outputPath)
 }
 
@@ -422,8 +460,10 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 		if mt == "database" {
 			srcType = askChoice(r, "Source database type", sortedDialectKeys(), "")
 			srcDSN = askDSN(r, "Source database DSN", srcType, "")
-			srcSchema = ask(r, "Source schema name", "")
-			hint("For Oracle: schema/owner name. For MySQL: database name. For PG: schema name.")
+			srcSchema = askSchema(r, "Source schema name", srcType, "")
+			if !isEmbedded(srcType) {
+				hint("For Oracle: schema/owner name. For MySQL: database name. For PG: schema name.")
+			}
 		}
 	}
 
@@ -431,7 +471,7 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 	hint("Target: the database you are migrating TO. Determines DDL dialect and is required for import/migrate.")
 	tgtType = askChoice(r, "Target database type (for DDL generation)", sortedDialectKeys(), "postgres")
 	tgtDSN = askDSN(r, "Target database DSN (optional, leave blank for DDL-only)", tgtType, "")
-	tgtSchema = ask(r, "Target schema name (leave blank to use source schema)", "")
+	tgtSchema = askSchema(r, "Target schema name (leave blank to use source schema)", tgtType, "")
 
 	// Build FULL template with ALL 8 sections
 	cfg := buildFullConfig(mt, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, csvPath, xlsxPath)
