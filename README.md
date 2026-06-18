@@ -1,15 +1,16 @@
 # go-owl-migrate
 
-Database migration tool for cross-database schema & data migration: Oracle, PostgreSQL, MySQL, GoldenDB, OceanBase, PanWeiDB, OpenGaussDB. Part of the **owl** family of database tools.
+Database migration tool for cross-database schema & data migration: Oracle, PostgreSQL, MySQL, SQLite3, DuckDB, GoldenDB, OceanBase, PanWeiDB, OpenGaussDB. Part of the **owl** family of database tools.
 
 > 📚 **Full documentation**: See [docs/index.md](docs/index.md) for the complete documentation index.
 
 ## Features
 
 - **Offline-first**: Generate DDL, SELECT, and INSERT SQL from CSV metadata — no database connection required
-- **Live extraction**: Extract schema metadata directly from PostgreSQL, MySQL, or Oracle
+- **Live extraction**: Extract schema metadata directly from PostgreSQL, MySQL, Oracle, SQLite3, and DuckDB
 - **Cross-dialect DDL generation**: NUMBER↔DECIMAL↔INTEGER, VARCHAR2↔VARCHAR, BOOLEAN↔TINYINT(1), CLOB↔TEXT↔LONGTEXT, etc.
 - **Compound dialects**: GoldenDB (MySQL/Oracle mode), OceanBase (MySQL/Oracle mode), PanWeiDB, OpenGaussDB
+- **Embedded dialects**: SQLite3, DuckDB — in-process databases, no external server needed
 - **Data migration**: Export source data to CSV with cursor-based pagination, import with batched transactions
 - **Checkpoint/Resume**: Per-table state persists to disk — interrupted migrations pick up where they left off
 - **Continue on error**: Per-table error isolation — one failing table doesn't abort the whole migration
@@ -55,7 +56,7 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 |---------|-------------|
 | `init`       | Generate config file from CLI parameters |
 | `validate`   | Validate metadata (CSV or database) |
-| `export ddl`    | Generate CREATE TABLE/INDEX/VIEW DDL for target dialect |
+| `export ddl`    | Generate DDL (TABLE/INDEX/VIEW/SEQUENCE/TRIGGER/FUNCTION/PACKAGE) for target dialect |
 | `export data`   | Export source database data to CSV/SQL/XLSX files |
 | `export insert` | Generate INSERT SQL from CSV data (offline mode) |
 | `gen-select`    | Generate paginated SELECT queries for data export |
@@ -75,6 +76,8 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 | OceanBase (Oracle mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | PanWeiDB | ✓ | ✓ | ✓ | ✓ | ✓ |
 | OpenGaussDB | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SQLite3 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| DuckDB | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## Documentation
 
