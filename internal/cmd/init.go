@@ -39,8 +39,8 @@ Run with flags for non-interactive mode (CI/automation):
 
 Use --scenario to control which sections appear in the generated config:
   migrate         — full end-to-end config (default)
-  gen-ddl         — DDL generation only
-  gen-insert      — INSERT SQL generation only
+  export-ddl      — DDL generation only
+  export-insert   — INSERT SQL generation only
   export          — data export only
   import          — data import only
   export-metadata — metadata export only`,
@@ -107,7 +107,7 @@ Use --scenario to control which sections appear in the generated config:
 	cmd.Flags().StringVar(&targetSchema, "target-schema", "", "target database schema (defaults to source-schema if empty)")
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "./migrate.yaml", "output configuration file path")
 	cmd.Flags().StringVarP(&metadataType, "metadata-type", "m", "database", "metadata source: csv, xlsx, or database")
-	cmd.Flags().StringVarP(&scenario, "scenario", "S", "migrate", "config scenario: export-ddl, export-insert, export, import, migrate, export-metadata, validate, full")
+	cmd.Flags().StringVarP(&scenario, "scenario", "S", "migrate", "config scenario: export-ddl, export-insert, gen-select, export, import, migrate, export-metadata, validate, full")
 
 	return cmd
 }
@@ -122,6 +122,8 @@ func runScenarioInteractive(r *bufio.Reader, scenario, outputPath string) error 
 		return interactiveGenInsert(r, outputPath)
 	case "export-ddl", "validate":
 		return interactiveGenDDL(r, outputPath)
+	case "gen-select":
+		return interactiveGenSelect(r, outputPath)
 	case "export":
 		return interactiveExport(r, outputPath)
 	case "import":
@@ -239,10 +241,10 @@ func runInteractive(outputPath string) error {
 
 	action := askChoice(r, "What do you want to do?", []string{
 		"export-ddl", "export-insert", "export", "import", "migrate",
-		"export-metadata", "validate", "full",
+		"export-metadata", "gen-select", "validate", "full",
 	}, "")
 	fmt.Println("  (export-ddl=DDL from metadata, export-insert=INSERT from CSV, export=export data to CSV/SQL/XLSX)")
-	fmt.Println("  (import=import CSV into DB, migrate=end-to-end, export-metadata=metadata to CSV/xlsx/SQL)")
+	fmt.Println("  (import=import CSV into DB, migrate=end-to-end, gen-select=paginated SELECT, export-metadata=metadata to CSV/xlsx/SQL)")
 	fmt.Println("  (validate=check config, full=all options with hints)")
 
 	switch action {
@@ -250,6 +252,8 @@ func runInteractive(outputPath string) error {
 		return interactiveGenInsert(r, outputPath)
 	case "export-ddl", "validate":
 		return interactiveGenDDL(r, outputPath)
+	case "gen-select":
+		return interactiveGenSelect(r, outputPath)
 	case "export":
 		return interactiveExport(r, outputPath)
 	case "import":
@@ -404,6 +408,52 @@ func interactiveMigrate(r *bufio.Reader, outputPath string) error {
 	return writeConfig(cfg, outputPath)
 }
 
+func interactiveGenSelect(r *bufio.Reader, outputPath string) error {
+	mt := askChoice(r, "Metadata source type", []string{"csv", "xlsx", "database"}, "csv")
+
+	var srcType, srcDSN, srcSchema, csvPath, xlsxPath string
+
+	switch mt {
+	case "csv":
+		csvPath = ask(r, "CSV metadata directory", "./testdata/csv/")
+	case "xlsx":
+		xlsxPath = ask(r, "xlsx schema file path", "./metadata/schema.xlsx")
+	case "database":
+		srcType = askChoice(r, "Source database type", sortedDialectKeys(), "")
+		srcDSN = askDSN(r, "Source database DSN", srcType, "")
+		srcSchema = askSchema(r, "Source schema name", srcType, "")
+	}
+
+	tgtType := askChoice(r, "Target dialect (controls identifier quoting)", sortedDialectKeys(), "postgres")
+
+	cfg := &config.Config{
+		General: config.GeneralConfig{LogLevel: "info"},
+		SelectGen: config.SelectGenConfig{
+			OutputDir: "./output/select/",
+			Batch: config.BatchConfig{
+				Method:   "cursor",
+				PageSize: 5000,
+			},
+		},
+	}
+
+	switch mt {
+	case "csv":
+		cfg.Metadata = config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{Path: csvPath}}
+	case "xlsx":
+		cfg.Metadata = config.MetadataConfig{
+			Type: "xlsx",
+			XLSX: config.XLSXConfig{Path: xlsxPath, DataOutputDir: "./output/data/"},
+		}
+	case "database":
+		cfg.Metadata = config.MetadataConfig{Type: "database"}
+		cfg.Source = config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema}
+	}
+
+	cfg.DDL = config.DDLConfig{TargetDialect: tgtType}
+	return writeConfig(cfg, outputPath)
+}
+
 func interactiveExportMetadata(r *bufio.Reader, outputPath string) error {
 	srcType := askChoice(r, "Source database type", sortedDialectKeys(), "")
 	srcDSN := askDSN(r, "Source database DSN", srcType, "")
@@ -492,6 +542,8 @@ func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, 
 			xlsxPath = "./metadata/schema.xlsx"
 		}
 		return buildDDLConfig(metaType, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
+	case "gen-select":
+		return buildSelectGenConfig(metaType, srcType, srcDSN, srcSchema, tgtType)
 	case "export-insert":
 		cfg := &config.Config{
 			General: config.GeneralConfig{LogLevel: "info"},
@@ -572,6 +624,33 @@ func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, 
 	default:
 		return buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema)
 	}
+}
+
+func buildSelectGenConfig(metaType, srcType, srcDSN, srcSchema, tgtType string) *config.Config {
+	cfg := &config.Config{
+		General: config.GeneralConfig{LogLevel: "info"},
+		SelectGen: config.SelectGenConfig{
+			OutputDir: "./output/select/",
+			Batch: config.BatchConfig{
+				Method:   "cursor",
+				PageSize: 5000,
+			},
+		},
+	}
+	switch metaType {
+	case "csv":
+		cfg.Metadata = config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{Path: "./testdata/csv/"}}
+	case "xlsx":
+		cfg.Metadata = config.MetadataConfig{
+			Type: "xlsx",
+			XLSX: config.XLSXConfig{Path: "./metadata/schema.xlsx", DataOutputDir: "./output/data/"},
+		}
+	case "database":
+		cfg.Metadata = config.MetadataConfig{Type: "database"}
+		cfg.Source = config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema}
+	}
+	cfg.DDL = config.DDLConfig{TargetDialect: tgtType}
+	return cfg
 }
 
 func buildDDLConfig(metaType, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath string) *config.Config {
@@ -891,9 +970,18 @@ func writeConfig(cfg *config.Config, outputPath string) error {
 
 	header := "# Auto-generated by owl-migrate init\n" +
 		"# Edit this file to fine-tune migration settings, then run:\n" +
-		"#   owl-migrate validate -c " + outputPath + "\n" +
-		"#   owl-migrate export ddl  -c " + outputPath + "\n" +
-		"#   owl-migrate migrate  -c " + outputPath + "\n\n"
+		"#   owl-migrate validate -c " + outputPath + "\n"
+
+	// Suggest appropriate commands based on config content
+	if cfg.SelectGen.OutputDir != "" && cfg.Export.OutputDir == "" && cfg.Target.DSN == "" {
+		header += "#   owl-migrate gen-select -c " + outputPath + "\n"
+	} else if cfg.DDL.TargetDialect != "" && cfg.Target.DSN == "" && cfg.Metadata.Type != "" {
+		header += "#   owl-migrate export ddl  -c " + outputPath + "\n"
+	} else {
+		header += "#   owl-migrate export ddl  -c " + outputPath + "\n" +
+			"#   owl-migrate migrate  -c " + outputPath + "\n"
+	}
+	header += "\n"
 
 	content := append([]byte(header), annotated...)
 
