@@ -13,8 +13,6 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/oracle"
 	panweidb "github.com/cangyunye/go-owl-migrate/internal/dialect/panweidb"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/postgres"
-	"github.com/cangyunye/go-owl-migrate/internal/dialect/sqlite3"
-	"github.com/cangyunye/go-owl-migrate/internal/dialect/duckdb"
 )
 
 var (
@@ -26,8 +24,6 @@ func init() {
 	Register("oracle", oracle.New())
 	Register("postgres", postgres.New())
 	Register("mysql", mysql.New())
-	Register("sqlite3", sqlite3.New())
-	Register("duckdb", duckdb.New())
 	Register("goldendb-mysql", goldendb.NewMySQL())
 	Register("goldendb-oracle", goldendb.NewOracle())
 	Register("oceanbase-mysql", oceanbase.NewMySQL())

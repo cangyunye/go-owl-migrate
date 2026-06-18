@@ -34,8 +34,6 @@ func init() {
 	Register(&PGMetadataQuerier{})
 	Register(&MySQLMetadataQuerier{})
 	Register(&OracleMetadataQuerier{})
-	Register(&SQLite3MetadataQuerier{})
-	Register(&DuckDBMetadataQuerier{})
 }
 
 // Register adds a querier to the global registry.

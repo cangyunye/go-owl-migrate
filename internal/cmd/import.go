@@ -8,8 +8,6 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	_ "github.com/marcboeker/go-duckdb"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
