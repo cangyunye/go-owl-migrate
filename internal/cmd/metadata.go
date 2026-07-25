@@ -1,18 +1,20 @@
 package cmd
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
-	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	xlsxpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/xlsx"
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
 // loadSchemaModel loads metadata from CSV files, xlsx, or live database based on config.
@@ -90,13 +92,15 @@ func loadDBModel(dbType, dsn, schema string) (*md.SchemaModel, error) {
 		return nil, fmt.Errorf("source.schema is required when metadata.type is 'database'")
 	}
 
-	db, err := openDB(dbType, dsn)
+	db, err := openDB(config.DBConfig{Type: dbType, DSN: dsn})
 	if err != nil {
 		return nil, fmt.Errorf("connect to source for metadata extraction: %w", err)
 	}
 	defer db.Close()
 
-	if err := db.Ping(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("ping source for metadata extraction: %w", err)
 	}
 
@@ -108,22 +112,80 @@ func loadDBModel(dbType, dsn, schema string) (*md.SchemaModel, error) {
 	return sm, nil
 }
 
-// openDB opens a database connection by type.
-func openDB(dbType, dsn string) (*sql.DB, error) {
-	switch registry.Normalize(strings.ToLower(dbType)) {
+// openDB opens a database connection by type and configures the connection pool.
+func openDB(cfg config.DBConfig) (*sql.DB, error) {
+	var db *sql.DB
+	var err error
+
+	switch registry.Normalize(strings.ToLower(cfg.Type)) {
 	case "mysql", "goldendb-mysql", "oceanbase-mysql":
-		return sql.Open("mysql", dsn)
+		db, err = sql.Open("mysql", cfg.DSN)
 	case "sqlite3":
-		return sql.Open("sqlite3", dsn)
+		db, err = sql.Open("sqlite3", cfg.DSN)
 	case "duckdb":
-		return sql.Open("duckdb", dsn)
+		db, err = sql.Open("duckdb", cfg.DSN)
 	case "postgres", "postgresql", "panweidb", "panweidb-mysql", "panweidb-oracle", "opengaussdb":
-		return sql.Open("postgres", dsn)
+		db, err = sql.Open("postgres", cfg.DSN)
 	case "oracle", "goldendb-oracle", "oceanbase-oracle":
-		return sql.Open("oracle", dsn)
+		db, err = sql.Open("oracle", cfg.DSN)
 	default:
-		return nil, fmt.Errorf("unsupported database type: %s", dbType)
+		return nil, fmt.Errorf("unsupported database type: %s", cfg.Type)
 	}
+	if err != nil {
+		return nil, err
+	}
+
+	configurePool(db, cfg)
+	return db, nil
+}
+
+// configurePool applies connection pool settings from config with sensible defaults.
+func configurePool(db *sql.DB, cfg config.DBConfig) {
+	maxOpen := cfg.Pool.MaxOpenConns
+	if maxOpen <= 0 {
+		maxOpen = 10
+	}
+	db.SetMaxOpenConns(maxOpen)
+
+	maxIdle := cfg.Pool.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = 5
+	}
+	if maxIdle > maxOpen {
+		maxIdle = maxOpen
+	}
+	db.SetMaxIdleConns(maxIdle)
+
+	if d, err := parseDuration(cfg.Pool.ConnMaxLifetime, 30*time.Minute); err == nil {
+		db.SetConnMaxLifetime(d)
+	}
+	if d, err := parseDuration(cfg.Pool.ConnMaxIdleTime, 5*time.Minute); err == nil {
+		db.SetConnMaxIdleTime(d)
+	}
+}
+
+// parseDuration parses a duration string, returning fallback if empty or invalid.
+func parseDuration(s string, fallback time.Duration) (time.Duration, error) {
+	if s == "" {
+		return fallback, nil
+	}
+	return time.ParseDuration(s)
+}
+
+// connectTimeout returns the configured connect timeout or a default of 30s.
+func connectTimeout(cfg config.DBConfig) time.Duration {
+	if d, err := parseDuration(cfg.ConnectTimeout, 0); err == nil && d > 0 {
+		return d
+	}
+	return 30 * time.Second
+}
+
+// queryTimeout returns the configured query timeout or 0 (no timeout).
+func queryTimeout(cfg config.DBConfig) time.Duration {
+	if d, err := parseDuration(cfg.QueryTimeout, 0); err == nil {
+		return d
+	}
+	return 0
 }
 
 // buildPKMap builds the primary key column map for cursor-based pagination.

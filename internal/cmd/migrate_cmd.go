@@ -84,14 +84,17 @@ Use --resume to skip tables completed in a previous run.`,
 
 		// Step 2: Connect to source
 		fmt.Println("=== Step 2: Connect to source ===")
-		srcDB, err := openDB(cfg.Source.Type, cfg.Source.DSN)
+		srcDB, err := openDB(cfg.Source)
 		if err != nil {
 			return fmt.Errorf("connect source: %w", err)
 		}
 		defer srcDB.Close()
-		if err := srcDB.Ping(); err != nil {
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), connectTimeout(cfg.Source))
+		if err := srcDB.PingContext(pingCtx); err != nil {
+			pingCancel()
 			return fmt.Errorf("ping source: %w", err)
 		}
+		pingCancel()
 		fmt.Printf("Connected to source: %s\n", cfg.Source.Type)
 
 		sqlMode := sqlOut != ""
@@ -100,14 +103,17 @@ Use --resume to skip tables completed in a previous run.`,
 		var tgtDB *sql.DB
 		if !sqlMode {
 			fmt.Println("=== Step 3: Connect to target ===")
-			tgtDB, err = openDB(cfg.Target.Type, cfg.Target.DSN)
+			tgtDB, err = openDB(cfg.Target)
 			if err != nil {
 				return fmt.Errorf("connect target: %w", err)
 			}
 			defer tgtDB.Close()
-			if err := tgtDB.Ping(); err != nil {
+			pingCtx2, pingCancel2 := context.WithTimeout(context.Background(), connectTimeout(cfg.Target))
+			if err := tgtDB.PingContext(pingCtx2); err != nil {
+				pingCancel2()
 				return fmt.Errorf("ping target: %w", err)
 			}
+			pingCancel2()
 			fmt.Printf("Connected to target: %s\n", cfg.Target.Type)
 		} else {
 			fmt.Println("=== Step 3: Skip (SQL output mode) ===")
@@ -184,6 +190,11 @@ Use --resume to skip tables completed in a previous run.`,
 		})
 
 		ctx := context.Background()
+		if qt := queryTimeout(cfg.Source); qt > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, qt)
+			defer cancel()
+		}
 
 		// Only export tables that haven't been exported yet
 		var tablesToExport []*md.TableDef
@@ -272,11 +283,11 @@ Use --resume to skip tables completed in a previous run.`,
 				dialect = cfg.Target.Type
 			}
 			gen := generator.NewInsertGenerator(generator.InsertConfig{
-				OutputDir:    sqlOut,
-				BatchSize:    100,
-				Dialect:      dialect,
-				NullMarker:   cfg.Import.CSV.NullMarker,
-				CSVDelimiter: cfg.Import.CSV.Delimiter,
+				OutputDir:          sqlOut,
+				BatchSize:          100,
+				Dialect:            dialect,
+				NullMarker:         cfg.Import.CSV.NullMarker,
+				CSVDelimiter:       cfg.Import.CSV.Delimiter,
 				NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
 			})
 			files, err := gen.Generate(tablesToProcess, exportDir)
@@ -314,19 +325,19 @@ Use --resume to skip tables completed in a previous run.`,
 			if len(tablesToImport) > 0 {
 				impLogger := newLogger(cfg)
 				imp := importer.New(tgtDB, importer.Config{
-					SourceDir:      exportDir,
-					CSVDelimiter:   cfg.Import.CSV.Delimiter,
-					CSVNullMarker:  cfg.Import.CSV.NullMarker,
-					TruncateBefore: resume, // truncate on resume to avoid duplicate key errors
-					CommitInterval: cfg.Import.Batch.CommitInterval,
-					ErrorPolicy:    cfg.Import.Batch.ErrorPolicy,
-					MaxErrors:      cfg.Import.Batch.MaxErrorsBeforeStop,
-					MaxWorkers:     cfg.Import.Parallel.MaxWorkers,
-					DateTimeFormat: cfg.Import.DataTransforms.DatetimeFormat,
-					TrimStrings:    cfg.Import.DataTransforms.TrimStrings,
-					SourceEncoding: cfg.Import.DataTransforms.SourceEncoding,
-					TargetDBType:   cfg.Target.Type,
-					Logger:         impLogger,
+					SourceDir:          exportDir,
+					CSVDelimiter:       cfg.Import.CSV.Delimiter,
+					CSVNullMarker:      cfg.Import.CSV.NullMarker,
+					TruncateBefore:     resume, // truncate on resume to avoid duplicate key errors
+					CommitInterval:     cfg.Import.Batch.CommitInterval,
+					ErrorPolicy:        cfg.Import.Batch.ErrorPolicy,
+					MaxErrors:          cfg.Import.Batch.MaxErrorsBeforeStop,
+					MaxWorkers:         cfg.Import.Parallel.MaxWorkers,
+					DateTimeFormat:     cfg.Import.DataTransforms.DatetimeFormat,
+					TrimStrings:        cfg.Import.DataTransforms.TrimStrings,
+					SourceEncoding:     cfg.Import.DataTransforms.SourceEncoding,
+					TargetDBType:       cfg.Target.Type,
+					Logger:             impLogger,
 					NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
 				})
 

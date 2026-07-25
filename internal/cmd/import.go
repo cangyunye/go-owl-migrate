@@ -41,15 +41,18 @@ func importCmd() *cobra.Command {
 			return err
 		}
 
-		db, err := openDB(cfg.Target.Type, cfg.Target.DSN)
+		db, err := openDB(cfg.Target)
 		if err != nil {
 			return fmt.Errorf("connect to target: %w", err)
 		}
 		defer db.Close()
 
-		if err := db.Ping(); err != nil {
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), connectTimeout(cfg.Target))
+		if err := db.PingContext(pingCtx); err != nil {
+			pingCancel()
 			return fmt.Errorf("ping target: %w", err)
 		}
+		pingCancel()
 		fmt.Printf("Connected to %s\n", cfg.Target.Type)
 
 		if err := ensureTables(cmd.Context(), db, sm, cfg, cfg.DDL.SchemaMapping); err != nil {
@@ -65,24 +68,29 @@ func importCmd() *cobra.Command {
 		defer logger.Sync()
 
 		imp := importer.New(db, importer.Config{
-			SourceDir:      cfg.Import.SourceDir,
-			CSVDelimiter:   cfg.Import.CSV.Delimiter,
-			CSVNullMarker:  cfg.Import.CSV.NullMarker,
-			TruncateBefore: cfg.Import.Target.TruncateBefore,
-			CommitInterval: cfg.Import.Batch.CommitInterval,
-			ErrorPolicy:    cfg.Import.Batch.ErrorPolicy,
-			MaxErrors:      cfg.Import.Batch.MaxErrorsBeforeStop,
-			MaxWorkers:     cfg.Import.Parallel.MaxWorkers,
-			DateTimeFormat: cfg.Import.DataTransforms.DatetimeFormat,
-			TrimStrings:    cfg.Import.DataTransforms.TrimStrings,
-			SourceEncoding: cfg.Import.DataTransforms.SourceEncoding,
-			TargetDBType:   cfg.Target.Type,
-			Logger:         logger,
+			SourceDir:          cfg.Import.SourceDir,
+			CSVDelimiter:       cfg.Import.CSV.Delimiter,
+			CSVNullMarker:      cfg.Import.CSV.NullMarker,
+			TruncateBefore:     cfg.Import.Target.TruncateBefore,
+			CommitInterval:     cfg.Import.Batch.CommitInterval,
+			ErrorPolicy:        cfg.Import.Batch.ErrorPolicy,
+			MaxErrors:          cfg.Import.Batch.MaxErrorsBeforeStop,
+			MaxWorkers:         cfg.Import.Parallel.MaxWorkers,
+			DateTimeFormat:     cfg.Import.DataTransforms.DatetimeFormat,
+			TrimStrings:        cfg.Import.DataTransforms.TrimStrings,
+			SourceEncoding:     cfg.Import.DataTransforms.SourceEncoding,
+			TargetDBType:       cfg.Target.Type,
+			Logger:             logger,
 			NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
 		})
 
 		tables := sm.GetTables()
 		ctx := context.Background()
+		if qt := queryTimeout(cfg.Target); qt > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, qt)
+			defer cancel()
+		}
 		results, err := imp.ImportTables(ctx, tables, cfg.DDL.SchemaMapping)
 		if err != nil {
 			return err

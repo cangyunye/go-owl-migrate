@@ -143,15 +143,18 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 			return err
 		}
 
-		db, err := openDB(cfg.Source.Type, cfg.Source.DSN)
+		db, err := openDB(cfg.Source)
 		if err != nil {
 			return fmt.Errorf("connect to source: %w", err)
 		}
 		defer db.Close()
 
-		if err := db.Ping(); err != nil {
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), connectTimeout(cfg.Source))
+		if err := db.PingContext(pingCtx); err != nil {
+			pingCancel()
 			return fmt.Errorf("ping source: %w", err)
 		}
+		pingCancel()
 		fmt.Printf("Connected to %s\n", cfg.Source.Type)
 
 		pkMap := buildPKMap(sm)
@@ -179,6 +182,11 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 		})
 
 		ctx := context.Background()
+		if qt := queryTimeout(cfg.Source); qt > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, qt)
+			defer cancel()
+		}
 		tables := filterTables(sm.GetTables(), cfg.Export.Tables.Include)
 		results, err := exp.ExportTables(ctx, tables, pkMap)
 		if err != nil {

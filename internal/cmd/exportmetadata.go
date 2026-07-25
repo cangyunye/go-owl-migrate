@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -11,8 +12,8 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
-	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 )
 
 func exportMetadataCmd() *cobra.Command {
@@ -72,15 +73,18 @@ Examples:
 			}
 
 			// Connect and extract metadata
-			db, err := openDB(cfg.Source.Type, cfg.Source.DSN)
+			db, err := openDB(cfg.Source)
 			if err != nil {
 				return fmt.Errorf("connect to source: %w", err)
 			}
 			defer db.Close()
 
-			if err := db.Ping(); err != nil {
+			pingCtx, pingCancel := context.WithTimeout(context.Background(), connectTimeout(cfg.Source))
+			if err := db.PingContext(pingCtx); err != nil {
+				pingCancel()
 				return fmt.Errorf("ping source: %w", err)
 			}
+			pingCancel()
 			fmt.Printf("Connected to %s, schema: %s\n", cfg.Source.Type, targetSchema)
 
 			sm, err := extractor.Extract(db, cfg.Source.Type, targetSchema)
