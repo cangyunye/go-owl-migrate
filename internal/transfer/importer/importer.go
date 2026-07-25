@@ -22,20 +22,20 @@ import (
 
 // Config holds importer configuration.
 type Config struct {
-	SourceDir      string
-	CSVDelimiter   string
-	CSVNullMarker  string
-	TruncateBefore bool
-	CommitInterval int
-	ErrorPolicy    string // skip_row/stop/log_only
-	MaxErrors      int
-	MaxWorkers     int
-	DateTimeFormat string // e.g. "yyyyMMddHHmmss"
-	TrimStrings    bool
-	TargetDBType   string // "postgres", "mysql", "oracle" — affects quoting and placeholders
-	SourceEncoding string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
-	TargetEncoding string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
-	Logger         *zap.Logger
+	SourceDir          string
+	CSVDelimiter       string
+	CSVNullMarker      string
+	TruncateBefore     bool
+	CommitInterval     int
+	ErrorPolicy        string // skip_row/stop/log_only
+	MaxErrors          int
+	MaxWorkers         int
+	DateTimeFormat     string // e.g. "yyyyMMddHHmmss"
+	TrimStrings        bool
+	TargetDBType       string // "postgres", "mysql", "oracle" — affects quoting and placeholders
+	SourceEncoding     string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
+	TargetEncoding     string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
+	Logger             *zap.Logger
 	NoQuoteIdentifiers bool
 }
 
@@ -170,6 +170,12 @@ func (imp *Importer) ImportTables(ctx context.Context, tables []*md.TableDef, sc
 	return results, nil
 }
 
+// dbConn abstracts operations available on both *sql.DB and *sql.Conn.
+type dbConn interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
 func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targetSchema string) ImportResult {
 	start := time.Now()
 	key := fmt.Sprintf("%s.%s", tbl.TableSchema, tbl.TableName)
@@ -180,15 +186,25 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		zap.String("target", fmt.Sprintf("%s.%s", targetSchema, tbl.TableName)),
 	)
 
-	// Set Oracle session date/timestamp formats for automatic string conversion
+	// For Oracle, acquire a dedicated connection so ALTER SESSION NLS settings
+	// apply to the same connection that runs subsequent INSERTs.
+	var conn dbConn = imp.db
 	if imp.isOracle() {
-		if _, err := imp.db.ExecContext(ctx, "ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
+		sqlConn, err := imp.db.Conn(ctx)
+		if err != nil {
+			result.Err = fmt.Errorf("acquire dedicated oracle conn: %w", err)
+			return result
+		}
+		defer sqlConn.Close()
+		conn = sqlConn
+
+		if _, err := conn.ExecContext(ctx, "ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
 			imp.logger.Warn("Failed to set NLS_DATE_FORMAT", zap.Error(err))
 		}
-		if _, err := imp.db.ExecContext(ctx, "ALTER SESSION SET NLS_TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
+		if _, err := conn.ExecContext(ctx, "ALTER SESSION SET NLS_TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
 			imp.logger.Warn("Failed to set NLS_TIMESTAMP_FORMAT", zap.Error(err))
 		}
-		if _, err := imp.db.ExecContext(ctx, "ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT = 'YYYY-MM-DD HH24:MI:SS TZH:TZM'"); err != nil {
+		if _, err := conn.ExecContext(ctx, "ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT = 'YYYY-MM-DD HH24:MI:SS TZH:TZM'"); err != nil {
 			imp.logger.Warn("Failed to set NLS_TIMESTAMP_TZ_FORMAT", zap.Error(err))
 		}
 	}
@@ -265,22 +281,24 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	if imp.cfg.TruncateBefore {
 		truncSQL := fmt.Sprintf("TRUNCATE TABLE %s.%s",
 			imp.quoteIdent(targetSchema), imp.quoteIdent(tbl.TableName))
-		if _, err := imp.db.ExecContext(ctx, truncSQL); err != nil {
+		if _, err := conn.ExecContext(ctx, truncSQL); err != nil {
 			imp.logger.Warn("TRUNCATE failed (table may not exist yet)", zap.Error(err))
 		}
 	}
 
 	// Insert in batches with transaction control
 	var (
-		skipped  int64
-		errCount int64
-		inserted int64
-		tx       *sql.Tx
+		skipped     int64
+		errCount    int64
+		inserted    int64
+		pendingInTx int64
+		tx          *sql.Tx
 	)
 
 	beginTx := func() error {
 		var e error
-		tx, e = imp.db.BeginTx(ctx, nil)
+		tx, e = conn.BeginTx(ctx, nil)
+		pendingInTx = 0
 		return e
 	}
 	commitTx := func() error {
@@ -288,6 +306,13 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 			return nil
 		}
 		return tx.Commit()
+	}
+	rollbackTx := func() {
+		if tx != nil {
+			tx.Rollback()
+			inserted -= pendingInTx
+			pendingInTx = 0
+		}
 	}
 
 	if err := beginTx(); err != nil {
@@ -310,7 +335,11 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 					if imp.isBinaryColumn(tbl, header[j]) {
 						decoded, err := hex.DecodeString(v)
 						if err != nil {
+							rollbackTx()
 							result.Err = fmt.Errorf("row %d column %s: decode hex: %w", i, header[j], err)
+							result.Actual = inserted
+							result.Skipped = skipped
+							result.Errors = errCount
 							return result
 						}
 						val = decoded
@@ -324,14 +353,14 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		if tx != nil {
 			_, execErr = tx.ExecContext(ctx, insertSQL, vals...)
 		} else {
-			_, execErr = imp.db.ExecContext(ctx, insertSQL, vals...)
+			_, execErr = conn.ExecContext(ctx, insertSQL, vals...)
 		}
 
 		if execErr != nil {
 			errCount++
 			switch imp.cfg.ErrorPolicy {
 			case "stop":
-				commitTx()
+				rollbackTx()
 				result.Err = fmt.Errorf("row %d: %w", i, execErr)
 				result.Actual = inserted
 				result.Skipped = skipped
@@ -344,14 +373,23 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 					zap.Error(execErr),
 				)
 				if imp.cfg.MaxErrors > 0 && errCount >= int64(imp.cfg.MaxErrors) {
-					commitTx()
+					rollbackTx()
 					result.Err = fmt.Errorf("max errors (%d) reached", imp.cfg.MaxErrors)
 					result.Actual = inserted
 					result.Skipped = skipped
 					result.Errors = errCount
 					return result
 				}
-				// Rollback to savepoint or just continue with next row
+				// A failed INSERT aborts the transaction on PostgreSQL;
+				// rollback and start a fresh transaction to continue.
+				rollbackTx()
+				if err := beginTx(); err != nil {
+					result.Err = fmt.Errorf("begin tx after skip_row rollback: %w", err)
+					result.Actual = inserted
+					result.Skipped = skipped
+					result.Errors = errCount
+					return result
+				}
 				continue
 			case "log_only":
 				imp.logger.Warn("Row error (continuing)",
@@ -361,12 +399,15 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 			}
 		} else {
 			inserted++
+			pendingInTx++
 		}
 
 		// Commit interval
-		if inserted > 0 && inserted%int64(imp.cfg.CommitInterval) == 0 {
+		if pendingInTx >= int64(imp.cfg.CommitInterval) {
 			if err := commitTx(); err != nil {
+				rollbackTx()
 				result.Err = fmt.Errorf("commit at row %d: %w", inserted, err)
+				result.Actual = inserted
 				return result
 			}
 			imp.logger.Debug("Committed",
