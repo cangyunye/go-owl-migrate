@@ -36,12 +36,19 @@ source:
   dsn: "host=127.0.0.1 port=5432 dbname=mydb user=u password=p sslmode=disable"
   schema: public
   charset: ""                               # Source database charset (optional)
-  connect_timeout: ""                       # Connection timeout
-  query_timeout: ""                         # Query timeout
+  connect_timeout: "30s"                    # Connection/ping timeout (e.g. 10s, 1m)
+  query_timeout: ""                         # Overall operation timeout (e.g. 30m, 1h; empty = no limit)
+  pool:                                     # Connection pool tuning (optional)
+    max_open_conns: 10                      # Max open connections (default: 10)
+    max_idle_conns: 5                       # Max idle connections (default: 5)
+    conn_max_lifetime: "30m"                # Max connection lifetime (default: 30m)
+    conn_max_idle_time: "5m"                # Max idle time before close (default: 5m)
 
 target:
   type: mysql
   dsn: "root:pass@tcp(127.0.0.1:3306)/mydb"
+  pool:                                     # Same pool options available for target
+    max_open_conns: 10
 
 ddl:
   target_dialect: mysql                     # Target DDL dialect (required)

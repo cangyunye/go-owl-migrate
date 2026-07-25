@@ -106,6 +106,10 @@ test:
 test/full:
 	$(GO) test -tags "sqlite3 duckdb" -v ./...
 
+# Run E2E tests against docker-compose databases (requires: docker compose up)
+test/e2e:
+	$(GO) test -tags e2e -v -count=1 ./internal/cmd/ ./internal/transfer/importer/
+
 test-quick:
 	$(GO) test ./...
 
