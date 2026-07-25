@@ -79,7 +79,12 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 
 // IsZero returns true if the DBConfig has no meaningful values set.
 func (d DBConfig) isZero() bool {
-	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.Charset == "" && d.ConnectTimeout == "" && d.QueryTimeout == ""
+	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.Charset == "" && d.ConnectTimeout == "" && d.QueryTimeout == "" && d.Pool.isZero()
+}
+
+// IsZero returns true if the PoolConfig has no meaningful values set.
+func (p PoolConfig) isZero() bool {
+	return p.MaxOpenConns == 0 && p.MaxIdleConns == 0 && p.ConnMaxLifetime == "" && p.ConnMaxIdleTime == ""
 }
 
 // IsZero returns true if the DDLConfig has no meaningful values set.
@@ -103,14 +108,22 @@ func (i ImportConfig) isZero() bool {
 }
 
 // IsZero helpers for nested config structs.
-func (b BatchConfig) isZero() bool           { return b.Method == "" && b.PageSize == 0 }
-func (p ParallelConfig) isZero() bool        { return !p.Enabled && p.MaxWorkers == 0 }
-func (e ExportCSVConfig) isZero() bool        { return e.Delimiter == "" && !e.Header && e.NullRepresentation == "" && e.QuoteChar == "" }
-func (i ImportCSVConfig) isZero() bool        { return i.Delimiter == "" && i.NullMarker == "" && !i.HasHeader }
-func (t ImportTargetConfig) isZero() bool     { return !t.TruncateBefore && !t.DisableConstraints && !t.DisableTriggers && !t.DropIndexes }
-func (b ImportBatchConfig) isZero() bool      { return b.CommitInterval == 0 && b.ErrorPolicy == "" }
-func (d DataTransforms) isZero() bool         { return d.DatetimeFormat == "" && !d.TrimStrings && len(d.NullIf) == 0 }
-func (t TableListConfig) isZero() bool        { return len(t.Include) == 0 }
+func (b BatchConfig) isZero() bool    { return b.Method == "" && b.PageSize == 0 }
+func (p ParallelConfig) isZero() bool { return !p.Enabled && p.MaxWorkers == 0 }
+func (e ExportCSVConfig) isZero() bool {
+	return e.Delimiter == "" && !e.Header && e.NullRepresentation == "" && e.QuoteChar == ""
+}
+func (i ImportCSVConfig) isZero() bool {
+	return i.Delimiter == "" && i.NullMarker == "" && !i.HasHeader
+}
+func (t ImportTargetConfig) isZero() bool {
+	return !t.TruncateBefore && !t.DisableConstraints && !t.DisableTriggers && !t.DropIndexes
+}
+func (b ImportBatchConfig) isZero() bool { return b.CommitInterval == 0 && b.ErrorPolicy == "" }
+func (d DataTransforms) isZero() bool {
+	return d.DatetimeFormat == "" && !d.TrimStrings && len(d.NullIf) == 0
+}
+func (t TableListConfig) isZero() bool { return len(t.Include) == 0 }
 
 // ValidDialects lists supported target dialects.
 var ValidDialects = map[string]bool{
@@ -126,8 +139,8 @@ var ValidDialects = map[string]bool{
 	"oceanbase-mysql":  true,
 	"oceanbase-oracle": true,
 	"panweidb":         true,
-	"panweidb-mysql":    true,
-	"panweidb-oracle":   true,
+	"panweidb-mysql":   true,
+	"panweidb-oracle":  true,
 	"opengaussdb":      true,
 }
 
@@ -171,15 +184,15 @@ type GeneralConfig struct {
 
 // MetadataConfig holds metadata source configuration.
 type MetadataConfig struct {
-	Type  string    `yaml:"type"` // csv/xlsx/database
-	CSV   CSVConfig `yaml:"csv"`
+	Type  string     `yaml:"type"` // csv/xlsx/database
+	CSV   CSVConfig  `yaml:"csv"`
 	XLSX  XLSXConfig `yaml:"xlsx"`
-	Files []string  `yaml:"files,omitempty"`
+	Files []string   `yaml:"files,omitempty"`
 }
 
 // XLSXConfig holds xlsx loading settings.
 type XLSXConfig struct {
-	Path          string `yaml:"path"`                     // path to .xlsx file
+	Path          string `yaml:"path"`                      // path to .xlsx file
 	DataOutputDir string `yaml:"data_output_dir,omitempty"` // output directory for @sheet CSV data
 }
 
@@ -195,12 +208,21 @@ type CSVConfig struct {
 
 // DBConfig holds database connection settings.
 type DBConfig struct {
-	Type           string `yaml:"type"`
-	DSN            string `yaml:"dsn"`
-	Schema         string `yaml:"schema"`
-	Charset        string `yaml:"charset,omitempty"`
-	ConnectTimeout string `yaml:"connect_timeout,omitempty"`
-	QueryTimeout   string `yaml:"query_timeout,omitempty"`
+	Type           string     `yaml:"type"`
+	DSN            string     `yaml:"dsn"`
+	Schema         string     `yaml:"schema"`
+	Charset        string     `yaml:"charset,omitempty"`
+	ConnectTimeout string     `yaml:"connect_timeout,omitempty"`
+	QueryTimeout   string     `yaml:"query_timeout,omitempty"`
+	Pool           PoolConfig `yaml:"pool,omitempty"`
+}
+
+// PoolConfig holds connection pool tuning parameters.
+type PoolConfig struct {
+	MaxOpenConns    int    `yaml:"max_open_conns,omitempty"`
+	MaxIdleConns    int    `yaml:"max_idle_conns,omitempty"`
+	ConnMaxLifetime string `yaml:"conn_max_lifetime,omitempty"`
+	ConnMaxIdleTime string `yaml:"conn_max_idle_time,omitempty"`
 }
 
 // DDLConfig holds DDL generation settings.
