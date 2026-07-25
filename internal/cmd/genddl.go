@@ -3,8 +3,8 @@ package cmd
 import (
 	"github.com/spf13/cobra"
 
-	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 )
 
 // genDDLCmd is a hidden alias for "export ddl". It remains registered for

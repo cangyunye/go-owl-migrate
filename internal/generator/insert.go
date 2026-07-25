@@ -12,12 +12,12 @@ import (
 
 // InsertConfig controls INSERT SQL generation.
 type InsertConfig struct {
-	OutputDir      string
-	BatchSize      int // VALUES rows per INSERT
-	TruncateBefore bool
-	Dialect        string // oracle/postgres/mysql
-	NullMarker     string
-	CSVDelimiter   string
+	OutputDir          string
+	BatchSize          int // VALUES rows per INSERT
+	TruncateBefore     bool
+	Dialect            string // oracle/postgres/mysql
+	NullMarker         string
+	CSVDelimiter       string
 	NoQuoteIdentifiers bool
 }
 

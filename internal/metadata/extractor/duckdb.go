@@ -110,11 +110,11 @@ func (DuckDBMetadataQuerier) QueryPrimaryKeys(db *sql.DB, schema string) ([]*md.
 			return nil, err
 		}
 		pks = append(pks, &md.PrimaryKeyDef{
-			TableSchema:      sch,
-			TableName:        tableName,
-			ConstraintName:   constraintName,
-			ColumnName:       colName,
-			OrdinalPosition:  pos,
+			TableSchema:     sch,
+			TableName:       tableName,
+			ConstraintName:  constraintName,
+			ColumnName:      colName,
+			OrdinalPosition: pos,
 		})
 	}
 	return pks, rows.Err()

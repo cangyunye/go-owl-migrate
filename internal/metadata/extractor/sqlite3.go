@@ -109,11 +109,11 @@ func (SQLite3MetadataQuerier) QueryPrimaryKeys(db *sql.DB, _ string) ([]*md.Prim
 			}
 			if pk > 0 {
 				pks = append(pks, &md.PrimaryKeyDef{
-					TableSchema:      "main",
-					TableName:        tbl.TableName,
-					ConstraintName:   "pk_" + tbl.TableName,
-					ColumnName:       name,
-					OrdinalPosition:  pk,
+					TableSchema:     "main",
+					TableName:       tbl.TableName,
+					ConstraintName:  "pk_" + tbl.TableName,
+					ColumnName:      name,
+					OrdinalPosition: pk,
 				})
 			}
 		}

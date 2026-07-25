@@ -293,9 +293,15 @@ func (PGDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions)
 	}
 	return fmt.Sprintf("CREATE MATERIALIZED VIEW %s.%s AS %s", quote(schema), quote(mv.MViewName), mv.MViewQuery), nil
 }
-func (PGDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (PGDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (PGDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) { return "", nil }
+func (PGDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (PGDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (PGDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
 
 type PGDMLHelper struct{}
 

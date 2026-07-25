@@ -104,7 +104,6 @@ FROM information_schema.triggers
 WHERE trigger_schema = ?
 ORDER BY trigger_name`
 
-
 // MySQLMetadataQuerier implements MetadataQuerier for MySQL using information_schema.
 type MySQLMetadataQuerier struct{}
 

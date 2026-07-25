@@ -103,13 +103,13 @@ func TestCSVWriter_Quoting(t *testing.T) {
 func TestSQLWriter_basic(t *testing.T) {
 	dir := t.TempDir()
 	w := &sqlWriter{
-		path:      filepath.Join(dir, "SCOTT.EMP.insert.sql"),
-		schema:    "SCOTT",
-		table:     "EMP",
-		quoter:    func(s string) string { return `"` + s + `"` },
-		dialect:   "postgres",
+		path:       filepath.Join(dir, "SCOTT.EMP.insert.sql"),
+		schema:     "SCOTT",
+		table:      "EMP",
+		quoter:     func(s string) string { return `"` + s + `"` },
+		dialect:    "postgres",
 		nullMarker: "\\N",
-		batchSize: 100,
+		batchSize:  100,
 	}
 	cols := []ColumnInfo{{Name: "EMPNO"}, {Name: "ENAME"}}
 	if err := w.WriteHeader(cols); err != nil {
@@ -145,13 +145,13 @@ func TestSQLWriter_basic(t *testing.T) {
 func TestSQLWriter_batchSize(t *testing.T) {
 	dir := t.TempDir()
 	w := &sqlWriter{
-		path:      filepath.Join(dir, "batch.sql"),
-		schema:    "public",
-		table:     "t1",
-		quoter:    func(s string) string { return `"` + s + `"` },
-		dialect:   "postgres",
+		path:       filepath.Join(dir, "batch.sql"),
+		schema:     "public",
+		table:      "t1",
+		quoter:     func(s string) string { return `"` + s + `"` },
+		dialect:    "postgres",
 		nullMarker: "\\N",
-		batchSize: 3,
+		batchSize:  3,
 	}
 	cols := []ColumnInfo{{Name: "id"}}
 	w.WriteHeader(cols)
@@ -176,13 +176,13 @@ func TestSQLWriter_batchSize(t *testing.T) {
 func TestSQLWriter_mysqlStyle(t *testing.T) {
 	dir := t.TempDir()
 	w := &sqlWriter{
-		path:      filepath.Join(dir, "mysql.sql"),
-		schema:    "testdb",
-		table:     "users",
-		quoter:    func(s string) string { return "`" + s + "`" },
-		dialect:   "mysql",
+		path:       filepath.Join(dir, "mysql.sql"),
+		schema:     "testdb",
+		table:      "users",
+		quoter:     func(s string) string { return "`" + s + "`" },
+		dialect:    "mysql",
 		nullMarker: "\\N",
-		batchSize: 100,
+		batchSize:  100,
 	}
 	cols := []ColumnInfo{{Name: "id"}, {Name: "name"}, {Name: "salary"}}
 	w.WriteHeader(cols)
@@ -252,13 +252,13 @@ func TestXLSXWriter_basic(t *testing.T) {
 func TestSQLWriter_OutputFile(t *testing.T) {
 	dir := t.TempDir()
 	w := &sqlWriter{
-		path:      filepath.Join(dir, "t.sql"),
-		schema:    "s",
-		table:     "t",
-		quoter:    func(s string) string { return `"` + s + `"` },
-		dialect:   "postgres",
+		path:       filepath.Join(dir, "t.sql"),
+		schema:     "s",
+		table:      "t",
+		quoter:     func(s string) string { return `"` + s + `"` },
+		dialect:    "postgres",
 		nullMarker: "\\N",
-		batchSize: 100,
+		batchSize:  100,
 	}
 	if w.OutputFile() != filepath.Join(dir, "t.sql") {
 		t.Errorf("unexpected output file: %s", w.OutputFile())

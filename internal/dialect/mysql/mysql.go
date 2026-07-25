@@ -247,11 +247,21 @@ func (MySQLDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.Buil
 	}
 	return fmt.Sprintf("CREATE FUNCTION `%s` RETURNS %s %s", fn.FunctionName, fn.ReturnType, fn.FunctionBody), nil
 }
-func (MySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error)       { return "", nil }
-func (MySQLDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error)              { return "", nil }
-func (MySQLDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (MySQLDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (MySQLDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) { return "", nil }
+func (MySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (MySQLDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (MySQLDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (MySQLDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (MySQLDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
 
 type MySQLDMLHelper struct{}
 

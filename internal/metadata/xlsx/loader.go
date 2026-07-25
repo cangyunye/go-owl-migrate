@@ -18,17 +18,17 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 )
 
 // knownMetadataSheets maps lowercase sheet names to their human-readable labels.
 var knownMetadataSheets = map[string]string{
 	"tables":       "tables",
 	"columns":      "columns",
-	"primary_keys":  "primary_keys",
+	"primary_keys": "primary_keys",
 	"indexes":      "indexes",
-	"foreign_keys":  "foreign_keys",
+	"foreign_keys": "foreign_keys",
 	"views":        "views",
 	"sequences":    "sequences",
 	"triggers":     "triggers",

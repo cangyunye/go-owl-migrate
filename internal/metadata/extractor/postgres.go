@@ -152,7 +152,6 @@ WHERE n.nspname = $1
 GROUP BY tg.oid, tg.tgname, n.nspname, t.relname, tg.tgtype, tg.tgfoid, tg.tgenabled, tg.tgrelid, tg.tgqual
 ORDER BY tg.tgname`
 
-
 // PGMetadataQuerier implements MetadataQuerier for PostgreSQL using information_schema.
 type PGMetadataQuerier struct{}
 

@@ -61,11 +61,11 @@ func exportInsertCmd() *cobra.Command {
 		}
 
 		gen := generator.NewInsertGenerator(generator.InsertConfig{
-			OutputDir:           outputDir,
-			BatchSize:           batchSize,
-			TruncateBefore:      truncateBefore,
-			Dialect:             dialect,
-			NoQuoteIdentifiers:  noQuote,
+			OutputDir:          outputDir,
+			BatchSize:          batchSize,
+			TruncateBefore:     truncateBefore,
+			Dialect:            dialect,
+			NoQuoteIdentifiers: noQuote,
 		})
 
 		files, err := gen.Generate(tables, dataDir)

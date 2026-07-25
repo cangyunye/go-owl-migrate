@@ -134,7 +134,6 @@ WHERE owner = UPPER(:1)
 	OR table_owner = UPPER(:1)
 ORDER BY synonym_name`
 
-
 // OracleMetadataQuerier implements MetadataQuerier for Oracle using ALL_* dictionary views.
 type OracleMetadataQuerier struct{}
 

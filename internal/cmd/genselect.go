@@ -56,10 +56,10 @@ func genSelectCmd() *cobra.Command {
 		}
 
 		quoteFn := d.Quote
-	if cmd.Flags().Changed("no-quote-identifiers") && noQuote {
-		quoteFn = func(s string) string { return s }
-	}
-	gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn)
+		if cmd.Flags().Changed("no-quote-identifiers") && noQuote {
+			quoteFn = func(s string) string { return s }
+		}
+		gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn)
 
 		files, err := gen.Generate(sm)
 		if err != nil {

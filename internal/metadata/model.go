@@ -331,11 +331,11 @@ type SchemaModel struct {
 	Synonyms []*SynonymDef
 
 	// Global index (not keyed to a specific table)
-	allForeignKeys []*ForeignKeyDef
-	allTriggers    []*TriggerDef
-	allFunctions   []*FunctionDef
-	allSequences   []*SequenceDef
-	allPackages    []*PackageDef
+	allForeignKeys   []*ForeignKeyDef
+	allTriggers      []*TriggerDef
+	allFunctions     []*FunctionDef
+	allSequences     []*SequenceDef
+	allPackages      []*PackageDef
 	allPackageBodies []*PackageBodyDef
 
 	// Track FK/trigger refs for validation

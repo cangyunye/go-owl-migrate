@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
-	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
@@ -39,10 +39,10 @@ func loadTestModel(t *testing.T) *md.SchemaModel {
 
 // dialectCase holds a dialect name and its DDL generator for table-driven tests.
 type dialectCase struct {
-	name     string
-	dialect  dialect.Dialect
-	opts     dialect.BuildOptions
-	noQuote  bool
+	name    string
+	dialect dialect.Dialect
+	opts    dialect.BuildOptions
+	noQuote bool
 }
 
 func newDialectCase(name string, noQuote bool) dialectCase {

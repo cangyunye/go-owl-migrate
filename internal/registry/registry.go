@@ -46,8 +46,9 @@ func Register(name string, d dialect.Dialect) {
 
 // Normalize maps bare compound dialect names to their qualified form.
 // Returns the name unchanged if no mapping exists.
-//   "goldendb"  → "goldendb-mysql"
-//   "oceanbase" → "oceanbase-mysql"
+//
+//	"goldendb"  → "goldendb-mysql"
+//	"oceanbase" → "oceanbase-mysql"
 func Normalize(name string) string {
 	switch strings.ToLower(name) {
 	case "goldendb":
