@@ -13,6 +13,7 @@
         <a href="/config" class="nav-link {{if eq .Active "config"}}active{{end}}">配置</a>
         <a href="/migrate" class="nav-link {{if eq .Active "migrate"}}active{{end}}">迁移</a>
         <a href="/jobs" class="nav-link {{if eq .Active "jobs"}}active{{end}}">任务</a>
+        <a href="/docs" class="nav-link">文档</a>
     </nav>
     <main class="content">
         {{block "content" .}}{{end}}

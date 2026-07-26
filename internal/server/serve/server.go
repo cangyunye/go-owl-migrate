@@ -58,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/jobs/{id}", s.handleCancelJob)
 
 	s.registerPages(mux)
+	s.registerDocs(mux)
 
 	return withCORS(mux)
 }
