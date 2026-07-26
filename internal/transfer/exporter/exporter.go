@@ -401,37 +401,7 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 		quotedPKs[i] = e.quoteIdent(resolvePK(pk))
 	}
 
-	var query string
-	limit := e.limitClause()
-	if len(pkCols) > 0 && len(lastVals) > 0 {
-		// Cursor-based
-		conds := make([]string, len(pkCols))
-		for i, pk := range pkCols {
-			conds[i] = fmt.Sprintf("%s > %s", e.quoteIdent(resolvePK(pk)), e.placeholder(i))
-		}
-		query = fmt.Sprintf("SELECT %s FROM %s.%s WHERE %s ORDER BY %s %s",
-			strings.Join(colNames, ", "),
-			e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName),
-			strings.Join(conds, " AND "),
-			strings.Join(quotedPKs, ", "),
-			limit,
-		)
-	} else if len(pkCols) > 0 {
-		// First page with cursor
-		query = fmt.Sprintf("SELECT %s FROM %s.%s ORDER BY %s %s",
-			strings.Join(colNames, ", "),
-			e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName),
-			strings.Join(quotedPKs, ", "),
-			limit,
-		)
-	} else {
-		// No primary key, use limit only
-		query = fmt.Sprintf("SELECT %s FROM %s.%s %s",
-			strings.Join(colNames, ", "),
-			e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName),
-			limit,
-		)
-	}
+	query := e.buildBatchQuery(tbl, colNames, quotedPKs, pkCols, len(lastVals) > 0)
 
 	rows, err := e.db.QueryContext(ctx, query, lastVals...)
 	if err != nil {
@@ -472,6 +442,33 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 	}
 
 	return results, newLast, nil
+}
+
+func (e *Exporter) buildBatchQuery(tbl *md.TableDef, colNames, quotedPKs, pkCols []string, useCursor bool) string {
+	selectList := strings.Join(colNames, ", ")
+	from := fmt.Sprintf("%s.%s", e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName))
+	limit := e.limitClause()
+
+	if len(pkCols) == 0 {
+		return fmt.Sprintf("SELECT %s FROM %s %s", selectList, from, limit)
+	}
+
+	orderBy := strings.Join(quotedPKs, ", ")
+	if !useCursor {
+		return fmt.Sprintf("SELECT %s FROM %s ORDER BY %s %s", selectList, from, orderBy, limit)
+	}
+
+	var cursor string
+	if len(pkCols) == 1 {
+		cursor = fmt.Sprintf("%s > %s", quotedPKs[0], e.placeholder(0))
+	} else {
+		placeholders := make([]string, len(pkCols))
+		for i := range pkCols {
+			placeholders[i] = e.placeholder(i)
+		}
+		cursor = fmt.Sprintf("(%s) > (%s)", orderBy, strings.Join(placeholders, ", "))
+	}
+	return fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s %s", selectList, from, cursor, orderBy, limit)
 }
 
 func (e *Exporter) rowToCSV(row []any, columns []ColumnInfo) string {
