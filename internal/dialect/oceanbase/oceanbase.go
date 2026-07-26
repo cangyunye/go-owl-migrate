@@ -31,7 +31,9 @@ func (b obMySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect
 }
 
 func (b obMySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) (string, error) {
-	sql, err := b.MySQLDDLBuilder.BuildCreateTable(t, opts)
+	noPart := opts
+	noPart.SkipPartitions = true
+	sql, err := b.MySQLDDLBuilder.BuildCreateTable(t, noPart)
 	if err != nil {
 		return "", err
 	}
@@ -40,7 +42,7 @@ func (b obMySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOp
 	} else {
 		sql += " ENGINE=InnoDB"
 	}
-	return sql, nil
+	return sql + dialect.PartitionClause(t, opts), nil
 }
 
 func (b obMySQLDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {

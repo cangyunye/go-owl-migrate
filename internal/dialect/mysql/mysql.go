@@ -179,6 +179,7 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 	if t.Engine != "" {
 		b.WriteString(" ENGINE=" + t.Engine)
 	}
+	b.WriteString(dialect.PartitionClause(t, opts))
 	return b.String(), nil
 }
 

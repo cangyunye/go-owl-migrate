@@ -182,6 +182,7 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 		b.WriteString("\n")
 	}
 	b.WriteString(")")
+	b.WriteString(dialect.PartitionClause(t, opts))
 	if opts.IncludeComments && t.TableComment != "" {
 		if opts.NoQuoteIdentifiers {
 			b.WriteString(fmt.Sprintf(";\nCOMMENT ON TABLE %s.%s IS '%s'", schema, t.TableName, t.TableComment))

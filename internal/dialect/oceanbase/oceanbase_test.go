@@ -242,3 +242,23 @@ func TestOBOracle_BFILEToBLOB(t *testing.T) {
 		t.Errorf("BFILE -> %q, want BLOB", got)
 	}
 }
+
+func TestOBMySQL_PartitionPreservedWithInnoDB(t *testing.T) {
+	d := NewMySQL()
+	tbl, _ := md.NewTableDef("db", "t")
+	col, _ := md.NewColumnDef("db", "t", "id", 1, "INT")
+	tbl.AddColumn(col)
+	tbl.Engine = "MyISAM"
+	tbl.Partitioned = "YES"
+	tbl.PartitionInfo = "PARTITION BY HASH(id) PARTITIONS 4"
+	ddl, err := d.BuildCreateTable(tbl, dialect.BuildOptions{})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(ddl, "ENGINE=InnoDB") {
+		t.Errorf("expected ENGINE=InnoDB, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "PARTITION BY HASH(id) PARTITIONS 4") {
+		t.Errorf("expected partition preserved, got:\n%s", ddl)
+	}
+}

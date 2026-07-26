@@ -164,3 +164,17 @@ func isBooleanTypeName(t string) bool {
 	u := strings.ToUpper(strings.TrimSpace(t))
 	return strings.Contains(u, "BOOL") || u == "NUMBER(1)" || u == "TINYINT(1)"
 }
+
+// PartitionClause returns the partition clause to append to a CREATE TABLE
+// statement when partition migration is enabled and the table carries a usable
+// PARTITION BY definition; otherwise it returns "".
+func PartitionClause(t *md.TableDef, opts BuildOptions) string {
+	if opts.SkipPartitions || !strings.EqualFold(t.Partitioned, "YES") {
+		return ""
+	}
+	info := strings.TrimSpace(t.PartitionInfo)
+	if info == "" || !strings.Contains(strings.ToUpper(info), "PARTITION BY") {
+		return ""
+	}
+	return "\n" + info
+}

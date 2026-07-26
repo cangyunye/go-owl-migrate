@@ -1,9 +1,11 @@
 package mysql
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
+	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
 func TestMySQL_ToLogicalType(t *testing.T) {
@@ -93,4 +95,36 @@ func TestMySQL_Features(t *testing.T) {
 	if d.TruncateIsTransactional() {
 		t.Error("MySQL TRUNCATE should not be transactional")
 	}
+}
+
+func TestMySQL_BuildCreateTable_Partition(t *testing.T) {
+	d := New()
+	newTbl := func(info string) *md.TableDef {
+		tbl, _ := md.NewTableDef("db", "t")
+		col, _ := md.NewColumnDef("db", "t", "id", 1, "INT")
+		tbl.AddColumn(col)
+		tbl.Partitioned = "YES"
+		tbl.PartitionInfo = info
+		return tbl
+	}
+	const partClause = "PARTITION BY HASH(id) PARTITIONS 4"
+
+	t.Run("appends partition when enabled", func(t *testing.T) {
+		ddl, _ := d.BuildCreateTable(newTbl(partClause), dialect.BuildOptions{})
+		if !strings.Contains(ddl, partClause) {
+			t.Errorf("expected partition clause, got:\n%s", ddl)
+		}
+	})
+	t.Run("skips when SkipPartitions", func(t *testing.T) {
+		ddl, _ := d.BuildCreateTable(newTbl(partClause), dialect.BuildOptions{SkipPartitions: true})
+		if strings.Contains(ddl, "PARTITION BY") {
+			t.Errorf("did not expect partition clause, got:\n%s", ddl)
+		}
+	})
+	t.Run("ignores raw metadata without PARTITION BY", func(t *testing.T) {
+		ddl, _ := d.BuildCreateTable(newTbl("partitioned"), dialect.BuildOptions{})
+		if strings.Contains(ddl, "partitioned") {
+			t.Errorf("raw create_options should not be appended, got:\n%s", ddl)
+		}
+	})
 }

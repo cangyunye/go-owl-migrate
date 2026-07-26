@@ -46,10 +46,12 @@ func (b pdbMySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildO
 	if err != nil {
 		return "", err
 	}
+	partition := dialect.PartitionClause(t, opts)
+	sql = strings.TrimSuffix(sql, partition)
 	if idx := strings.LastIndex(sql, " ENGINE="); idx >= 0 {
 		sql = sql[:idx]
 	}
-	return sql, nil
+	return sql + partition, nil
 }
 
 // NewMySQL creates a PanWeiDB MySQL-compatible (B mode) dialect.

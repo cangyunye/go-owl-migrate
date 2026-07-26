@@ -171,6 +171,7 @@ func (OracleDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptio
 		b.WriteString("  " + quote("ORIG_ROWID") + " ROWID\n")
 	}
 	b.WriteString(")")
+	b.WriteString(dialect.PartitionClause(t, opts))
 	return b.String(), nil
 }
 
