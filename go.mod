@@ -45,4 +45,5 @@ require (
 	golang.org/x/tools v0.45.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.15.1 // indirect
+	nhooyr.io/websocket v1.8.17 // indirect
 )
