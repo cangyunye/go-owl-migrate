@@ -1,0 +1,37 @@
+{{template "base.html" .}}
+{{define "content"}}
+<h1>任务历史</h1>
+<div class="panel">
+    <button class="btn-primary" onclick="loadJobs()">刷新</button>
+</div>
+<table class="data-table" id="jobs-table">
+    <thead>
+        <tr><th>ID</th><th>类型</th><th>状态</th><th>PID</th><th>创建时间</th><th>完成时间</th></tr>
+    </thead>
+    <tbody id="jobs-body"></tbody>
+</table>
+{{end}}
+{{define "scripts"}}
+<script>
+function loadJobs() {
+    api.get('/api/v1/jobs').then(jobs => {
+        const tbody = document.getElementById('jobs-body');
+        tbody.innerHTML = '';
+        jobs.forEach(j => {
+            const statusClass = j.status === 'completed' ? 'status-ok' :
+                               j.status === 'failed' ? 'status-fail' :
+                               j.status === 'running' ? 'status-run' : '';
+            tbody.innerHTML += `<tr>
+                <td><a href="/jobs/${j.job_id}">${j.job_id}</a></td>
+                <td>${j.type}</td>
+                <td class="${statusClass}">${j.status}</td>
+                <td>${j.pid || '-'}</td>
+                <td>${j.created_at}</td>
+                <td>${j.finished_at || '-'}</td>
+            </tr>`;
+        });
+    });
+}
+loadJobs();
+</script>
+{{end}}

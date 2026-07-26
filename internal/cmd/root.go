@@ -59,4 +59,5 @@ func init() {
 	rootCmd.AddCommand(genInsertCmd())
 	rootCmd.AddCommand(showQueryCmd())
 	rootCmd.AddCommand(exportMetadataCmd())
+	rootCmd.AddCommand(serveCmd())
 }

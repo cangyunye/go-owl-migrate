@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - owl-migrate</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <nav class="sidebar">
+        <div class="logo">owl-migrate</div>
+        <a href="/" class="nav-link {{if eq .Active "home"}}active{{end}}">首页</a>
+        <a href="/config" class="nav-link {{if eq .Active "config"}}active{{end}}">配置</a>
+        <a href="/migrate" class="nav-link {{if eq .Active "migrate"}}active{{end}}">迁移</a>
+        <a href="/jobs" class="nav-link {{if eq .Active "jobs"}}active{{end}}">任务</a>
+    </nav>
+    <main class="content">
+        {{block "content" .}}{{end}}
+    </main>
+    <script src="/static/js/app.js"></script>
+    {{block "scripts" .}}{{end}}
+</body>
+</html>

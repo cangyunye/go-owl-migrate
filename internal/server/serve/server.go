@@ -53,6 +53,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/metadata/tables", s.handleMetadataTables)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/ws", s.handleWebSocket)
 
+	s.registerPages(mux)
+
 	return withCORS(mux)
 }
 

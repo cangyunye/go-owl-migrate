@@ -1,0 +1,35 @@
+{{template "base.html" .}}
+{{define "content"}}
+<h1>配置</h1>
+<div class="panel">
+    <h3>当前配置</h3>
+    <textarea id="config-editor" class="code-editor" rows="20" placeholder="加载配置后显示..."></textarea>
+    <div class="form-row">
+        <button class="btn-primary" onclick="saveConfig()">保存</button>
+        <button onclick="loadConfig()">重新加载</button>
+    </div>
+</div>
+<div id="config-status" class="status-msg"></div>
+{{end}}
+{{define "scripts"}}
+<script>
+function loadConfig() {
+    api.get('/api/v1/config').then(cfg => {
+        document.getElementById('config-editor').value = JSON.stringify(cfg, null, 2);
+    });
+}
+function saveConfig() {
+    try {
+        const cfg = JSON.parse(document.getElementById('config-editor').value);
+        api.put('/api/v1/config', cfg).then(() => {
+            document.getElementById('config-status').textContent = '✅ 已保存';
+            document.getElementById('config-status').className = 'status-msg ok';
+        });
+    } catch(e) {
+        document.getElementById('config-status').textContent = '❌ JSON 格式错误: ' + e.message;
+        document.getElementById('config-status').className = 'status-msg fail';
+    }
+}
+loadConfig();
+</script>
+{{end}}
