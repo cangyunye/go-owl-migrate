@@ -56,6 +56,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/export", s.handleStartExport)
 	mux.HandleFunc("POST /api/v1/import", s.handleStartImport)
 	mux.HandleFunc("DELETE /api/v1/jobs/{id}", s.handleCancelJob)
+	mux.HandleFunc("GET /api/v1/scenarios", s.handleListScenarios)
+	mux.HandleFunc("GET /api/v1/scenarios/{name}", s.handleGetScenario)
+	mux.HandleFunc("POST /api/v1/scenarios/{name}/build", s.handleBuildScenarioConfig)
 
 	s.registerPages(mux)
 	s.registerDocs(mux)

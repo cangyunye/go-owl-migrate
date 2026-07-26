@@ -2,6 +2,7 @@ package master
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -186,23 +187,46 @@ func TestMaster_StartJob_MissingType(t *testing.T) {
 }
 
 func TestSelectPort(t *testing.T) {
-	tests := []struct {
-		name     string
-		prefer   []int
-		fallback [][2]int
-		want     int
-	}{
-		{"first available", []int{25430, 25431}, [][2]int{{25400, 25499}}, 25430},
+	// Occupy one port and free another, so the choice is deterministic
+	// regardless of what else is running on the machine.
+	busyLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen busy: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			port, err := selectPort(tt.prefer, tt.fallback)
-			if err != nil {
-				t.Fatalf("selectPort: %v", err)
-			}
-			if port != tt.want {
-				t.Errorf("port = %d, want %d", port, tt.want)
-			}
-		})
+	defer busyLn.Close()
+	busyPort := busyLn.Addr().(*net.TCPAddr).Port
+
+	freeLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen free: %v", err)
 	}
+	freePort := freeLn.Addr().(*net.TCPAddr).Port
+	freeLn.Close() // now free
+
+	t.Run("skips occupied preferred port", func(t *testing.T) {
+		port, err := selectPort([]int{busyPort, freePort}, nil)
+		if err != nil {
+			t.Fatalf("selectPort: %v", err)
+		}
+		if port != freePort {
+			t.Errorf("port = %d, want %d (should skip occupied %d)", port, freePort, busyPort)
+		}
+	})
+
+	t.Run("falls back to range", func(t *testing.T) {
+		port, err := selectPort([]int{busyPort}, [][2]int{{freePort, freePort}})
+		if err != nil {
+			t.Fatalf("selectPort: %v", err)
+		}
+		if port != freePort {
+			t.Errorf("port = %d, want %d (from fallback range)", port, freePort)
+		}
+	})
+
+	t.Run("errors when nothing available", func(t *testing.T) {
+		_, err := selectPort([]int{busyPort}, [][2]int{{busyPort, busyPort}})
+		if err == nil {
+			t.Error("expected error when all ports occupied")
+		}
+	})
 }

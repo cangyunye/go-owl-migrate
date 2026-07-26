@@ -206,6 +206,83 @@ func TestE2E_StaticAssetsServed(t *testing.T) {
 	}
 }
 
+func TestE2E_ScenarioListAndBuild(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+
+	// List scenarios.
+	resp, err := http.Get(ts.URL + "/api/v1/scenarios")
+	if err != nil {
+		t.Fatalf("GET scenarios: %v", err)
+	}
+	defer resp.Body.Close()
+	var list struct {
+		Scenarios []struct {
+			Name   string `json:"name"`
+			Fields []struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"fields"`
+		} `json:"scenarios"`
+		DSNExamples map[string]string `json:"dsn_examples"`
+	}
+	json.NewDecoder(resp.Body).Decode(&list)
+	if len(list.Scenarios) < 8 {
+		t.Errorf("scenarios = %d, want >= 8", len(list.Scenarios))
+	}
+	if list.DSNExamples["oracle"] == "" {
+		t.Error("missing oracle DSN example")
+	}
+
+	// Build a migrate config from form values (preview, no save).
+	r, body := e2ePost(t, ts, "/api/v1/scenarios/migrate/build",
+		`{"values":{"source_type":"oracle","source_dsn":"oracle://u:p@h:1521/s","source_schema":"SCOTT","target_type":"postgres","target_dsn":"host=h","target_schema":"public","tables":"EMP"},"save":false}`)
+	if r.StatusCode != http.StatusOK {
+		t.Fatalf("build: status %d, body %v", r.StatusCode, body)
+	}
+	yamlStr, _ := body["yaml"].(string)
+	if !strings.Contains(yamlStr, "target_dialect: postgres") {
+		t.Errorf("yaml missing target_dialect, got:\n%s", yamlStr)
+	}
+	if !strings.Contains(yamlStr, "SCOTT") {
+		t.Errorf("yaml missing schema mapping, got:\n%s", yamlStr)
+	}
+	if body["saved"].(bool) {
+		t.Error("preview should not save")
+	}
+}
+
+func TestE2E_ScenarioConditionalFields(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+
+	// export-ddl schema should mark source fields conditional on metadata_type.
+	resp, err := http.Get(ts.URL + "/api/v1/scenarios/export-ddl")
+	if err != nil {
+		t.Fatalf("GET scenario: %v", err)
+	}
+	defer resp.Body.Close()
+	var sc struct {
+		Fields []struct {
+			Name     string `json:"name"`
+			ShowWhen *struct {
+				Field string `json:"field"`
+				Value string `json:"value"`
+			} `json:"show_when"`
+		} `json:"fields"`
+	}
+	json.NewDecoder(resp.Body).Decode(&sc)
+
+	foundConditional := false
+	for _, f := range sc.Fields {
+		if f.Name == "source_dsn" && f.ShowWhen != nil &&
+			f.ShowWhen.Field == "metadata_type" && f.ShowWhen.Value == "database" {
+			foundConditional = true
+		}
+	}
+	if !foundConditional {
+		t.Error("source_dsn should be conditional on metadata_type=database")
+	}
+}
+
 func TestE2E_FullConfigToMetadataFlow(t *testing.T) {
 	ts, _, _ := newE2ERig(t)
 

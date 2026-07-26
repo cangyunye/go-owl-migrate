@@ -1,7 +1,7 @@
 {{template "base.html" .}}
 {{define "content"}}
 <h1>数据库迁移工具</h1>
-<p class="subtitle">选择操作场景开始</p>
+<p class="subtitle">选择操作场景，进入对应的配置表单</p>
 <div class="cards">
     <a href="/config?scenario=migrate" class="card">
         <h3>完整迁移</h3>
@@ -13,7 +13,7 @@
     </a>
     <a href="/config?scenario=export" class="card">
         <h3>导出数据</h3>
-        <p>从源库导出 CSV/SQL/XLSX 文件</p>
+        <p>从源库导出 CSV / SQL / XLSX 文件</p>
     </a>
     <a href="/config?scenario=import" class="card">
         <h3>导入数据</h3>
@@ -25,7 +25,15 @@
     </a>
     <a href="/config?scenario=export-insert" class="card">
         <h3>生成 INSERT</h3>
-        <p>从 CSV 生成 INSERT SQL 文件</p>
+        <p>从 CSV 数据生成 INSERT SQL 文件</p>
+    </a>
+    <a href="/config?scenario=export-metadata" class="card">
+        <h3>导出元数据</h3>
+        <p>从源库抽取表结构元数据</p>
+    </a>
+    <a href="/config?scenario=validate" class="card">
+        <h3>校验配置</h3>
+        <p>校验元数据与配置的正确性</p>
     </a>
 </div>
 {{end}}
