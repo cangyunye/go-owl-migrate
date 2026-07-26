@@ -3,18 +3,26 @@ package csv
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
 // Loader assembles a SchemaModel from multiple CSV readers.
 type Loader struct {
-	files map[string]io.Reader // filename → reader
+	files           map[string]io.Reader // filename → reader
+	caseInsensitive bool
 }
 
 // NewLoader creates a new Loader.
 func NewLoader() *Loader {
-	return &Loader{files: make(map[string]io.Reader)}
+	return &Loader{files: make(map[string]io.Reader), caseInsensitive: true}
+}
+
+// SetColumnNameMatching configures CSV header matching: "case_insensitive"
+// (default) normalizes headers to upper case; "case_sensitive" matches exactly.
+func (l *Loader) SetColumnNameMatching(mode string) {
+	l.caseInsensitive = !strings.EqualFold(strings.TrimSpace(mode), "case_sensitive")
 }
 
 // AddReader registers a CSV reader for a specific filename.
@@ -130,7 +138,7 @@ func (l *Loader) parseTables() ([]*md.TableDef, error) {
 	if !ok {
 		return nil, fmt.Errorf("tables.csv is required but not found")
 	}
-	return ParseTables(r)
+	return ParseTables(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseColumns() ([]*md.ColumnDef, error) {
@@ -141,7 +149,7 @@ func (l *Loader) parseColumns() ([]*md.ColumnDef, error) {
 	if !ok {
 		return nil, nil // columns.csv is optional for some operations
 	}
-	return ParseColumns(r)
+	return ParseColumns(r, l.caseInsensitive)
 }
 
 func (l *Loader) parsePrimaryKeys() ([]*md.PrimaryKeyDef, error) {
@@ -149,7 +157,7 @@ func (l *Loader) parsePrimaryKeys() ([]*md.PrimaryKeyDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParsePrimaryKeys(r)
+	return ParsePrimaryKeys(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseIndexes() ([]*md.IndexDef, error) {
@@ -157,7 +165,7 @@ func (l *Loader) parseIndexes() ([]*md.IndexDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseIndexes(r)
+	return ParseIndexes(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseForeignKeys() ([]*md.ForeignKeyDef, error) {
@@ -165,7 +173,7 @@ func (l *Loader) parseForeignKeys() ([]*md.ForeignKeyDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseForeignKeys(r)
+	return ParseForeignKeys(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseViews() ([]*md.ViewDef, error) {
@@ -173,7 +181,7 @@ func (l *Loader) parseViews() ([]*md.ViewDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseViews(r)
+	return ParseViews(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseTriggers() ([]*md.TriggerDef, error) {
@@ -181,7 +189,7 @@ func (l *Loader) parseTriggers() ([]*md.TriggerDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseTriggers(r)
+	return ParseTriggers(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseFunctions() ([]*md.FunctionDef, error) {
@@ -189,7 +197,7 @@ func (l *Loader) parseFunctions() ([]*md.FunctionDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseFunctions(r)
+	return ParseFunctions(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseSequences() ([]*md.SequenceDef, error) {
@@ -197,7 +205,7 @@ func (l *Loader) parseSequences() ([]*md.SequenceDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseSequences(r)
+	return ParseSequences(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseSynonyms() ([]*md.SynonymDef, error) {
@@ -208,7 +216,7 @@ func (l *Loader) parseSynonyms() ([]*md.SynonymDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseSynonyms(r)
+	return ParseSynonyms(r, l.caseInsensitive)
 }
 
 func (l *Loader) parseMViews() ([]*md.MViewDef, error) {
@@ -216,7 +224,7 @@ func (l *Loader) parseMViews() ([]*md.MViewDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParseMViews(r)
+	return ParseMViews(r, l.caseInsensitive)
 }
 
 func (l *Loader) parsePackages() ([]*md.PackageDef, error) {
@@ -224,7 +232,7 @@ func (l *Loader) parsePackages() ([]*md.PackageDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParsePackages(r)
+	return ParsePackages(r, l.caseInsensitive)
 }
 
 func (l *Loader) parsePackageBodies() ([]*md.PackageBodyDef, error) {
@@ -232,5 +240,5 @@ func (l *Loader) parsePackageBodies() ([]*md.PackageBodyDef, error) {
 	if !ok {
 		return nil, nil
 	}
-	return ParsePackageBodies(r)
+	return ParsePackageBodies(r, l.caseInsensitive)
 }

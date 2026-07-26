@@ -10,21 +10,15 @@ import (
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
-var normalizeHeaders = true
-
-// SetColumnNameMatching configures CSV header matching: "case_insensitive"
-// (default) normalizes headers to upper case; "case_sensitive" matches exactly.
-func SetColumnNameMatching(mode string) {
-	normalizeHeaders = !strings.EqualFold(strings.TrimSpace(mode), "case_sensitive")
-}
-
 // recordToMap converts a CSV record (header + values) into a map.
+// When normalize is true, headers are normalized to upper case so matching is
+// case-insensitive; otherwise headers are matched exactly.
 // \N values are converted to empty strings (NULL).
-func recordToMap(headers, record []string) map[string]string {
+func recordToMap(headers, record []string, normalize bool) map[string]string {
 	m := make(map[string]string, len(headers))
 	for i, h := range headers {
 		key := h
-		if normalizeHeaders {
+		if normalize {
 			key = strings.ToUpper(strings.TrimSpace(h))
 		}
 		if i < len(record) {
@@ -82,7 +76,7 @@ func getString(m map[string]string, key string) string {
 }
 
 // ParseTables parses a tables.csv reader.
-func ParseTables(r io.Reader) ([]*md.TableDef, error) {
+func ParseTables(r io.Reader, normalize bool) ([]*md.TableDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -96,7 +90,7 @@ func ParseTables(r io.Reader) ([]*md.TableDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		tbl, err := md.NewTableDef(m["TABLE_SCHEMA"], m["TABLE_NAME"])
 		if err != nil {
 			return nil, err
@@ -120,7 +114,7 @@ func ParseTables(r io.Reader) ([]*md.TableDef, error) {
 }
 
 // ParseColumns parses a columns.csv reader.
-func ParseColumns(r io.Reader) ([]*md.ColumnDef, error) {
+func ParseColumns(r io.Reader, normalize bool) ([]*md.ColumnDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -134,7 +128,7 @@ func ParseColumns(r io.Reader) ([]*md.ColumnDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		pos := getInt(m, "ORDINAL_POSITION")
 		col, err := md.NewColumnDef(m["TABLE_SCHEMA"], m["TABLE_NAME"], m["COLUMN_NAME"], pos, m["DATA_TYPE"])
 		if err != nil {
@@ -167,7 +161,7 @@ func ParseColumns(r io.Reader) ([]*md.ColumnDef, error) {
 }
 
 // ParsePrimaryKeys parses a primary_keys.csv reader.
-func ParsePrimaryKeys(r io.Reader) ([]*md.PrimaryKeyDef, error) {
+func ParsePrimaryKeys(r io.Reader, normalize bool) ([]*md.PrimaryKeyDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -181,7 +175,7 @@ func ParsePrimaryKeys(r io.Reader) ([]*md.PrimaryKeyDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		pks = append(pks, &md.PrimaryKeyDef{
 			TableSchema:     m["TABLE_SCHEMA"],
 			TableName:       m["TABLE_NAME"],
@@ -194,7 +188,7 @@ func ParsePrimaryKeys(r io.Reader) ([]*md.PrimaryKeyDef, error) {
 }
 
 // ParseIndexes parses an indexes.csv reader.
-func ParseIndexes(r io.Reader) ([]*md.IndexDef, error) {
+func ParseIndexes(r io.Reader, normalize bool) ([]*md.IndexDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -208,7 +202,7 @@ func ParseIndexes(r io.Reader) ([]*md.IndexDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		indexes = append(indexes, &md.IndexDef{
 			TableSchema:     m["TABLE_SCHEMA"],
 			TableName:       m["TABLE_NAME"],
@@ -226,7 +220,7 @@ func ParseIndexes(r io.Reader) ([]*md.IndexDef, error) {
 }
 
 // ParseForeignKeys parses a foreign_keys.csv reader.
-func ParseForeignKeys(r io.Reader) ([]*md.ForeignKeyDef, error) {
+func ParseForeignKeys(r io.Reader, normalize bool) ([]*md.ForeignKeyDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -240,7 +234,7 @@ func ParseForeignKeys(r io.Reader) ([]*md.ForeignKeyDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		fks = append(fks, &md.ForeignKeyDef{
 			ConstraintName: m["CONSTRAINT_NAME"],
 			TableSchema:    m["TABLE_SCHEMA"],
@@ -258,7 +252,7 @@ func ParseForeignKeys(r io.Reader) ([]*md.ForeignKeyDef, error) {
 }
 
 // ParseViews parses a views.csv reader.
-func ParseViews(r io.Reader) ([]*md.ViewDef, error) {
+func ParseViews(r io.Reader, normalize bool) ([]*md.ViewDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -272,7 +266,7 @@ func ParseViews(r io.Reader) ([]*md.ViewDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		views = append(views, &md.ViewDef{
 			ViewSchema:     m["VIEW_SCHEMA"],
 			ViewName:       m["VIEW_NAME"],
@@ -287,7 +281,7 @@ func ParseViews(r io.Reader) ([]*md.ViewDef, error) {
 }
 
 // ParseTriggers parses a triggers.csv reader.
-func ParseTriggers(r io.Reader) ([]*md.TriggerDef, error) {
+func ParseTriggers(r io.Reader, normalize bool) ([]*md.TriggerDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -301,7 +295,7 @@ func ParseTriggers(r io.Reader) ([]*md.TriggerDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		triggers = append(triggers, &md.TriggerDef{
 			TriggerSchema: m["TRIGGER_SCHEMA"],
 			TriggerName:   m["TRIGGER_NAME"],
@@ -322,7 +316,7 @@ func ParseTriggers(r io.Reader) ([]*md.TriggerDef, error) {
 }
 
 // ParseFunctions parses a functions.csv reader.
-func ParseFunctions(r io.Reader) ([]*md.FunctionDef, error) {
+func ParseFunctions(r io.Reader, normalize bool) ([]*md.FunctionDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -336,7 +330,7 @@ func ParseFunctions(r io.Reader) ([]*md.FunctionDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		fns = append(fns, &md.FunctionDef{
 			FunctionSchema: m["FUNCTION_SCHEMA"],
 			FunctionName:   m["FUNCTION_NAME"],
@@ -355,7 +349,7 @@ func ParseFunctions(r io.Reader) ([]*md.FunctionDef, error) {
 }
 
 // ParseSequences parses a sequences.csv reader.
-func ParseSequences(r io.Reader) ([]*md.SequenceDef, error) {
+func ParseSequences(r io.Reader, normalize bool) ([]*md.SequenceDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -369,7 +363,7 @@ func ParseSequences(r io.Reader) ([]*md.SequenceDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		seqs = append(seqs, &md.SequenceDef{
 			SequenceSchema: m["SEQUENCE_SCHEMA"],
 			SequenceName:   m["SEQUENCE_NAME"],
@@ -388,7 +382,7 @@ func ParseSequences(r io.Reader) ([]*md.SequenceDef, error) {
 }
 
 // ParseSynonyms parses a synonyms.csv reader.
-func ParseSynonyms(r io.Reader) ([]*md.SynonymDef, error) {
+func ParseSynonyms(r io.Reader, normalize bool) ([]*md.SynonymDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -402,7 +396,7 @@ func ParseSynonyms(r io.Reader) ([]*md.SynonymDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		synonyms = append(synonyms, &md.SynonymDef{
 			SynonymName:   m["SYNONYM_NAME"],
 			SynonymSchema: m["SYNONYM_SCHEMA"],
@@ -416,7 +410,7 @@ func ParseSynonyms(r io.Reader) ([]*md.SynonymDef, error) {
 }
 
 // ParseMViews parses a mviews.csv reader.
-func ParseMViews(r io.Reader) ([]*md.MViewDef, error) {
+func ParseMViews(r io.Reader, normalize bool) ([]*md.MViewDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -430,7 +424,7 @@ func ParseMViews(r io.Reader) ([]*md.MViewDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		mviews = append(mviews, &md.MViewDef{
 			MViewSchema:     m["MVIEW_SCHEMA"],
 			MViewName:       m["MVIEW_NAME"],
@@ -446,7 +440,7 @@ func ParseMViews(r io.Reader) ([]*md.MViewDef, error) {
 }
 
 // ParsePackages parses a packages.csv reader.
-func ParsePackages(r io.Reader) ([]*md.PackageDef, error) {
+func ParsePackages(r io.Reader, normalize bool) ([]*md.PackageDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -460,7 +454,7 @@ func ParsePackages(r io.Reader) ([]*md.PackageDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		pkgs = append(pkgs, &md.PackageDef{
 			PackageSchema: m["PACKAGE_SCHEMA"],
 			PackageName:   m["PACKAGE_NAME"],
@@ -474,7 +468,7 @@ func ParsePackages(r io.Reader) ([]*md.PackageDef, error) {
 }
 
 // ParsePackageBodies parses a package_bodies.csv reader.
-func ParsePackageBodies(r io.Reader) ([]*md.PackageBodyDef, error) {
+func ParsePackageBodies(r io.Reader, normalize bool) ([]*md.PackageBodyDef, error) {
 	records, err := readAllRecords(r)
 	if err != nil {
 		return nil, err
@@ -488,7 +482,7 @@ func ParsePackageBodies(r io.Reader) ([]*md.PackageBodyDef, error) {
 		if skipLine(rec) {
 			continue
 		}
-		m := recordToMap(headers, rec)
+		m := recordToMap(headers, rec, normalize)
 		bodies = append(bodies, &md.PackageBodyDef{
 			PackageSchema: m["PACKAGE_SCHEMA"],
 			PackageName:   m["PACKAGE_NAME"],

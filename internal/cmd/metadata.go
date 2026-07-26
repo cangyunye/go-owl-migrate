@@ -19,10 +19,9 @@ import (
 
 // loadSchemaModel loads metadata from CSV files, xlsx, or live database based on config.
 func loadSchemaModel(cfg *config.Config) (*md.SchemaModel, error) {
-	csvpkg.SetColumnNameMatching(cfg.Metadata.CSV.ColumnNameMatching)
 	switch cfg.Metadata.Type {
 	case "csv":
-		return loadCSVModel(cfg.Metadata.CSV.Path)
+		return loadCSVModel(cfg.Metadata.CSV.Path, cfg.Metadata.CSV.ColumnNameMatching)
 	case "xlsx":
 		return loadXLSXModel(cfg.Metadata.XLSX.Path, cfg.Metadata.XLSX.DataOutputDir)
 	case "database":
@@ -53,11 +52,12 @@ func loadXLSXModel(xlsxPath, dataOutputDir string) (*md.SchemaModel, error) {
 
 // loadCSVModel loads metadata from CSV files in the given directory.
 // If path is empty, defaults to "./testdata/csv/".
-func loadCSVModel(csvDir string) (*md.SchemaModel, error) {
+func loadCSVModel(csvDir, columnNameMatching string) (*md.SchemaModel, error) {
 	if csvDir == "" {
 		csvDir = "./testdata/csv/"
 	}
 	loader := csvpkg.NewLoader()
+	loader.SetColumnNameMatching(columnNameMatching)
 	entries, err := os.ReadDir(csvDir)
 	if err != nil {
 		return nil, fmt.Errorf("read metadata dir %q: %w", csvDir, err)

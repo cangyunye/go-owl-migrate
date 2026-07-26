@@ -13,7 +13,7 @@ SCOTT,EMP,EMPNO,1,NUMBER,22,4,0,NO,,
 SCOTT,EMP,ENAME,2,VARCHAR2,10,,,YES,,
 SCOTT,EMP,HIREDATE,3,DATE,,,,YES,,Hire date`
 
-	cols, err := ParseColumns(strings.NewReader(input))
+	cols, err := ParseColumns(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestParseColumns_MissingRequiredField(t *testing.T) {
 	input := `TABLE_SCHEMA,TABLE_NAME,COLUMN_NAME,ORDINAL_POSITION,DATA_TYPE
 SCOTT,EMP,,1,NUMBER`
 
-	_, err := ParseColumns(strings.NewReader(input))
+	_, err := ParseColumns(strings.NewReader(input), true)
 	if err == nil {
 		t.Error("expected error for missing COLUMN_NAME")
 	}
@@ -56,7 +56,7 @@ func TestParseTables_Basic(t *testing.T) {
 SCOTT,EMP,TABLE,Employee table
 HR,DEPT,TABLE,Department table`
 
-	tables, err := ParseTables(strings.NewReader(input))
+	tables, err := ParseTables(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestParseTables_DefaultType(t *testing.T) {
 	input := `TABLE_SCHEMA,TABLE_NAME
 SCOTT,EMP`
 
-	tables, err := ParseTables(strings.NewReader(input))
+	tables, err := ParseTables(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestParsePrimaryKeys(t *testing.T) {
 SCOTT,EMP,PK_EMP,EMPNO,1
 SCOTT,EMP,PK_EMP,DEPTNO,2`
 
-	pks, err := ParsePrimaryKeys(strings.NewReader(input))
+	pks, err := ParsePrimaryKeys(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestParseIndexes(t *testing.T) {
 	input := `TABLE_SCHEMA,TABLE_NAME,INDEX_NAME,COLUMN_NAME,ORDINAL_POSITION,INDEX_TYPE,UNIQUENESS
 SCOTT,EMP,IDX_EMP_ENAME,ENAME,1,BTREE,NONUNIQUE`
 
-	indexes, err := ParseIndexes(strings.NewReader(input))
+	indexes, err := ParseIndexes(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestParseForeignKeys(t *testing.T) {
 	input := `CONSTRAINT_NAME,TABLE_SCHEMA,TABLE_NAME,COLUMN_NAME,REF_SCHEMA,REF_TABLE,REF_COLUMN,DELETE_RULE
 FK_EMP_DEPT,SCOTT,EMP,DEPTNO,SCOTT,DEPT,DEPTNO,CASCADE`
 
-	fks, err := ParseForeignKeys(strings.NewReader(input))
+	fks, err := ParseForeignKeys(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestParse_ExtraColumnsIgnored(t *testing.T) {
 	input := `TABLE_SCHEMA,TABLE_NAME,EXTRA_COL1,EXTRA_COL2
 SCOTT,EMP,foo,bar`
 
-	tables, err := ParseTables(strings.NewReader(input))
+	tables, err := ParseTables(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("extra columns should be ignored: %v", err)
 	}
@@ -151,7 +151,7 @@ SCOTT,EMP
 HR,DEPT
 # Another comment`
 
-	tables, err := ParseTables(strings.NewReader(input))
+	tables, err := ParseTables(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestParse_NullMarker(t *testing.T) {
 SCOTT,EMP,\N
 SCOTT,DEPT,`
 
-	tables, err := ParseTables(strings.NewReader(input))
+	tables, err := ParseTables(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestParse_Views(t *testing.T) {
 	input := `VIEW_SCHEMA,VIEW_NAME,VIEW_DEFINITION
 SCOTT,EMP_VIEW,SELECT * FROM SCOTT.EMP WHERE deptno = 10`
 
-	views, err := ParseViews(strings.NewReader(input))
+	views, err := ParseViews(strings.NewReader(input), true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -344,9 +344,7 @@ func TestParseTables_ColumnNameMatching(t *testing.T) {
 	input := "table_schema,table_name,table_type\nSCOTT,EMP,TABLE\n"
 
 	t.Run("case_insensitive matches lowercase headers", func(t *testing.T) {
-		SetColumnNameMatching("case_insensitive")
-		defer SetColumnNameMatching("case_insensitive")
-		tables, err := ParseTables(strings.NewReader(input))
+		tables, err := ParseTables(strings.NewReader(input), true)
 		if err != nil {
 			t.Fatalf("err: %v", err)
 		}
@@ -355,9 +353,7 @@ func TestParseTables_ColumnNameMatching(t *testing.T) {
 		}
 	})
 	t.Run("case_sensitive rejects lowercase headers", func(t *testing.T) {
-		SetColumnNameMatching("case_sensitive")
-		defer SetColumnNameMatching("case_insensitive")
-		tables, err := ParseTables(strings.NewReader(input))
+		tables, err := ParseTables(strings.NewReader(input), false)
 		if err == nil && len(tables) == 1 && tables[0].TableName == "EMP" {
 			t.Error("case_sensitive should not match lowercase headers")
 		}
