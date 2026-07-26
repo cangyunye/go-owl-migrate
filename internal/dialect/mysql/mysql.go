@@ -159,12 +159,16 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 		b.WriteString("  ")
 		b.WriteString(quote(col.ColumnName))
 		b.WriteString(" ")
-		b.WriteString(col.DataType)
+		colType := col.DataType
+		if override, ok := dialect.ApplyTypeOverride(col.DataType, col.DataLength, col.DataPrecision, col.DataScale, opts); ok {
+			colType = override
+		}
+		b.WriteString(colType)
 		if col.Nullable == "NO" {
 			b.WriteString(" NOT NULL")
 		}
 		if hasDef, defVal := col.HasDefault(); hasDef {
-			b.WriteString(" DEFAULT " + defVal)
+			b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts))
 		}
 		if i < len(cols)-1 {
 			b.WriteString(",")

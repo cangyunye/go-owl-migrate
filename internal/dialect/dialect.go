@@ -1,6 +1,11 @@
 package dialect
 
-import md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+import (
+	"strconv"
+	"strings"
+
+	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+)
 
 // LogicalBase is the database-independent base type.
 type LogicalBase int
@@ -86,6 +91,9 @@ type BuildOptions struct {
 	IncludeComments    bool
 	IncludeIfNotExists bool
 	IncludeDrop        bool
+	TypeOverrides      map[string]string
+	BooleanMapping     map[string]bool
+	EmptyStringToNull  bool
 	AddRowIDColumn     bool
 	IdentityToSerial   bool
 	SkipPartitions     bool
@@ -120,4 +128,39 @@ type Dialect struct {
 	Features
 	DDLBuilder
 	DMLHelper
+}
+
+// ApplyTypeOverride returns the configured override for a raw column type, if
+// any, substituting %l/%p/%s with the column's length/precision/scale.
+func ApplyTypeOverride(rawType string, length, precision, scale int, opts BuildOptions) (string, bool) {
+	tmpl, ok := opts.TypeOverrides[strings.ToUpper(strings.TrimSpace(rawType))]
+	if !ok {
+		return "", false
+	}
+	r := strings.NewReplacer(
+		"%l", strconv.Itoa(length),
+		"%p", strconv.Itoa(precision),
+		"%s", strconv.Itoa(scale),
+	)
+	return r.Replace(tmpl), true
+}
+
+// RenderDefault renders a column DEFAULT clause, honoring empty_string_to_null
+// and boolean_mapping for boolean-typed columns.
+func RenderDefault(colType, defVal string, opts BuildOptions) string {
+	if opts.EmptyStringToNull && (defVal == "" || defVal == "''") {
+		return " DEFAULT NULL"
+	}
+	if lit, ok := opts.BooleanMapping[defVal]; ok && isBooleanTypeName(colType) {
+		if lit {
+			return " DEFAULT TRUE"
+		}
+		return " DEFAULT FALSE"
+	}
+	return " DEFAULT " + defVal
+}
+
+func isBooleanTypeName(t string) bool {
+	u := strings.ToUpper(strings.TrimSpace(t))
+	return strings.Contains(u, "BOOL") || u == "NUMBER(1)" || u == "TINYINT(1)"
 }

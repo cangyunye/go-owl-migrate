@@ -136,3 +136,39 @@ func TestPostgres_BuildCreateTable_IdentityToSerial(t *testing.T) {
 		}
 	})
 }
+
+func TestPostgres_BuildCreateTable_TypeOptions(t *testing.T) {
+	d := New()
+	newTbl := func() *md.TableDef {
+		tbl, _ := md.NewTableDef("public", "t")
+		c, _ := md.NewColumnDef("public", "t", "code", 1, "VARCHAR2")
+		c.DataLength = 20
+		tbl.AddColumn(c)
+		return tbl
+	}
+
+	t.Run("type_overrides", func(t *testing.T) {
+		ddl, _ := d.BuildCreateTable(newTbl(), dialect.BuildOptions{TypeOverrides: map[string]string{"VARCHAR2": "VARCHAR(%l)"}})
+		if !strings.Contains(ddl, `"code" VARCHAR(20)`) {
+			t.Errorf("expected VARCHAR(20) override, got:\n%s", ddl)
+		}
+	})
+	t.Run("empty_string_to_null", func(t *testing.T) {
+		tbl := newTbl()
+		tbl.GetColumn("code").DefaultValue = "''"
+		ddl, _ := d.BuildCreateTable(tbl, dialect.BuildOptions{EmptyStringToNull: true})
+		if !strings.Contains(ddl, "DEFAULT NULL") {
+			t.Errorf("expected DEFAULT NULL, got:\n%s", ddl)
+		}
+	})
+	t.Run("boolean_mapping", func(t *testing.T) {
+		tbl, _ := md.NewTableDef("public", "t")
+		flag, _ := md.NewColumnDef("public", "t", "active", 1, "BOOLEAN")
+		flag.DefaultValue = "Y"
+		tbl.AddColumn(flag)
+		ddl, _ := d.BuildCreateTable(tbl, dialect.BuildOptions{BooleanMapping: map[string]bool{"Y": true}})
+		if !strings.Contains(ddl, "DEFAULT TRUE") {
+			t.Errorf("expected DEFAULT TRUE, got:\n%s", ddl)
+		}
+	})
+}
