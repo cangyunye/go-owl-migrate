@@ -28,6 +28,7 @@ func toBuildOptions(cfg *config.Config) dialect.BuildOptions {
 		SchemaMapping:      cfg.DDL.SchemaMapping,
 		IncludeComments:    cfg.DDL.IncludeComments,
 		IncludeIfNotExists: cfg.DDL.IncludeIfNotExists,
+		IncludeDrop:        cfg.DDL.IncludeDrop,
 		AddRowIDColumn:     cfg.DDL.AddRowIDColumn,
 		IdentityToSerial:   cfg.DDL.IdentityToSerial,
 		SkipPartitions:     !cfg.DDL.Partition.Migrate,

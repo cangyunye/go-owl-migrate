@@ -38,6 +38,9 @@ func (g *DDLGenerator) GenerateTables(sm *md.SchemaModel) ([]string, error) {
 		if sql == "" {
 			continue
 		}
+		if g.opts.IncludeDrop {
+			sql = g.dropTableSQL(tbl.TableSchema, tbl.TableName) + sql
+		}
 		path, err := g.writeFile(tbl.TableSchema, tbl.TableName, "table", sql)
 		if err != nil {
 			return files, err
@@ -76,6 +79,9 @@ func (g *DDLGenerator) GenerateIndexes(sm *md.SchemaModel) ([]string, error) {
 			if sql == "" {
 				continue
 			}
+			if g.opts.IncludeDrop {
+				sql = g.dropIndexSQL(tbl.TableSchema, tbl.TableName, name) + sql
+			}
 			path, err := g.writeFile(tbl.TableSchema, name, "index", sql)
 			if err != nil {
 				return files, err
@@ -96,6 +102,9 @@ func (g *DDLGenerator) GenerateViews(sm *md.SchemaModel) ([]string, error) {
 		}
 		if sql == "" {
 			continue
+		}
+		if g.opts.IncludeDrop {
+			sql = g.dropViewSQL(v.ViewSchema, v.ViewName) + sql
 		}
 		path, err := g.writeFile(v.ViewSchema, v.ViewName, "view", sql)
 		if err != nil {
@@ -246,6 +255,35 @@ func (g *DDLGenerator) GenerateSynonyms(sm *md.SchemaModel, schema string) ([]st
 		files = append(files, path)
 	}
 	return files, nil
+}
+
+func (g *DDLGenerator) mappedSchema(schema string) string {
+	if m, ok := g.opts.SchemaMapping[schema]; ok {
+		return m
+	}
+	return schema
+}
+
+func (g *DDLGenerator) ifExists() string {
+	if g.dialect.SupportsIfNotExists() {
+		return "IF EXISTS "
+	}
+	return ""
+}
+
+func (g *DDLGenerator) dropTableSQL(schema, table string) string {
+	return fmt.Sprintf("DROP TABLE %s%s.%s;\n", g.ifExists(), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(table))
+}
+
+func (g *DDLGenerator) dropViewSQL(schema, view string) string {
+	return fmt.Sprintf("DROP VIEW %s%s.%s;\n", g.ifExists(), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(view))
+}
+
+func (g *DDLGenerator) dropIndexSQL(schema, table, indexName string) string {
+	if strings.Contains(g.dialect.Name(), "mysql") {
+		return fmt.Sprintf("DROP INDEX %s ON %s.%s;\n", g.dialect.Quote(indexName), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(table))
+	}
+	return fmt.Sprintf("DROP INDEX %s%s.%s;\n", g.ifExists(), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(indexName))
 }
 
 func (g *DDLGenerator) writeFile(schema, name, objType, content string) (string, error) {

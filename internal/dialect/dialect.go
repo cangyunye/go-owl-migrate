@@ -85,6 +85,7 @@ type BuildOptions struct {
 	SchemaMapping      map[string]string
 	IncludeComments    bool
 	IncludeIfNotExists bool
+	IncludeDrop        bool
 	AddRowIDColumn     bool
 	IdentityToSerial   bool
 	SkipPartitions     bool

@@ -729,3 +729,44 @@ SCOTT,PKG_EMP,"PROCEDURE get_emp(p_id IN NUMBER); FUNCTION get_count RETURN NUMB
 const packageBodiesCSV = `PACKAGE_SCHEMA,PACKAGE_NAME,PACKAGE_BODY,STATUS
 SCOTT,PKG_EMP,"PROCEDURE get_emp(p_id IN NUMBER) IS BEGIN NULL; END; FUNCTION get_count RETURN NUMBER IS BEGIN RETURN 0; END;",ENABLED
 `
+
+func TestDDLGenerator_IncludeDrop(t *testing.T) {
+	pgD, _ := registry.Get("postgres")
+	pg := NewDDLGenerator(pgD, dialect.BuildOptions{IncludeDrop: true}, t.TempDir())
+
+	t.Run("drop table postgres", func(t *testing.T) {
+		if sql := pg.dropTableSQL("scott", "emp"); !strings.Contains(sql, `DROP TABLE IF EXISTS "scott"."emp"`) {
+			t.Errorf("got %q", sql)
+		}
+	})
+	t.Run("drop view postgres", func(t *testing.T) {
+		if sql := pg.dropViewSQL("scott", "v"); !strings.Contains(sql, `DROP VIEW IF EXISTS "scott"."v"`) {
+			t.Errorf("got %q", sql)
+		}
+	})
+	t.Run("drop index postgres", func(t *testing.T) {
+		if sql := pg.dropIndexSQL("scott", "emp", "idx"); !strings.Contains(sql, `DROP INDEX IF EXISTS "scott"."idx"`) {
+			t.Errorf("got %q", sql)
+		}
+	})
+	t.Run("drop index mysql uses ON", func(t *testing.T) {
+		myD, _ := registry.Get("mysql")
+		my := NewDDLGenerator(myD, dialect.BuildOptions{IncludeDrop: true}, t.TempDir())
+		if sql := my.dropIndexSQL("scott", "emp", "idx"); !strings.Contains(sql, " ON ") {
+			t.Errorf("got %q", sql)
+		}
+	})
+	t.Run("oracle omits IF EXISTS", func(t *testing.T) {
+		oraD, _ := registry.Get("oracle")
+		ora := NewDDLGenerator(oraD, dialect.BuildOptions{IncludeDrop: true}, t.TempDir())
+		if sql := ora.dropTableSQL("scott", "emp"); strings.Contains(sql, "IF EXISTS") {
+			t.Errorf("oracle should not use IF EXISTS: %q", sql)
+		}
+	})
+	t.Run("schema mapping applied", func(t *testing.T) {
+		g := NewDDLGenerator(pgD, dialect.BuildOptions{IncludeDrop: true, SchemaMapping: map[string]string{"scott": "public"}}, t.TempDir())
+		if sql := g.dropTableSQL("scott", "emp"); !strings.Contains(sql, `"public"."emp"`) {
+			t.Errorf("got %q", sql)
+		}
+	})
+}
