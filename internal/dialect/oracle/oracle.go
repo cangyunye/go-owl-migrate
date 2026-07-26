@@ -160,7 +160,7 @@ func (OracleDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptio
 			b.WriteString(" NOT NULL")
 		}
 		if hasDef, defVal := col.HasDefault(); hasDef {
-			b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts))
+			b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts, true))
 		}
 		if i < len(cols)-1 || opts.AddRowIDColumn {
 			b.WriteString(",")

@@ -173,7 +173,7 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 		}
 		if !useSerial {
 			if hasDef, defVal := col.HasDefault(); hasDef {
-				b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts))
+				b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts, false))
 			}
 		}
 		if i < len(cols)-1 {

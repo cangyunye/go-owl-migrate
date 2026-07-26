@@ -168,7 +168,7 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 			b.WriteString(" NOT NULL")
 		}
 		if hasDef, defVal := col.HasDefault(); hasDef {
-			b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts))
+			b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts, true))
 		}
 		if i < len(cols)-1 {
 			b.WriteString(",")

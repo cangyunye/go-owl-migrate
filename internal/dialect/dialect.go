@@ -147,11 +147,17 @@ func ApplyTypeOverride(rawType string, length, precision, scale int, opts BuildO
 
 // RenderDefault renders a column DEFAULT clause, honoring empty_string_to_null
 // and boolean_mapping for boolean-typed columns.
-func RenderDefault(colType, defVal string, opts BuildOptions) string {
+func RenderDefault(colType, defVal string, opts BuildOptions, numericBoolean bool) string {
 	if opts.EmptyStringToNull && (defVal == "" || defVal == "''") {
 		return " DEFAULT NULL"
 	}
 	if lit, ok := opts.BooleanMapping[defVal]; ok && isBooleanTypeName(colType) {
+		if numericBoolean {
+			if lit {
+				return " DEFAULT 1"
+			}
+			return " DEFAULT 0"
+		}
 		if lit {
 			return " DEFAULT TRUE"
 		}
