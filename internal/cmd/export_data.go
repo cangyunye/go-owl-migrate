@@ -8,7 +8,6 @@ import (
 	_ "github.com/lib/pq"
 	_ "github.com/sijms/go-ora/v2"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
@@ -159,12 +158,7 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 
 		pkMap := buildPKMap(sm)
 
-		logCfg := zap.NewDevelopmentConfig()
-		logCfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
-		if cfg.General.LogLevel == "debug" {
-			logCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-		}
-		logger, _ := logCfg.Build()
+		logger := newLogger(cfg)
 		defer logger.Sync()
 
 		exp := exporter.New(db, exporter.Config{

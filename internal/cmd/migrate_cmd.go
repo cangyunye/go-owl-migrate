@@ -18,6 +18,7 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
+	"github.com/cangyunye/go-owl-migrate/internal/logger"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
@@ -325,20 +326,25 @@ Use --resume to skip tables completed in a previous run.`,
 			if len(tablesToImport) > 0 {
 				impLogger := newLogger(cfg)
 				imp := importer.New(tgtDB, importer.Config{
-					SourceDir:          exportDir,
-					CSVDelimiter:       cfg.Import.CSV.Delimiter,
-					CSVNullMarker:      cfg.Import.CSV.NullMarker,
-					TruncateBefore:     resume, // truncate on resume to avoid duplicate key errors
-					CommitInterval:     cfg.Import.Batch.CommitInterval,
-					ErrorPolicy:        cfg.Import.Batch.ErrorPolicy,
-					MaxErrors:          cfg.Import.Batch.MaxErrorsBeforeStop,
-					MaxWorkers:         cfg.Import.Parallel.MaxWorkers,
-					DateTimeFormat:     cfg.Import.DataTransforms.DatetimeFormat,
-					TrimStrings:        cfg.Import.DataTransforms.TrimStrings,
-					SourceEncoding:     cfg.Import.DataTransforms.SourceEncoding,
-					TargetDBType:       cfg.Target.Type,
-					Logger:             impLogger,
-					NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
+					SourceDir:              exportDir,
+					CSVDelimiter:           cfg.Import.CSV.Delimiter,
+					CSVNullMarker:          cfg.Import.CSV.NullMarker,
+					NullIf:                 cfg.Import.DataTransforms.NullIf,
+					TruncateBefore:         resume, // truncate on resume to avoid duplicate key errors
+					DisableConstraints:     cfg.Import.Target.DisableConstraints,
+					DisableTriggers:        cfg.Import.Target.DisableTriggers,
+					CommitInterval:         cfg.Import.Batch.CommitInterval,
+					ErrorPolicy:            cfg.Import.Batch.ErrorPolicy,
+					MaxErrors:              cfg.Import.Batch.MaxErrorsBeforeStop,
+					MaxWorkers:             cfg.Import.Parallel.MaxWorkers,
+					RespectForeignKeys:     cfg.Import.Parallel.RespectForeignKeys,
+					DateTimeFormat:         cfg.Import.DataTransforms.DatetimeFormat,
+					DateTimeFormatFallback: cfg.Import.DataTransforms.DatetimeFormatFallback,
+					TrimStrings:            cfg.Import.DataTransforms.TrimStrings,
+					SourceEncoding:         cfg.Import.DataTransforms.SourceEncoding,
+					TargetDBType:           cfg.Target.Type,
+					Logger:                 impLogger,
+					NoQuoteIdentifiers:     cfg.DDL.NoQuoteIdentifiers,
 				})
 
 				importResults, err = imp.ImportTables(ctx, tablesToImport, cfg.DDL.SchemaMapping)
@@ -618,11 +624,14 @@ func ensureTablesForMigrate(ctx context.Context, db *sql.DB, sm *md.SchemaModel,
 }
 
 func newLogger(cfg *config.Config) *zap.Logger {
-	logCfg := zap.NewDevelopmentConfig()
-	logCfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
-	if cfg.General.LogLevel == "debug" {
-		logCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+	lg, err := logger.New(logger.Config{
+		Level:  cfg.General.LogLevel,
+		Format: cfg.General.LogFormat,
+		File:   cfg.General.LogFile,
+	})
+	if err != nil {
+		fallback, _ := zap.NewDevelopment()
+		return fallback
 	}
-	logger, _ := logCfg.Build()
-	return logger
+	return lg
 }

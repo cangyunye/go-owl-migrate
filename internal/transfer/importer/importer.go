@@ -22,21 +22,26 @@ import (
 
 // Config holds importer configuration.
 type Config struct {
-	SourceDir          string
-	CSVDelimiter       string
-	CSVNullMarker      string
-	TruncateBefore     bool
-	CommitInterval     int
-	ErrorPolicy        string // skip_row/stop/log_only
-	MaxErrors          int
-	MaxWorkers         int
-	DateTimeFormat     string // e.g. "yyyyMMddHHmmss"
-	TrimStrings        bool
-	TargetDBType       string // "postgres", "mysql", "oracle" — affects quoting and placeholders
-	SourceEncoding     string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
-	TargetEncoding     string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
-	Logger             *zap.Logger
-	NoQuoteIdentifiers bool
+	SourceDir              string
+	CSVDelimiter           string
+	CSVNullMarker          string
+	NullIf                 []string
+	TruncateBefore         bool
+	DisableConstraints     bool
+	DisableTriggers        bool
+	CommitInterval         int
+	ErrorPolicy            string // skip_row/stop/log_only
+	MaxErrors              int
+	MaxWorkers             int
+	RespectForeignKeys     bool
+	DateTimeFormat         string // e.g. "yyyyMMddHHmmss"
+	DateTimeFormatFallback []string
+	TrimStrings            bool
+	TargetDBType           string // "postgres", "mysql", "oracle" — affects quoting and placeholders
+	SourceEncoding         string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
+	TargetEncoding         string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
+	Logger                 *zap.Logger
+	NoQuoteIdentifiers     bool
 }
 
 // Importer reads CSV files and inserts data into a target database.
@@ -120,8 +125,62 @@ type ImportResult struct {
 	Err      error
 }
 
+func sortByForeignKeys(tables []*md.TableDef) []*md.TableDef {
+	key := func(schema, table string) string {
+		return strings.ToLower(schema) + "." + strings.ToLower(table)
+	}
+	index := make(map[string]int, len(tables))
+	for i, t := range tables {
+		index[key(t.TableSchema, t.TableName)] = i
+	}
+
+	n := len(tables)
+	inDegree := make([]int, n)
+	dependents := make([][]int, n)
+	for i, t := range tables {
+		for _, fk := range t.ForeignKeys {
+			if j, ok := index[key(fk.RefSchema, fk.RefTable)]; ok && j != i {
+				inDegree[i]++
+				dependents[j] = append(dependents[j], i)
+			}
+		}
+	}
+
+	queue := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		if inDegree[i] == 0 {
+			queue = append(queue, i)
+		}
+	}
+
+	sorted := make([]*md.TableDef, 0, n)
+	done := make([]bool, n)
+	for len(queue) > 0 {
+		i := queue[0]
+		queue = queue[1:]
+		sorted = append(sorted, tables[i])
+		done[i] = true
+		for _, child := range dependents[i] {
+			inDegree[child]--
+			if inDegree[child] == 0 {
+				queue = append(queue, child)
+			}
+		}
+	}
+
+	for i := 0; i < n; i++ {
+		if !done[i] {
+			sorted = append(sorted, tables[i])
+		}
+	}
+	return sorted
+}
+
 // ImportTables imports CSV data for multiple tables.
 func (imp *Importer) ImportTables(ctx context.Context, tables []*md.TableDef, schemaMapping map[string]string) ([]ImportResult, error) {
+	if imp.cfg.RespectForeignKeys {
+		tables = sortByForeignKeys(tables)
+	}
 	workers := imp.cfg.MaxWorkers
 	if workers <= 0 {
 		workers = 1
@@ -173,7 +232,65 @@ func (imp *Importer) ImportTables(ctx context.Context, tables []*md.TableDef, sc
 // dbConn abstracts operations available on both *sql.DB and *sql.Conn.
 type dbConn interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+func (imp *Importer) guardStatements(ctx context.Context, conn dbConn, schema, table string) (disable []string, enable []string) {
+	full := imp.quoteIdent(schema) + "." + imp.quoteIdent(table)
+	switch {
+	case imp.isMySQL():
+		if imp.cfg.DisableConstraints {
+			disable = append(disable, "SET FOREIGN_KEY_CHECKS=0")
+			enable = append(enable, "SET FOREIGN_KEY_CHECKS=1")
+		}
+		if imp.cfg.DisableTriggers {
+			imp.logger.Warn("disable_triggers is not supported on MySQL; skipping", zap.String("table", full))
+		}
+	case imp.isOracle():
+		if imp.cfg.DisableTriggers {
+			disable = append(disable, fmt.Sprintf("ALTER TABLE %s DISABLE ALL TRIGGERS", full))
+			enable = append(enable, fmt.Sprintf("ALTER TABLE %s ENABLE ALL TRIGGERS", full))
+		}
+		if imp.cfg.DisableConstraints {
+			for _, name := range imp.oracleFKConstraints(ctx, conn, schema, table) {
+				quoted := imp.quoteIdent(name)
+				disable = append(disable, fmt.Sprintf("ALTER TABLE %s DISABLE CONSTRAINT %s", full, quoted))
+				enable = append(enable, fmt.Sprintf("ALTER TABLE %s ENABLE CONSTRAINT %s", full, quoted))
+			}
+		}
+	default:
+		if imp.cfg.DisableConstraints || imp.cfg.DisableTriggers {
+			disable = append(disable, fmt.Sprintf("ALTER TABLE %s DISABLE TRIGGER ALL", full))
+			enable = append(enable, fmt.Sprintf("ALTER TABLE %s ENABLE TRIGGER ALL", full))
+		}
+	}
+	return disable, enable
+}
+
+func (imp *Importer) oracleFKConstraints(ctx context.Context, conn dbConn, schema, table string) []string {
+	rows, err := conn.QueryContext(ctx,
+		"SELECT constraint_name FROM all_constraints WHERE owner = UPPER(:1) AND table_name = UPPER(:2) AND constraint_type = 'R'",
+		schema, table)
+	if err != nil {
+		imp.logger.Warn("query foreign key constraints failed", zap.Error(err))
+		return nil
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			imp.logger.Warn("scan foreign key constraint row", zap.Error(err))
+			continue
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		imp.logger.Warn("iterate foreign key constraints", zap.Error(err))
+	}
+	return names
 }
 
 func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targetSchema string) ImportResult {
@@ -186,18 +303,18 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		zap.String("target", fmt.Sprintf("%s.%s", targetSchema, tbl.TableName)),
 	)
 
-	// For Oracle, acquire a dedicated connection so ALTER SESSION NLS settings
-	// apply to the same connection that runs subsequent INSERTs.
 	var conn dbConn = imp.db
-	if imp.isOracle() {
+	if imp.isOracle() || (imp.isMySQL() && imp.cfg.DisableConstraints) {
 		sqlConn, err := imp.db.Conn(ctx)
 		if err != nil {
-			result.Err = fmt.Errorf("acquire dedicated oracle conn: %w", err)
+			result.Err = fmt.Errorf("acquire dedicated conn: %w", err)
 			return result
 		}
 		defer sqlConn.Close()
 		conn = sqlConn
+	}
 
+	if imp.isOracle() {
 		if _, err := conn.ExecContext(ctx, "ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'"); err != nil {
 			imp.logger.Warn("Failed to set NLS_DATE_FORMAT", zap.Error(err))
 		}
@@ -286,6 +403,23 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		}
 	}
 
+	if imp.cfg.DisableConstraints || imp.cfg.DisableTriggers {
+		disableStmts, enableStmts := imp.guardStatements(ctx, conn, targetSchema, tbl.TableName)
+		for _, stmt := range disableStmts {
+			if _, err := conn.ExecContext(ctx, stmt); err != nil {
+				imp.logger.Warn("disable guard failed", zap.String("sql", stmt), zap.Error(err))
+			}
+		}
+		enableCtx := context.WithoutCancel(ctx)
+		defer func() {
+			for _, stmt := range enableStmts {
+				if _, err := conn.ExecContext(enableCtx, stmt); err != nil {
+					imp.logger.Warn("enable guard failed", zap.String("sql", stmt), zap.Error(err))
+				}
+			}
+		}()
+	}
+
 	// Insert in batches with transaction control
 	var (
 		skipped     int64
@@ -324,7 +458,7 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		// Convert CSV values to SQL values with data transforms
 		vals := make([]any, len(row))
 		for j, v := range row {
-			if v == imp.cfg.CSVNullMarker {
+			if imp.isNullValue(v) {
 				vals[j] = nil
 			} else {
 				val := imp.transformValue(v)
@@ -443,6 +577,18 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	return result
 }
 
+func (imp *Importer) isNullValue(v string) bool {
+	if v == imp.cfg.CSVNullMarker {
+		return true
+	}
+	for _, n := range imp.cfg.NullIf {
+		if v == n {
+			return true
+		}
+	}
+	return false
+}
+
 // transformValue applies data transformations to a CSV value before INSERT.
 func (imp *Importer) transformValue(v string) any {
 	s := v
@@ -463,22 +609,32 @@ func (imp *Importer) transformValue(v string) any {
 		s = strings.TrimSpace(s)
 	}
 
-	// Detect and convert compact datetime formats
-	// "yyyyMMddHHmmss" (14 digits) → "YYYY-MM-DD HH24:MI:SS"
-	if imp.cfg.DateTimeFormat == "yyyyMMddHHmmss" && len(s) == 14 && isAllDigits(s) {
-		// 19801217000000 → 1980-12-17 00:00:00
-		formatted := fmt.Sprintf("%s-%s-%s %s:%s:%s",
-			s[0:4], s[4:6], s[6:8],
-			s[8:10], s[10:12], s[12:14])
-		return formatted
+	if imp.cfg.DateTimeFormat != "" {
+		if converted, ok := convertCompactDatetime(imp.cfg.DateTimeFormat, s); ok {
+			return converted
+		}
 	}
-
-	// "yyyyMMdd" (8 digits) → "YYYY-MM-DD"
-	if imp.cfg.DateTimeFormat == "yyyyMMdd" && len(s) == 8 && isAllDigits(s) {
-		return fmt.Sprintf("%s-%s-%s", s[0:4], s[4:6], s[6:8])
+	for _, fallback := range imp.cfg.DateTimeFormatFallback {
+		if converted, ok := convertCompactDatetime(fallback, s); ok {
+			return converted
+		}
 	}
 
 	return s
+}
+
+func convertCompactDatetime(format, s string) (string, bool) {
+	switch format {
+	case "yyyyMMddHHmmss":
+		if len(s) == 14 && isAllDigits(s) {
+			return fmt.Sprintf("%s-%s-%s %s:%s:%s", s[0:4], s[4:6], s[6:8], s[8:10], s[10:12], s[12:14]), true
+		}
+	case "yyyyMMdd":
+		if len(s) == 8 && isAllDigits(s) {
+			return fmt.Sprintf("%s-%s-%s", s[0:4], s[4:6], s[6:8]), true
+		}
+	}
+	return "", false
 }
 
 func isAllDigits(s string) bool {

@@ -9,7 +9,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
@@ -59,29 +58,29 @@ func importCmd() *cobra.Command {
 			return fmt.Errorf("ensure target tables: %w", err)
 		}
 
-		logCfg := zap.NewDevelopmentConfig()
-		logCfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
-		if cfg.General.LogLevel == "debug" {
-			logCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-		}
-		logger, _ := logCfg.Build()
+		logger := newLogger(cfg)
 		defer logger.Sync()
 
 		imp := importer.New(db, importer.Config{
-			SourceDir:          cfg.Import.SourceDir,
-			CSVDelimiter:       cfg.Import.CSV.Delimiter,
-			CSVNullMarker:      cfg.Import.CSV.NullMarker,
-			TruncateBefore:     cfg.Import.Target.TruncateBefore,
-			CommitInterval:     cfg.Import.Batch.CommitInterval,
-			ErrorPolicy:        cfg.Import.Batch.ErrorPolicy,
-			MaxErrors:          cfg.Import.Batch.MaxErrorsBeforeStop,
-			MaxWorkers:         cfg.Import.Parallel.MaxWorkers,
-			DateTimeFormat:     cfg.Import.DataTransforms.DatetimeFormat,
-			TrimStrings:        cfg.Import.DataTransforms.TrimStrings,
-			SourceEncoding:     cfg.Import.DataTransforms.SourceEncoding,
-			TargetDBType:       cfg.Target.Type,
-			Logger:             logger,
-			NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
+			SourceDir:              cfg.Import.SourceDir,
+			CSVDelimiter:           cfg.Import.CSV.Delimiter,
+			CSVNullMarker:          cfg.Import.CSV.NullMarker,
+			NullIf:                 cfg.Import.DataTransforms.NullIf,
+			TruncateBefore:         cfg.Import.Target.TruncateBefore,
+			DisableConstraints:     cfg.Import.Target.DisableConstraints,
+			DisableTriggers:        cfg.Import.Target.DisableTriggers,
+			CommitInterval:         cfg.Import.Batch.CommitInterval,
+			ErrorPolicy:            cfg.Import.Batch.ErrorPolicy,
+			MaxErrors:              cfg.Import.Batch.MaxErrorsBeforeStop,
+			MaxWorkers:             cfg.Import.Parallel.MaxWorkers,
+			RespectForeignKeys:     cfg.Import.Parallel.RespectForeignKeys,
+			DateTimeFormat:         cfg.Import.DataTransforms.DatetimeFormat,
+			DateTimeFormatFallback: cfg.Import.DataTransforms.DatetimeFormatFallback,
+			TrimStrings:            cfg.Import.DataTransforms.TrimStrings,
+			SourceEncoding:         cfg.Import.DataTransforms.SourceEncoding,
+			TargetDBType:           cfg.Target.Type,
+			Logger:                 logger,
+			NoQuoteIdentifiers:     cfg.DDL.NoQuoteIdentifiers,
 		})
 
 		tables := sm.GetTables()
