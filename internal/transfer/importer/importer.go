@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -22,26 +23,31 @@ import (
 
 // Config holds importer configuration.
 type Config struct {
-	SourceDir              string
-	CSVDelimiter           string
-	CSVNullMarker          string
-	NullIf                 []string
-	TruncateBefore         bool
-	DisableConstraints     bool
-	DisableTriggers        bool
-	CommitInterval         int
-	ErrorPolicy            string // skip_row/stop/log_only
-	MaxErrors              int
-	MaxWorkers             int
-	RespectForeignKeys     bool
-	DateTimeFormat         string // e.g. "yyyyMMddHHmmss"
-	DateTimeFormatFallback []string
-	TrimStrings            bool
-	TargetDBType           string // "postgres", "mysql", "oracle" — affects quoting and placeholders
-	SourceEncoding         string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
-	TargetEncoding         string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
-	Logger                 *zap.Logger
-	NoQuoteIdentifiers     bool
+	SourceDir                    string
+	CSVDelimiter                 string
+	CSVNullMarker                string
+	NullIf                       []string
+	NullIdentifiers              []string
+	NullIdentifiersCaseSensitive bool
+	NullIdentifierRegex          string
+	OracleEmptyStringIsNull      bool
+	NumericZeroNotNull           bool
+	TruncateBefore               bool
+	DisableConstraints           bool
+	DisableTriggers              bool
+	CommitInterval               int
+	ErrorPolicy                  string // skip_row/stop/log_only
+	MaxErrors                    int
+	MaxWorkers                   int
+	RespectForeignKeys           bool
+	DateTimeFormat               string // e.g. "yyyyMMddHHmmss"
+	DateTimeFormatFallback       []string
+	TrimStrings                  bool
+	TargetDBType                 string // "postgres", "mysql", "oracle" — affects quoting and placeholders
+	SourceEncoding               string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
+	TargetEncoding               string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
+	Logger                       *zap.Logger
+	NoQuoteIdentifiers           bool
 }
 
 // Importer reads CSV files and inserts data into a target database.
@@ -50,6 +56,7 @@ type Importer struct {
 	cfg    Config
 	logger *zap.Logger
 	dec    *encoding.Decoder // source → UTF-8 (nil if no conversion needed)
+	nullRe *regexp.Regexp
 }
 
 // New creates a new Importer.
@@ -71,6 +78,13 @@ func New(db *sql.DB, cfg Config) *Importer {
 	imp := &Importer{db: db, cfg: cfg, logger: cfg.Logger}
 	if enc := getEncoding(cfg.SourceEncoding); enc != nil {
 		imp.dec = enc.NewDecoder()
+	}
+	if cfg.NullIdentifierRegex != "" {
+		if re, err := regexp.Compile(cfg.NullIdentifierRegex); err == nil {
+			imp.nullRe = re
+		} else {
+			cfg.Logger.Warn("invalid null_identifiers regex; ignoring", zap.String("regex", cfg.NullIdentifierRegex), zap.Error(err))
+		}
 	}
 	return imp
 }
@@ -458,7 +472,11 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		// Convert CSV values to SQL values with data transforms
 		vals := make([]any, len(row))
 		for j, v := range row {
-			if imp.isNullValue(v) {
+			isNull := imp.isNullValue(v)
+			if !isNull && imp.cfg.NumericZeroNotNull && j < len(header) && imp.isNumericColumn(tbl, header[j]) && isZeroNumeric(v) {
+				isNull = true
+			}
+			if isNull {
 				vals[j] = nil
 			} else {
 				val := imp.transformValue(v)
@@ -586,7 +604,39 @@ func (imp *Importer) isNullValue(v string) bool {
 			return true
 		}
 	}
+	for _, n := range imp.cfg.NullIdentifiers {
+		if imp.cfg.NullIdentifiersCaseSensitive {
+			if v == n {
+				return true
+			}
+		} else if strings.EqualFold(v, n) {
+			return true
+		}
+	}
+	if imp.nullRe != nil && imp.nullRe.MatchString(v) {
+		return true
+	}
+	if imp.cfg.OracleEmptyStringIsNull && imp.isOracle() && v == "" {
+		return true
+	}
 	return false
+}
+
+func (imp *Importer) isNumericColumn(tbl *md.TableDef, columnName string) bool {
+	for _, col := range tbl.GetColumns() {
+		if strings.EqualFold(col.ColumnName, columnName) {
+			switch strings.ToUpper(strings.TrimSpace(col.DataType)) {
+			case "NUMBER", "NUMERIC", "DECIMAL", "DEC", "INT", "INTEGER", "BIGINT", "SMALLINT", "TINYINT", "MEDIUMINT", "FLOAT", "DOUBLE", "REAL":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isZeroNumeric(v string) bool {
+	t := strings.TrimSpace(v)
+	return t == "0" || t == "0.0"
 }
 
 // transformValue applies data transformations to a CSV value before INSERT.

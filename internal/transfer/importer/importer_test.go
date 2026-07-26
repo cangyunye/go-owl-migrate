@@ -310,3 +310,62 @@ func TestUnit_SortByForeignKeys(t *testing.T) {
 		}
 	})
 }
+
+func TestUnit_IsNullValue_Identifiers(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		in   string
+		want bool
+	}{
+		{"string list match", Config{NullIdentifiers: []string{"NULL", "NA"}}, "NA", true},
+		{"string list case-insensitive default", Config{NullIdentifiers: []string{"NULL"}}, "null", true},
+		{"string list case-sensitive match", Config{NullIdentifiers: []string{"NULL"}, NullIdentifiersCaseSensitive: true}, "NULL", true},
+		{"string list case-sensitive no match", Config{NullIdentifiers: []string{"NULL"}, NullIdentifiersCaseSensitive: true}, "null", false},
+		{"regex match", Config{NullIdentifierRegex: "^N/A$"}, "N/A", true},
+		{"regex no match", Config{NullIdentifierRegex: "^N/A$"}, "NA", false},
+		{"oracle empty string", Config{OracleEmptyStringIsNull: true, TargetDBType: "oracle"}, "", true},
+		{"oracle empty string non-oracle", Config{OracleEmptyStringIsNull: true, TargetDBType: "postgres"}, "", false},
+		{"empty not null by default", Config{}, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			imp := New(nil, tt.cfg)
+			if got := imp.isNullValue(tt.in); got != tt.want {
+				t.Errorf("isNullValue(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnit_IsNumericColumn(t *testing.T) {
+	tbl := mustTable(t, map[string]string{"ID": "NUMBER", "SAL": "DECIMAL", "NAME": "VARCHAR"})
+	imp := New(nil, Config{})
+	for _, col := range []string{"ID", "SAL"} {
+		if !imp.isNumericColumn(tbl, col) {
+			t.Errorf("isNumericColumn(%q) = false, want true", col)
+		}
+	}
+	if imp.isNumericColumn(tbl, "NAME") {
+		t.Error("isNumericColumn(NAME) = true, want false")
+	}
+}
+
+func TestUnit_IsZeroNumeric(t *testing.T) {
+	tests := []struct {
+		in   string
+		want bool
+	}{
+		{"0", true},
+		{" 0 ", true},
+		{"0.0", true},
+		{"1", false},
+		{"0.5", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := isZeroNumeric(tt.in); got != tt.want {
+			t.Errorf("isZeroNumeric(%q) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}

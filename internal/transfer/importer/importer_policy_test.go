@@ -371,3 +371,39 @@ func TestImportOneTable_GuardsReEnabledOnCancel(t *testing.T) {
 		t.Errorf("enable guard must still be issued on cancel: %v", err)
 	}
 }
+
+func TestImportOneTable_NumericZeroNotNull(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "scott.emp.csv"), []byte("ID,SAL\n1,0\n2,5000\n"), 0644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	tbl, _ := md.NewTableDef("SCOTT", "EMP")
+	id, _ := md.NewColumnDef("SCOTT", "EMP", "ID", 1, "NUMBER")
+	sal, _ := md.NewColumnDef("SCOTT", "EMP", "SAL", 2, "NUMBER")
+	tbl.AddColumn(id)
+	tbl.AddColumn(sal)
+
+	imp := New(db, Config{SourceDir: dir, TargetDBType: "postgres", CommitInterval: 100, NumericZeroNotNull: true})
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO").WithArgs("1", nil).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO").WithArgs("2", "5000").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	res := imp.importOneTable(context.Background(), tbl, "SCOTT")
+	if res.Err != nil {
+		t.Fatalf("unexpected err: %v", res.Err)
+	}
+	if res.Actual != 2 {
+		t.Errorf("got actual=%d, want 2", res.Actual)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations: %v", err)
+	}
+}
