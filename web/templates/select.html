@@ -1,0 +1,33 @@
+{{template "base.html" .}}
+{{define "content"}}
+<h1>生成 SELECT</h1>
+<p class="subtitle">生成分页查询语句（游标/偏移），用于手动导出数据</p>
+<div class="panel">
+    <button class="btn-primary" id="btn-gen" onclick="generate()">生成 SELECT</button>
+    <a class="btn-ghost" id="btn-download" href="/api/v1/select/download" style="display:none">下载全部 (ZIP)</a>
+    <span id="gen-status" class="status-msg"></span>
+</div>
+<div class="panel" id="result-panel" style="display:none">
+    <h3>生成结果 <span class="badge" id="file-count"></span></h3>
+    <div class="file-tabs" id="file-list"></div>
+    <pre class="sql-preview" id="sql-preview"></pre>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+async function generate() {
+    const status = document.getElementById('gen-status');
+    status.textContent = '生成中…'; status.className = 'status-msg';
+    try {
+        const resp = await api.post('/api/v1/select/generate', {});
+        document.getElementById('result-panel').style.display = 'block';
+        document.getElementById('btn-download').style.display = 'inline-block';
+        document.getElementById('file-count').textContent = resp.count + ' 个文件';
+        renderGenFiles(resp.files, document.getElementById('file-list'), document.getElementById('sql-preview'));
+        status.textContent = '✓ 已生成 ' + resp.count + ' 个文件'; status.className = 'status-msg ok';
+    } catch (e) {
+        status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+    }
+}
+</script>
+{{end}}

@@ -80,3 +80,33 @@ select, input[type="text"] { padding: 6px 10px; border: 1px solid #ddd; border-r
 .yaml-preview { background: #0f172a; color: #e2e8f0; font-family: "SF Mono", "Fira Code", Consolas, monospace; font-size: 12.5px; line-height: 1.65; padding: 16px; border-radius: 8px; height: 480px; overflow: auto; white-space: pre; margin: 0; }
 .yaml-hint { color: #64748b; }
 .yaml-err { color: #f87171; }
+
+/* ── Generation pages (DDL/SELECT/INSERT) ── */
+.btn-ghost { display: inline-block; padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 4px; color: #374151; text-decoration: none; font-size: 14px; margin-right: 8px; }
+.btn-ghost:hover { border-color: #2563eb; color: #2563eb; }
+.file-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.file-tab { padding: 5px 12px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; font-family: "SF Mono", Consolas, monospace; font-size: 12px; cursor: pointer; color: #374151; }
+.file-tab:hover { border-color: #2563eb; }
+.file-tab.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+.sql-preview { background: #0f172a; color: #a5f3fc; font-family: "SF Mono", "Fira Code", Consolas, monospace; font-size: 12.5px; line-height: 1.6; padding: 16px; border-radius: 8px; height: 380px; overflow: auto; white-space: pre; margin: 0; }
+
+/* ── Migrate mode tabs ── */
+.mode-tabs { display: flex; gap: 0; margin-bottom: 12px; border-bottom: 2px solid #e5e7eb; }
+.mode-tab { padding: 10px 22px; text-decoration: none; color: #6b7280; font-weight: 600; font-size: 15px; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; }
+.mode-tab:hover { color: #2563eb; }
+.mode-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+.mode-desc { color: #6b7280; font-size: 14px; margin-bottom: 16px; }
+
+/* ── Metadata / job detail ── */
+.mono { font-family: "SF Mono", "Fira Code", Consolas, monospace; font-size: 13px; }
+.validate-list { list-style: none; }
+.validate-list li { padding: 6px 10px; border-radius: 4px; margin-bottom: 4px; font-size: 13px; font-family: "SF Mono", Consolas, monospace; }
+.validate-list li.sev-error { background: #fef2f2; color: #b91c1c; }
+.validate-list li.sev-warning { background: #fffbeb; color: #b45309; }
+.validate-list li.sev-info { background: #f0f9ff; color: #0369a1; }
+.job-info { display: flex; flex-wrap: wrap; gap: 18px; font-size: 14px; color: #374151; margin-bottom: 8px; }
+.job-info b { color: #111827; }
+.status-running, .status-run { color: #2563eb; }
+.status-completed, .status-ok, .status-SUCCESS { color: #16a34a; }
+.status-failed, .status-fail, .status-FAIL { color: #dc2626; }
+.status-interrupted, .status-cancelled, .status-cancelling { color: #b45309; }

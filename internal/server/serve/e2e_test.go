@@ -283,6 +283,144 @@ func TestE2E_ScenarioConditionalFields(t *testing.T) {
 	}
 }
 
+func TestE2E_DDLGenerateAndDownload(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+
+	// Load metadata + set target dialect.
+	e2ePost(t, ts, "/api/v1/metadata/load",
+		`{"metadata":{"type":"csv","csv":{"path":"../../../testdata/csv/","column_name_matching":"case_insensitive"}}}`)
+	putReq, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config",
+		strings.NewReader(`{"ddl":{"target_dialect":"postgres"}}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	if resp, err := http.DefaultClient.Do(putReq); err == nil {
+		resp.Body.Close()
+	}
+
+	// Generate DDL.
+	resp, body := e2ePost(t, ts, "/api/v1/ddl/generate", `{}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("ddl generate: status %d, body %v", resp.StatusCode, body)
+	}
+	count, _ := body["count"].(float64)
+	if count < 3 {
+		t.Errorf("ddl count = %v, want >= 3 (EMP/DEPT/BONUS tables)", count)
+	}
+	files, _ := body["files"].([]any)
+	if len(files) == 0 {
+		t.Fatal("no DDL files returned")
+	}
+	first := files[0].(map[string]any)
+	if !strings.Contains(first["content"].(string), "CREATE TABLE") {
+		t.Error("DDL content missing CREATE TABLE")
+	}
+
+	// Download as ZIP.
+	dlResp, err := http.Get(ts.URL + "/api/v1/ddl/download")
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	defer dlResp.Body.Close()
+	if dlResp.StatusCode != http.StatusOK {
+		t.Errorf("download status = %d, want 200", dlResp.StatusCode)
+	}
+	if ct := dlResp.Header.Get("Content-Type"); ct != "application/zip" {
+		t.Errorf("content-type = %q, want application/zip", ct)
+	}
+}
+
+func TestE2E_SelectGenerate(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+	e2ePost(t, ts, "/api/v1/metadata/load",
+		`{"metadata":{"type":"csv","csv":{"path":"../../../testdata/csv/","column_name_matching":"case_insensitive"}}}`)
+	putReq, _ := http.NewRequest("PUT", ts.URL+"/api/v1/config",
+		strings.NewReader(`{"ddl":{"target_dialect":"postgres"}}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	if resp, err := http.DefaultClient.Do(putReq); err == nil {
+		resp.Body.Close()
+	}
+
+	resp, body := e2ePost(t, ts, "/api/v1/select/generate", `{}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("select generate: status %d, body %v", resp.StatusCode, body)
+	}
+	count, _ := body["count"].(float64)
+	if count < 3 {
+		t.Errorf("select count = %v, want >= 3", count)
+	}
+}
+
+func TestE2E_GenerateRequiresMetadata(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+	resp, _ := e2ePost(t, ts, "/api/v1/ddl/generate", `{}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("ddl generate without metadata: status %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestE2E_MetadataValidateAndDetail(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+	e2ePost(t, ts, "/api/v1/metadata/load",
+		`{"metadata":{"type":"csv","csv":{"path":"../../../testdata/csv/","column_name_matching":"case_insensitive"}}}`)
+
+	// Validate.
+	vResp, err := http.Get(ts.URL + "/api/v1/metadata/validate")
+	if err != nil {
+		t.Fatalf("validate: %v", err)
+	}
+	defer vResp.Body.Close()
+	var vOut map[string]any
+	json.NewDecoder(vResp.Body).Decode(&vOut)
+	if _, ok := vOut["errors"]; !ok {
+		t.Error("validate response missing errors field")
+	}
+
+	// Table detail.
+	dResp, err := http.Get(ts.URL + "/api/v1/metadata/tables/SCOTT/EMP")
+	if err != nil {
+		t.Fatalf("detail: %v", err)
+	}
+	defer dResp.Body.Close()
+	if dResp.StatusCode != http.StatusOK {
+		t.Fatalf("detail status = %d, want 200", dResp.StatusCode)
+	}
+	var detail struct {
+		Name    string `json:"name"`
+		Columns []struct {
+			Name string `json:"name"`
+		} `json:"columns"`
+		PrimaryKeys []string `json:"primary_keys"`
+	}
+	json.NewDecoder(dResp.Body).Decode(&detail)
+	if detail.Name != "EMP" {
+		t.Errorf("name = %q, want EMP", detail.Name)
+	}
+	if len(detail.Columns) == 0 {
+		t.Error("EMP has no columns")
+	}
+	if len(detail.PrimaryKeys) == 0 || detail.PrimaryKeys[0] != "EMPNO" {
+		t.Errorf("primary_keys = %v, want [EMPNO]", detail.PrimaryKeys)
+	}
+}
+
+func TestE2E_MigrateModeThreadedToSpawner(t *testing.T) {
+	ts, _, spawner := newE2ERig(t)
+
+	// sql-out mode should reach the spawner with Mode set.
+	e2ePost(t, ts, "/api/v1/migrate", `{"mode":"sql-out"}`)
+	if len(spawner.requests) != 1 {
+		t.Fatalf("spawner called %d times, want 1", len(spawner.requests))
+	}
+	if spawner.requests[0].Mode != "sql-out" {
+		t.Errorf("Mode = %q, want sql-out", spawner.requests[0].Mode)
+	}
+
+	// direct mode (default).
+	e2ePost(t, ts, "/api/v1/migrate", `{}`)
+	if spawner.requests[1].Mode != "" {
+		t.Errorf("Mode = %q, want empty (direct)", spawner.requests[1].Mode)
+	}
+}
+
 func TestE2E_FullConfigToMetadataFlow(t *testing.T) {
 	ts, _, _ := newE2ERig(t)
 

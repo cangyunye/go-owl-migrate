@@ -1,0 +1,22 @@
+{{template "base.html" .}}
+{{define "content"}}
+<h1>导出数据</h1>
+<p class="subtitle">从源库导出数据为 CSV / SQL / XLSX（使用当前配置的 source 与 export 段）</p>
+<div class="panel">
+    <button class="btn-primary" id="btn-start" onclick="startExport()">开始导出</button>
+    <button class="btn-danger" id="btn-cancel" onclick="jobUI.cancel()" style="display:none">取消</button>
+</div>
+<div id="progress-panel" class="panel" style="display:none">
+    <h3>进度 <span class="badge" id="job-id-badge"></span></h3>
+    <div id="progress-log" class="log-box"></div>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+jobUI.bind('#progress-log');
+async function startExport() {
+    try { await jobUI.start('/api/v1/export', {}); }
+    catch (e) { alert('启动失败: ' + e.message); }
+}
+</script>
+{{end}}

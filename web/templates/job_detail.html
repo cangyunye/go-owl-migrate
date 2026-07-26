@@ -1,0 +1,80 @@
+{{template "base.html" .}}
+{{define "content"}}
+<h1>任务详情</h1>
+<p class="subtitle mono" id="job-id-line"></p>
+
+<div class="panel">
+    <div id="job-info" class="job-info"></div>
+    <div class="form-actions">
+        <button class="btn-danger" id="btn-cancel" onclick="cancelJob()" style="display:none">取消任务</button>
+        <button class="btn-primary" id="btn-resume" onclick="resumeJob()" style="display:none">恢复任务</button>
+        <span id="action-status" class="status-msg"></span>
+    </div>
+</div>
+
+<div class="panel">
+    <h3>检查点（每表状态）<span class="badge" id="cp-count"></span></h3>
+    <table class="data-table">
+        <thead><tr><th>Schema</th><th>表</th><th>已导出</th><th>导出行数</th><th>已导入</th><th>导入行数</th><th>状态</th></tr></thead>
+        <tbody id="cp-body"></tbody>
+    </table>
+</div>
+
+<div class="panel">
+    <h3>进度事件</h3>
+    <div id="progress-log" class="log-box"></div>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+const jobId = location.pathname.split('/').pop();
+let jobType = 'migrate';
+document.getElementById('job-id-line').textContent = jobId;
+
+async function load() {
+    const job = await api.get('/api/v1/jobs/' + jobId);
+    jobType = job.type;
+    document.getElementById('job-info').innerHTML =
+        `<span>类型：<b>${job.type}</b></span><span>状态：<b class="status-${job.status}">${job.status}</b></span>` +
+        `<span>PID：${job.pid || '-'}</span><span>创建：${job.created_at}</span>` +
+        `<span>完成：${job.finished_at || '-'}</span>`;
+    document.getElementById('btn-cancel').style.display =
+        (job.status === 'running') ? 'inline-block' : 'none';
+    document.getElementById('btn-resume').style.display =
+        (['interrupted','cancelled','failed'].includes(job.status)) ? 'inline-block' : 'none';
+
+    const cps = await api.get('/api/v1/jobs/' + jobId + '/checkpoints');
+    document.getElementById('cp-count').textContent = cps.length + ' 张表';
+    const tbody = document.getElementById('cp-body');
+    tbody.innerHTML = '';
+    cps.forEach(c => {
+        tbody.innerHTML += `<tr><td>${c.schema}</td><td>${c.table_name}</td>` +
+            `<td>${c.exported ? '✓' : ''}</td><td>${c.exported_rows}</td>` +
+            `<td>${c.imported ? '✓' : ''}</td><td>${c.imported_rows}</td>` +
+            `<td class="status-${c.status === 'SUCCESS' ? 'ok' : (c.status === 'FAIL' ? 'fail' : 'run')}">${c.status || '-'}</td></tr>`;
+    });
+
+    const events = await api.get('/api/v1/jobs/' + jobId + '/events');
+    const log = document.getElementById('progress-log');
+    events.forEach(e => { log.textContent += `[${e.seq}] ${e.event_type} ${e.schema||''}.${e.table_name||''} → ${e.rows} rows ${e.message||''}\n`; });
+    if (events.length === 0) log.textContent = '（暂无事件）';
+}
+
+async function cancelJob() {
+    try {
+        await api.del('/api/v1/jobs/' + jobId);
+        document.getElementById('action-status').textContent = '已发送取消请求';
+        setTimeout(load, 800);
+    } catch (e) { document.getElementById('action-status').textContent = '✗ ' + e.message; }
+}
+
+async function resumeJob() {
+    try {
+        const resp = await api.post(`/api/v1/${jobType}?resume_from=${jobId}`, {});
+        location.href = '/jobs/' + resp.job_id;
+    } catch (e) { document.getElementById('action-status').textContent = '✗ ' + e.message; }
+}
+
+load();
+</script>
+{{end}}

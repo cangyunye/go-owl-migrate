@@ -1,0 +1,95 @@
+{{template "base.html" .}}
+{{define "content"}}
+<h1>元数据</h1>
+<p class="subtitle">按当前配置加载表结构，供 DDL / SELECT 生成与校验使用</p>
+<div class="panel">
+    <button class="btn-primary" onclick="loadMeta()">加载元数据</button>
+    <button onclick="validateMeta()">校验</button>
+    <span id="meta-status" class="status-msg"></span>
+</div>
+
+<div class="panel" id="tables-panel" style="display:none">
+    <h3>表列表 <span class="badge" id="table-count"></span></h3>
+    <table class="data-table">
+        <thead><tr><th>Schema</th><th>表名</th><th>列数</th><th>主键</th><th></th></tr></thead>
+        <tbody id="tables-body"></tbody>
+    </table>
+</div>
+
+<div class="panel" id="detail-panel" style="display:none">
+    <h3 id="detail-title">表详情</h3>
+    <div id="detail-content"></div>
+</div>
+
+<div class="panel" id="validate-panel" style="display:none">
+    <h3>校验结果 <span class="badge" id="validate-count"></span></h3>
+    <ul id="validate-list" class="validate-list"></ul>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+async function loadMeta() {
+    const status = document.getElementById('meta-status');
+    status.textContent = '加载中…'; status.className = 'status-msg';
+    try {
+        const resp = await api.post('/api/v1/metadata/load', await currentConfig());
+        document.getElementById('tables-panel').style.display = 'block';
+        document.getElementById('table-count').textContent = resp.table_count + ' 张表';
+        renderTables();
+        status.textContent = '✓ 已加载 ' + resp.table_count + ' 张表'; status.className = 'status-msg ok';
+    } catch (e) {
+        status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+    }
+}
+
+async function currentConfig() {
+    const cfg = await api.get('/api/v1/config');
+    return { metadata: cfg.metadata || {}, source: cfg.source || {} };
+}
+
+async function renderTables() {
+    const tables = await api.get('/api/v1/metadata/tables');
+    const tbody = document.getElementById('tables-body');
+    tbody.innerHTML = '';
+    tables.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${t.schema}</td><td>${t.name}</td><td>${t.columns.length}</td>` +
+            `<td>${(t.primary_key || []).join(', ')}</td>` +
+            `<td><a href="#" onclick="showDetail('${t.schema}','${t.name}');return false;">详情</a></td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+async function showDetail(schema, name) {
+    const d = await api.get(`/api/v1/metadata/tables/${schema}/${name}`);
+    document.getElementById('detail-panel').style.display = 'block';
+    document.getElementById('detail-title').textContent = `${schema}.${name}`;
+    let html = '<table class="data-table"><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th></tr></thead><tbody>';
+    d.columns.forEach(c => {
+        html += `<tr><td class="mono">${c.name}</td><td class="mono">${c.type}${c.length ? '(' + c.length + ')' : ''}</td><td>${c.nullable ? '是' : '否'}</td><td class="mono">${c.default || ''}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    html += `<p class="field-help">主键：${(d.primary_keys || []).join(', ') || '无'}</p>`;
+    document.getElementById('detail-content').innerHTML = html;
+}
+
+async function validateMeta() {
+    try {
+        const resp = await api.get('/api/v1/metadata/validate');
+        document.getElementById('validate-panel').style.display = 'block';
+        document.getElementById('validate-count').textContent = resp.count + ' 项';
+        const ul = document.getElementById('validate-list');
+        ul.innerHTML = '';
+        (resp.errors || []).forEach(e => {
+            const li = document.createElement('li');
+            li.className = 'sev-' + (e.severity || 'info');
+            li.textContent = `[${e.severity}] ${e.message}`;
+            ul.appendChild(li);
+        });
+        if (resp.count === 0) ul.innerHTML = '<li>✓ 无校验问题</li>';
+    } catch (e) {
+        document.getElementById('meta-status').textContent = '✗ ' + e.message;
+    }
+}
+</script>
+{{end}}

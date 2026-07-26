@@ -11,7 +11,13 @@
         <div class="logo">owl-migrate</div>
         <a href="/" class="nav-link {{if eq .Active "home"}}active{{end}}">首页</a>
         <a href="/config" class="nav-link {{if eq .Active "config"}}active{{end}}">配置</a>
+        <a href="/metadata" class="nav-link {{if eq .Active "metadata"}}active{{end}}">元数据</a>
+        <a href="/ddl" class="nav-link {{if eq .Active "ddl"}}active{{end}}">DDL</a>
+        <a href="/select" class="nav-link {{if eq .Active "select"}}active{{end}}">SELECT</a>
+        <a href="/insert" class="nav-link {{if eq .Active "insert"}}active{{end}}">INSERT</a>
         <a href="/migrate" class="nav-link {{if eq .Active "migrate"}}active{{end}}">迁移</a>
+        <a href="/export" class="nav-link {{if eq .Active "export"}}active{{end}}">导出</a>
+        <a href="/import" class="nav-link {{if eq .Active "import"}}active{{end}}">导入</a>
         <a href="/jobs" class="nav-link {{if eq .Active "jobs"}}active{{end}}">任务</a>
         <a href="/docs" class="nav-link">文档</a>
     </nav>

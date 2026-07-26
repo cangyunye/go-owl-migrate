@@ -202,6 +202,9 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, error) {
 	if req.TempDir != "" {
 		args = append(args, "--temp-dir", req.TempDir)
 	}
+	if req.JobType == "migrate" && req.Mode == "sql-out" {
+		args = append(args, "--sql-out", filepath.Join(req.TempDir, "insert"))
+	}
 
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = os.Stdout

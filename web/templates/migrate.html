@@ -1,79 +1,36 @@
 {{template "base.html" .}}
 {{define "content"}}
 <h1>数据迁移</h1>
-<div class="panel">
-    <h3>启动迁移任务</h3>
-    <div class="form-row">
-        <label>模式</label>
-        <select id="mode">
-            <option value="direct">直接导入（源→目标）</option>
-            <option value="sql-out">生成 SQL 文件</option>
-        </select>
-    </div>
-    <button id="btn-start" class="btn-primary" onclick="startMigrate()">开始迁移</button>
-    <button id="btn-cancel" class="btn-danger" onclick="cancelJob()" style="display:none">取消</button>
-</div>
+<p class="subtitle">端到端迁移：源库 → 导出 → 目标库（或生成 INSERT SQL）</p>
 
+<nav class="mode-tabs">
+    <a href="/migrate?mode=direct" class="mode-tab" data-mode="direct">直接迁移</a>
+    <a href="/migrate?mode=sql" class="mode-tab" data-mode="sql">SQL 输出</a>
+</nav>
+<p class="mode-desc" id="mode-desc"></p>
+
+<div class="panel">
+    <button class="btn-primary" id="btn-start" onclick="startMigrate()">开始迁移</button>
+    <button class="btn-danger" id="btn-cancel" onclick="jobUI.cancel()" style="display:none">取消</button>
+</div>
 <div id="progress-panel" class="panel" style="display:none">
-    <h3>进度 <span id="job-id-badge" class="badge"></span></h3>
+    <h3>进度 <span class="badge" id="job-id-badge"></span></h3>
     <div id="progress-log" class="log-box"></div>
 </div>
 {{end}}
 {{define "scripts"}}
 <script>
-let currentJobId = null;
-let ws = null;
+jobUI.bind('#progress-log');
+const mode = (new URLSearchParams(location.search).get('mode') === 'sql') ? 'sql-out' : 'direct';
+document.querySelectorAll('.mode-tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.mode === (mode === 'sql-out' ? 'sql' : 'direct')));
+document.getElementById('mode-desc').textContent = (mode === 'sql-out')
+    ? 'SQL 输出模式：导出后生成 INSERT SQL 文件，不连接目标库。'
+    : '直接模式：导出 CSV 后直接导入目标数据库。';
 
-function startMigrate() {
-    const mode = document.getElementById('mode').value;
-    api.post('/api/v1/migrate', {mode: mode}).then(resp => {
-        currentJobId = resp.job_id;
-        document.getElementById('job-id-badge').textContent = resp.job_id;
-        document.getElementById('progress-panel').style.display = 'block';
-        document.getElementById('btn-start').style.display = 'none';
-        document.getElementById('btn-cancel').style.display = 'inline-block';
-        connectWS(resp.job_id);
-    }).catch(err => alert('启动失败: ' + err.message));
-}
-
-function cancelJob() {
-    if (!currentJobId) return;
-    api.del('/api/v1/jobs/' + currentJobId).then(() => {
-        appendLog('⚠️ 已发送取消请求');
-    });
-}
-
-function connectWS(jobId) {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(proto + '//' + location.host + '/api/v1/jobs/' + jobId + '/ws');
-    ws.onmessage = function(e) {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'progress') {
-            appendLog(`[${msg.seq}] ${msg.event} ${msg.schema}.${msg.table} → ${msg.rows} rows`);
-        } else if (msg.type === 'complete') {
-            appendLog('✅ 迁移完成: ' + msg.status);
-            finish();
-        } else if (msg.type === 'cancelled') {
-            appendLog('🚫 已取消');
-            finish();
-        } else if (msg.type === 'error') {
-            appendLog('❌ 错误: ' + msg.error);
-            finish();
-        }
-    };
-    ws.onclose = function() { appendLog('— 连接关闭 —'); };
-}
-
-function finish() {
-    document.getElementById('btn-cancel').style.display = 'none';
-    document.getElementById('btn-start').style.display = 'inline-block';
-    if (ws) ws.close();
-}
-
-function appendLog(text) {
-    const box = document.getElementById('progress-log');
-    box.innerHTML += text + '\n';
-    box.scrollTop = box.scrollHeight;
+async function startMigrate() {
+    try { await jobUI.start('/api/v1/migrate', { mode: mode }); }
+    catch (e) { alert('启动失败: ' + e.message); }
 }
 </script>
 {{end}}

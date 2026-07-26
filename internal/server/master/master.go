@@ -19,6 +19,7 @@ import (
 type SpawnRequest struct {
 	JobID      string
 	JobType    string
+	Mode       string // for migrate: "direct" | "sql-out"
 	ConfigPath string
 	DBPath     string
 	ParentPID  int
@@ -81,6 +82,7 @@ func (m *Master) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Type       string          `json:"type"`
+		Mode       string          `json:"mode"`
 		Config     json.RawMessage `json:"config"`
 		ResumeFrom string          `json:"resume_from"`
 	}
@@ -114,6 +116,7 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 	pid, err := m.spawner.Spawn(SpawnRequest{
 		JobID:      jobID,
 		JobType:    req.Type,
+		Mode:       req.Mode,
 		ConfigPath: configPath,
 		DBPath:     m.dbPath,
 		ParentPID:  os.Getpid(),

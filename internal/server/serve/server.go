@@ -27,15 +27,29 @@ type Server struct {
 	mu          sync.RWMutex
 	cfg         *config.Config
 	schemaModel *md.SchemaModel
+	genOutputs  map[string]string
 }
 
 func NewServer(cfg Config) *Server {
 	return &Server{
-		store:     cfg.Store,
-		masterURL: cfg.MasterURL,
-		hub:       NewHub(cfg.Store),
-		cfg:       &config.Config{},
+		store:      cfg.Store,
+		masterURL:  cfg.MasterURL,
+		hub:        NewHub(cfg.Store),
+		cfg:        &config.Config{},
+		genOutputs: make(map[string]string),
 	}
+}
+
+func (s *Server) setGenOutput(kind, dir string) {
+	s.mu.Lock()
+	s.genOutputs[kind] = dir
+	s.mu.Unlock()
+}
+
+func (s *Server) getGenOutput(kind string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.genOutputs[kind]
 }
 
 func (s *Server) Handler() http.Handler {
@@ -59,6 +73,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/scenarios", s.handleListScenarios)
 	mux.HandleFunc("GET /api/v1/scenarios/{name}", s.handleGetScenario)
 	mux.HandleFunc("POST /api/v1/scenarios/{name}/build", s.handleBuildScenarioConfig)
+	mux.HandleFunc("POST /api/v1/ddl/generate", s.handleGenerateDDL)
+	mux.HandleFunc("GET /api/v1/ddl/download", s.handleDownloadGen("ddl"))
+	mux.HandleFunc("POST /api/v1/select/generate", s.handleGenerateSelect)
+	mux.HandleFunc("GET /api/v1/select/download", s.handleDownloadGen("select"))
+	mux.HandleFunc("POST /api/v1/insert/generate", s.handleGenerateInsert)
+	mux.HandleFunc("GET /api/v1/insert/download", s.handleDownloadGen("insert"))
+	mux.HandleFunc("GET /api/v1/metadata/validate", s.handleMetadataValidate)
+	mux.HandleFunc("GET /api/v1/metadata/tables/{schema}/{table}", s.handleMetadataTableDetail)
 
 	s.registerPages(mux)
 	s.registerDocs(mux)

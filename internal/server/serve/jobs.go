@@ -27,22 +27,30 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request, jobType string
 		return
 	}
 
+	var body struct {
+		Mode string `json:"mode"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+
 	payload := map[string]any{
 		"type":   jobType,
 		"config": cfgMap,
+	}
+	if body.Mode != "" {
+		payload["mode"] = body.Mode
 	}
 	if resumeFrom := r.URL.Query().Get("resume_from"); resumeFrom != "" {
 		payload["resume_from"] = resumeFrom
 	}
 
-	status, body, err := s.callMaster("POST", "/api/v1/jobs", payload)
+	status, respBody, err := s.callMaster("POST", "/api/v1/jobs", payload)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "master unreachable: "+err.Error())
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(body)
+	w.Write(respBody)
 }
 
 func (s *Server) handleStartMigrate(w http.ResponseWriter, r *http.Request) {

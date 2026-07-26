@@ -36,8 +36,15 @@ func (s *Server) registerPages(mux *http.ServeMux) {
 	}{
 		{"GET /{$}", "index.html", "首页", "home"},
 		{"GET /config", "config.html", "配置", "config"},
+		{"GET /metadata", "metadata.html", "元数据", "metadata"},
+		{"GET /ddl", "ddl.html", "DDL", "ddl"},
+		{"GET /select", "select.html", "SELECT", "select"},
+		{"GET /insert", "insert.html", "INSERT", "insert"},
 		{"GET /migrate", "migrate.html", "迁移", "migrate"},
+		{"GET /export", "export.html", "导出", "export"},
+		{"GET /import", "import.html", "导入", "import"},
 		{"GET /jobs", "jobs.html", "任务", "jobs"},
+		{"GET /jobs/{id}", "job_detail.html", "任务详情", "jobs"},
 	}
 
 	for _, p := range pages {
