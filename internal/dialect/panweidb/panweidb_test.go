@@ -143,8 +143,8 @@ func TestPDBMySQL_DDLTable(t *testing.T) {
 	if !strings.Contains(sql, "`name`") {
 		t.Error("DDL should use backtick quoting for name")
 	}
-	if !strings.Contains(sql, "ENGINE=") {
-		t.Error("DDL should contain ENGINE= clause for MySQL mode")
+	if strings.Contains(sql, "ENGINE=") {
+		t.Error("panweidb-mysql DDL should omit ENGINE= clause")
 	}
 }
 
@@ -186,8 +186,8 @@ func TestPDBMySQL_EngineClause(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(sql, "ENGINE=InnoDB") {
-		t.Errorf("DDL should contain ENGINE=InnoDB, got: %s", sql)
+	if strings.Contains(sql, "ENGINE=") {
+		t.Errorf("panweidb-mysql should omit ENGINE clause, got: %s", sql)
 	}
 }
 

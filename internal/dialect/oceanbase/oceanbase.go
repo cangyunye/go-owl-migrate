@@ -30,6 +30,31 @@ func (b obMySQLDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect
 		seq.SequenceSchema, seq.SequenceName, seq.StartValue, seq.IncrementBy, seq.MaxValue, seq.CacheSize), nil
 }
 
+func (b obMySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) (string, error) {
+	sql, err := b.MySQLDDLBuilder.BuildCreateTable(t, opts)
+	if err != nil {
+		return "", err
+	}
+	if idx := strings.LastIndex(sql, " ENGINE="); idx >= 0 {
+		sql = sql[:idx] + " ENGINE=InnoDB"
+	} else {
+		sql += " ENGINE=InnoDB"
+	}
+	return sql, nil
+}
+
+func (b obMySQLDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {
+	if len(idxs) > 0 && strings.EqualFold(idxs[0].IndexType, "FULLTEXT") {
+		cols := make([]string, len(idxs))
+		for i, ix := range idxs {
+			cols[i] = ix.ColumnName
+		}
+		return fmt.Sprintf("-- MANUAL: FULLTEXT index not supported in OceanBase MySQL; CREATE INDEX `%s` ON `%s` (`%s`)",
+			idxs[0].IndexName, idxs[0].TableName, strings.Join(cols, "`, `")), nil
+	}
+	return b.MySQLDDLBuilder.BuildCreateIndex(idxs, opts)
+}
+
 type obMySQLDMLHelper struct{ mysql.MySQLDMLHelper }
 
 func NewMySQL() dialect.Dialect {
@@ -50,6 +75,13 @@ func NewMySQL() dialect.Dialect {
 type obOracleTypeMapper struct{ oracle.OracleTypeMapper }
 
 func (m obOracleTypeMapper) Name() string { return "oceanbase-oracle" }
+
+func (m obOracleTypeMapper) ToLogicalType(rawType string, length, precision, scale int) dialect.LogicalType {
+	if strings.EqualFold(strings.TrimSpace(rawType), "BFILE") {
+		return dialect.LogicalType{Base: dialect.LBBLOB}
+	}
+	return m.OracleTypeMapper.ToLogicalType(rawType, length, precision, scale)
+}
 
 type obOracleFeatures struct{ oracle.OracleFeatures }
 

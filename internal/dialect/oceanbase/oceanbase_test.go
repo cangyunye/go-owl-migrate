@@ -136,10 +136,9 @@ func TestOBOracle_InheritsOracleTypeMapping(t *testing.T) {
 
 func TestOBOracle_NoBFILE(t *testing.T) {
 	d := NewOracle()
-	// BFILE should still be mappable (to VarBinary) — OB just doesn't use it
 	lt := d.ToLogicalType("BFILE", 0, 0, 0)
-	if lt.Base != dialect.LBVarBinary {
-		t.Errorf("BFILE should map to LBVarBinary, got %v", lt.Base)
+	if lt.Base != dialect.LBBLOB {
+		t.Errorf("BFILE should map to LBBLOB (no BFILE support), got %v", lt.Base)
 	}
 }
 
@@ -200,5 +199,46 @@ func TestOBOracle_CanRegister(t *testing.T) {
 	if d.TypeMapper == nil || d.IdentifierQuoter == nil ||
 		d.Features == nil || d.DDLBuilder == nil || d.DMLHelper == nil {
 		t.Error("OceanBase Oracle dialect is missing required components")
+	}
+}
+
+func TestOBMySQL_ForceInnoDB(t *testing.T) {
+	d := NewMySQL()
+	tbl, _ := md.NewTableDef("db", "t")
+	col, _ := md.NewColumnDef("db", "t", "id", 1, "INT")
+	tbl.AddColumn(col)
+	tbl.Engine = "MyISAM"
+	ddl, err := d.BuildCreateTable(tbl, dialect.BuildOptions{})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if strings.Contains(ddl, "MyISAM") {
+		t.Errorf("MyISAM should be replaced, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "ENGINE=InnoDB") {
+		t.Errorf("expected ENGINE=InnoDB, got:\n%s", ddl)
+	}
+}
+
+func TestOBMySQL_NoFulltext(t *testing.T) {
+	d := NewMySQL()
+	idxs := []*md.IndexDef{{TableSchema: "db", TableName: "t", IndexName: "ft_idx", IndexType: "FULLTEXT", ColumnName: "body"}}
+	ddl, err := d.BuildCreateIndex(idxs, dialect.BuildOptions{})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(ddl, "FULLTEXT index not supported") {
+		t.Errorf("expected FULLTEXT downgrade comment, got:\n%s", ddl)
+	}
+}
+
+func TestOBOracle_BFILEToBLOB(t *testing.T) {
+	d := NewOracle()
+	lt := d.ToLogicalType("BFILE", 0, 0, 0)
+	if lt.Base != dialect.LBBLOB {
+		t.Errorf("BFILE base = %v, want LBBLOB", lt.Base)
+	}
+	if got := d.FromLogicalType(lt); got != "BLOB" {
+		t.Errorf("BFILE -> %q, want BLOB", got)
 	}
 }

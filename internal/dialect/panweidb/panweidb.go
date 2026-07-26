@@ -1,10 +1,13 @@
 package panweidb
 
 import (
+	"strings"
+
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 	mysql "github.com/cangyunye/go-owl-migrate/internal/dialect/mysql"
 	oracle "github.com/cangyunye/go-owl-migrate/internal/dialect/oracle"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/postgres"
+	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
 // ── PanWeiDB PostgreSQL 原生模式 (PG) ──
@@ -36,6 +39,19 @@ type pdbMySQLTypeMapper struct{ mysql.MySQLTypeMapper }
 
 func (m pdbMySQLTypeMapper) Name() string { return "panweidb-mysql" }
 
+type pdbMySQLDDLBuilder struct{ mysql.MySQLDDLBuilder }
+
+func (b pdbMySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) (string, error) {
+	sql, err := b.MySQLDDLBuilder.BuildCreateTable(t, opts)
+	if err != nil {
+		return "", err
+	}
+	if idx := strings.LastIndex(sql, " ENGINE="); idx >= 0 {
+		sql = sql[:idx]
+	}
+	return sql, nil
+}
+
 // NewMySQL creates a PanWeiDB MySQL-compatible (B mode) dialect.
 func NewMySQL() dialect.Dialect {
 	mysqlD := mysql.New()
@@ -43,7 +59,7 @@ func NewMySQL() dialect.Dialect {
 		TypeMapper:       pdbMySQLTypeMapper{},
 		IdentifierQuoter: mysqlD.IdentifierQuoter,
 		Features:         postgres.PGFeatures{},
-		DDLBuilder:       mysqlD.DDLBuilder,
+		DDLBuilder:       pdbMySQLDDLBuilder{},
 		DMLHelper:        mysqlD.DMLHelper,
 	}
 }
