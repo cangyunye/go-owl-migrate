@@ -10,15 +10,27 @@ import (
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
+var normalizeHeaders = true
+
+// SetColumnNameMatching configures CSV header matching: "case_insensitive"
+// (default) normalizes headers to upper case; "case_sensitive" matches exactly.
+func SetColumnNameMatching(mode string) {
+	normalizeHeaders = !strings.EqualFold(strings.TrimSpace(mode), "case_sensitive")
+}
+
 // recordToMap converts a CSV record (header + values) into a map.
 // \N values are converted to empty strings (NULL).
 func recordToMap(headers, record []string) map[string]string {
 	m := make(map[string]string, len(headers))
 	for i, h := range headers {
+		key := h
+		if normalizeHeaders {
+			key = strings.ToUpper(strings.TrimSpace(h))
+		}
 		if i < len(record) {
-			m[h] = nullValue(record[i])
+			m[key] = nullValue(record[i])
 		} else {
-			m[h] = ""
+			m[key] = ""
 		}
 	}
 	return m

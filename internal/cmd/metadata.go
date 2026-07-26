@@ -19,6 +19,7 @@ import (
 
 // loadSchemaModel loads metadata from CSV files, xlsx, or live database based on config.
 func loadSchemaModel(cfg *config.Config) (*md.SchemaModel, error) {
+	csvpkg.SetColumnNameMatching(cfg.Metadata.CSV.ColumnNameMatching)
 	switch cfg.Metadata.Type {
 	case "csv":
 		return loadCSVModel(cfg.Metadata.CSV.Path)

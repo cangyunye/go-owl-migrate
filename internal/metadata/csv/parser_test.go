@@ -339,3 +339,27 @@ func TestValidator_NonPKIdentityWarning(t *testing.T) {
 		t.Error("expected WARNING for non-PK identity column")
 	}
 }
+
+func TestParseTables_ColumnNameMatching(t *testing.T) {
+	input := "table_schema,table_name,table_type\nSCOTT,EMP,TABLE\n"
+
+	t.Run("case_insensitive matches lowercase headers", func(t *testing.T) {
+		SetColumnNameMatching("case_insensitive")
+		defer SetColumnNameMatching("case_insensitive")
+		tables, err := ParseTables(strings.NewReader(input))
+		if err != nil {
+			t.Fatalf("err: %v", err)
+		}
+		if len(tables) != 1 || tables[0].TableName != "EMP" {
+			t.Errorf("lowercase headers not matched: %+v", tables)
+		}
+	})
+	t.Run("case_sensitive rejects lowercase headers", func(t *testing.T) {
+		SetColumnNameMatching("case_sensitive")
+		defer SetColumnNameMatching("case_insensitive")
+		tables, err := ParseTables(strings.NewReader(input))
+		if err == nil && len(tables) == 1 && tables[0].TableName == "EMP" {
+			t.Error("case_sensitive should not match lowercase headers")
+		}
+	})
+}
