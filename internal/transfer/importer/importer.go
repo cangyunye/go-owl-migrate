@@ -667,8 +667,14 @@ func truncateDatetimeToTarget(v string, col *md.ColumnDef) string {
 	if col == nil {
 		return v
 	}
-	if strings.EqualFold(strings.TrimSpace(col.DataType), "DATE") && len(v) >= 19 && v[10] == ' ' {
+	dt := strings.ToUpper(strings.TrimSpace(col.DataType))
+	if dt == "DATE" && len(v) >= 19 && v[10] == ' ' {
 		return v[:10]
+	}
+	if strings.HasPrefix(dt, "TIMESTAMP") && col.DataScale == 0 && len(v) >= 19 {
+		if dot := strings.IndexByte(v, '.'); dot >= 19 {
+			return v[:dot]
+		}
 	}
 	return v
 }

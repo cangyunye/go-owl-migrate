@@ -171,4 +171,31 @@ func TestPostgres_BuildCreateTable_TypeOptions(t *testing.T) {
 			t.Errorf("expected DEFAULT TRUE, got:\n%s", ddl)
 		}
 	})
+	t.Run("type_overrides precision placeholders", func(t *testing.T) {
+		tbl, _ := md.NewTableDef("public", "t")
+		c, _ := md.NewColumnDef("public", "t", "amt", 1, "NUMBER")
+		c.DataPrecision = 10
+		c.DataScale = 2
+		tbl.AddColumn(c)
+		ddl, _ := d.BuildCreateTable(tbl, dialect.BuildOptions{TypeOverrides: map[string]string{"NUMBER": "NUMERIC(%p,%s)"}})
+		if !strings.Contains(ddl, `"amt" NUMERIC(10,2)`) {
+			t.Errorf("expected NUMERIC(10,2), got:\n%s", ddl)
+		}
+	})
+}
+
+func TestPostgres_BuildCreateTable_Partition(t *testing.T) {
+	d := New()
+	tbl, _ := md.NewTableDef("public", "t")
+	col, _ := md.NewColumnDef("public", "t", "id", 1, "INTEGER")
+	tbl.AddColumn(col)
+	tbl.Partitioned = "YES"
+	tbl.PartitionInfo = "PARTITION BY RANGE (id)"
+	ddl, err := d.BuildCreateTable(tbl, dialect.BuildOptions{})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(ddl, "PARTITION BY RANGE (id)") {
+		t.Errorf("expected partition clause, got:\n%s", ddl)
+	}
 }

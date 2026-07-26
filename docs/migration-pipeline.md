@@ -84,7 +84,6 @@ import:
     trim_strings: true                    # Trim whitespace from string values
     null_if: ["NULL", "null", "\\N"]     # Values treated as NULL
     source_encoding: ""                   # Source CSV encoding ("" = UTF-8)
-    target_encoding: ""                   # Target DB encoding ("" = UTF-8)
 ```
 
 #### DateTime Conversion

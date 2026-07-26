@@ -381,6 +381,7 @@ func TestUnit_TruncateDatetimeToTarget(t *testing.T) {
 	}{
 		{"date truncates time", "1980-12-17 00:00:00", dateCol, "1980-12-17"},
 		{"timestamp unchanged", "1980-12-17 00:00:00", tsCol, "1980-12-17 00:00:00"},
+		{"timestamp0 truncates fractional", "1980-12-17 00:00:00.123", tsCol, "1980-12-17 00:00:00"},
 		{"short value unchanged", "1980-12-17", dateCol, "1980-12-17"},
 		{"nil col unchanged", "1980-12-17 00:00:00", nil, "1980-12-17 00:00:00"},
 	}

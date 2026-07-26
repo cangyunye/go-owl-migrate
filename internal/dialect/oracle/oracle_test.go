@@ -136,3 +136,31 @@ func TestOracle_BuildCreateTable_AddRowIDColumn(t *testing.T) {
 		}
 	})
 }
+
+func TestOracle_BuildCreateTable_Partition(t *testing.T) {
+	d := New()
+	tbl, _ := md.NewTableDef("SCOTT", "EMP")
+	col, _ := md.NewColumnDef("SCOTT", "EMP", "EMPNO", 1, "NUMBER")
+	tbl.AddColumn(col)
+	tbl.Partitioned = "YES"
+	tbl.PartitionInfo = "PARTITION BY RANGE (EMPNO) (PARTITION p1 VALUES LESS THAN (1000))"
+	ddl, err := d.BuildCreateTable(tbl, dialect.BuildOptions{})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(ddl, "PARTITION BY RANGE (EMPNO)") {
+		t.Errorf("expected partition clause, got:\n%s", ddl)
+	}
+}
+
+func TestOracle_BuildCreateTable_BooleanMapping(t *testing.T) {
+	d := New()
+	tbl, _ := md.NewTableDef("SCOTT", "T")
+	col, _ := md.NewColumnDef("SCOTT", "T", "FLAG", 1, "NUMBER(1)")
+	col.DefaultValue = "Y"
+	tbl.AddColumn(col)
+	ddl, _ := d.BuildCreateTable(tbl, dialect.BuildOptions{BooleanMapping: map[string]bool{"Y": true}})
+	if !strings.Contains(ddl, "DEFAULT 1") {
+		t.Errorf("expected DEFAULT 1 for Oracle numeric boolean, got:\n%s", ddl)
+	}
+}

@@ -128,3 +128,15 @@ func TestMySQL_BuildCreateTable_Partition(t *testing.T) {
 		}
 	})
 }
+
+func TestMySQL_BuildCreateTable_BooleanMapping(t *testing.T) {
+	d := New()
+	tbl, _ := md.NewTableDef("db", "t")
+	col, _ := md.NewColumnDef("db", "t", "flag", 1, "TINYINT(1)")
+	col.DefaultValue = "Y"
+	tbl.AddColumn(col)
+	ddl, _ := d.BuildCreateTable(tbl, dialect.BuildOptions{BooleanMapping: map[string]bool{"Y": true}})
+	if !strings.Contains(ddl, "DEFAULT 1") {
+		t.Errorf("expected DEFAULT 1 for MySQL numeric boolean, got:\n%s", ddl)
+	}
+}
