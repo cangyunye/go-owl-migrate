@@ -81,6 +81,7 @@ func importCmd() *cobra.Command {
 			RespectForeignKeys:           cfg.Import.Parallel.RespectForeignKeys,
 			DateTimeFormat:               cfg.Import.DataTransforms.DatetimeFormat,
 			DateTimeFormatFallback:       cfg.Import.DataTransforms.DatetimeFormatFallback,
+			DateTimeTruncateToTarget:     cfg.Import.DataTransforms.DatetimeTruncateToTarget,
 			TrimStrings:                  cfg.Import.DataTransforms.TrimStrings,
 			SourceEncoding:               cfg.Import.DataTransforms.SourceEncoding,
 			TargetDBType:                 cfg.Target.Type,

@@ -369,3 +369,26 @@ func TestUnit_IsZeroNumeric(t *testing.T) {
 		}
 	}
 }
+
+func TestUnit_TruncateDatetimeToTarget(t *testing.T) {
+	dateCol := &md.ColumnDef{ColumnName: "D", DataType: "DATE"}
+	tsCol := &md.ColumnDef{ColumnName: "T", DataType: "TIMESTAMP"}
+	tests := []struct {
+		name string
+		v    string
+		col  *md.ColumnDef
+		want string
+	}{
+		{"date truncates time", "1980-12-17 00:00:00", dateCol, "1980-12-17"},
+		{"timestamp unchanged", "1980-12-17 00:00:00", tsCol, "1980-12-17 00:00:00"},
+		{"short value unchanged", "1980-12-17", dateCol, "1980-12-17"},
+		{"nil col unchanged", "1980-12-17 00:00:00", nil, "1980-12-17 00:00:00"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := truncateDatetimeToTarget(tt.v, tt.col); got != tt.want {
+				t.Errorf("truncateDatetimeToTarget(%q) = %q, want %q", tt.v, got, tt.want)
+			}
+		})
+	}
+}

@@ -42,6 +42,7 @@ type Config struct {
 	RespectForeignKeys           bool
 	DateTimeFormat               string // e.g. "yyyyMMddHHmmss"
 	DateTimeFormatFallback       []string
+	DateTimeTruncateToTarget     bool
 	TrimStrings                  bool
 	TargetDBType                 string // "postgres", "mysql", "oracle" — affects quoting and placeholders
 	SourceEncoding               string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
@@ -481,6 +482,11 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 			} else {
 				val := imp.transformValue(v)
 				if j < len(header) {
+					if imp.cfg.DateTimeTruncateToTarget {
+						if s, ok := val.(string); ok {
+							val = truncateDatetimeToTarget(s, tbl.GetColumn(header[j]))
+						}
+					}
 					if imp.needsNumericBoolean(tbl, header[j]) {
 						val = numericBooleanValue(val)
 					}
@@ -637,6 +643,16 @@ func (imp *Importer) isNumericColumn(tbl *md.TableDef, columnName string) bool {
 func isZeroNumeric(v string) bool {
 	t := strings.TrimSpace(v)
 	return t == "0" || t == "0.0"
+}
+
+func truncateDatetimeToTarget(v string, col *md.ColumnDef) string {
+	if col == nil {
+		return v
+	}
+	if strings.EqualFold(strings.TrimSpace(col.DataType), "DATE") && len(v) >= 19 && v[10] == ' ' {
+		return v[:10]
+	}
+	return v
 }
 
 // transformValue applies data transformations to a CSV value before INSERT.
