@@ -79,7 +79,7 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 
 // IsZero returns true if the DBConfig has no meaningful values set.
 func (d DBConfig) isZero() bool {
-	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.Charset == "" && d.ConnectTimeout == "" && d.QueryTimeout == "" && d.Pool.isZero()
+	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.ConnectTimeout == "" && d.QueryTimeout == "" && d.Pool.isZero()
 }
 
 // IsZero returns true if the PoolConfig has no meaningful values set.
@@ -211,7 +211,6 @@ type DBConfig struct {
 	Type           string     `yaml:"type"`
 	DSN            string     `yaml:"dsn"`
 	Schema         string     `yaml:"schema"`
-	Charset        string     `yaml:"charset,omitempty"`
 	ConnectTimeout string     `yaml:"connect_timeout,omitempty"`
 	QueryTimeout   string     `yaml:"query_timeout,omitempty"`
 	Pool           PoolConfig `yaml:"pool,omitempty"`
@@ -292,8 +291,6 @@ type ExportCSVConfig struct {
 	NullRepresentation string            `yaml:"null_representation,omitempty"`
 	NullOverrides      map[string]string `yaml:"null_overrides,omitempty"`
 	EmptyStringToNull  bool              `yaml:"empty_string_to_null,omitempty"`
-	QuotePolicy        string            `yaml:"quote_policy,omitempty"`
-	NewlineHandling    string            `yaml:"newline_handling,omitempty"`
 }
 
 // ImportConfig holds data import settings.
@@ -353,7 +350,6 @@ type DataTransforms struct {
 	TrimStrings              bool     `yaml:"trim_strings"`
 	NullIf                   []string `yaml:"null_if,omitempty"`
 	SourceEncoding           string   `yaml:"source_encoding,omitempty"` // e.g. "GBK", "" = UTF-8
-	TargetEncoding           string   `yaml:"target_encoding,omitempty"` // e.g. "GBK", "" = UTF-8
 }
 
 // BatchConfig holds shared batch processing settings.
@@ -366,21 +362,13 @@ type BatchConfig struct {
 type ParallelConfig struct {
 	Enabled            bool `yaml:"enabled,omitempty"`
 	MaxWorkers         int  `yaml:"max_workers,omitempty"`
-	MaxTableWorkers    int  `yaml:"max_table_workers,omitempty"`
 	RespectForeignKeys bool `yaml:"respect_foreign_keys,omitempty"`
 }
 
 // TableListConfig holds per-table configuration.
 type TableListConfig struct {
-	Include   []string                 `yaml:"include,omitempty"`
-	Exclude   TableExcludeConfig       `yaml:"exclude,omitempty"`
-	Overrides map[string]TableOverride `yaml:"overrides,omitempty"`
-}
-
-// TableOverride holds per-table override settings.
-type TableOverride struct {
-	PageSize        int `yaml:"page_size,omitempty"`
-	MaxTableWorkers int `yaml:"max_table_workers,omitempty"`
+	Include []string           `yaml:"include,omitempty"`
+	Exclude TableExcludeConfig `yaml:"exclude,omitempty"`
 }
 
 // Load reads and validates a YAML config file.

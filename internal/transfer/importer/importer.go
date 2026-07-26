@@ -48,7 +48,6 @@ type Config struct {
 	TrimStrings                  bool
 	TargetDBType                 string // "postgres", "mysql", "oracle" — affects quoting and placeholders
 	SourceEncoding               string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
-	TargetEncoding               string // ""=UTF-8, "GBK", "LATIN1" — target database encoding
 	Logger                       *zap.Logger
 	NoQuoteIdentifiers           bool
 }

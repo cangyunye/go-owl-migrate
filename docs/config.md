@@ -35,7 +35,6 @@ source:
   type: postgres                            # postgres | mysql | oracle | goldendb | oceanbase | panweidb | opengaussdb
   dsn: "host=127.0.0.1 port=5432 dbname=mydb user=u password=p sslmode=disable"
   schema: public
-  charset: ""                               # Source database charset (optional)
   connect_timeout: "30s"                    # Connection/ping timeout (e.g. 10s, 1m)
   query_timeout: ""                         # Overall operation timeout (e.g. 30m, 1h; empty = no limit)
   pool:                                     # Connection pool tuning (optional)
@@ -98,8 +97,6 @@ export:
     line_terminator: "\n"
     null_overrides: {}                      # Per-column null value overrides
     empty_string_to_null: false             # Treat empty string as null
-    quote_policy: ""                        # CSV quote policy
-    newline_handling: ""                    # Newline handling method
   batch:
     method: cursor                          # pagination: cursor/offset
     page_size: 5000
@@ -144,7 +141,6 @@ import:
     trim_strings: true
     null_if: ["NULL", "null", "\\N"]
     source_encoding: ""                     # Source CSV encoding ("" = UTF-8, supports GBK, LATIN1, etc.)
-    target_encoding: ""                     # Target database encoding
 
 extensions: {}                              # Custom extension configuration (reserved)
 ```
@@ -250,7 +246,6 @@ The `import.data_transforms` section controls per-value transformations during i
 | `trim_strings` | Trim leading/trailing whitespace from string values |
 | `null_if` | String values to treat as SQL NULL |
 | `source_encoding` | Decode CSV from source encoding to UTF-8 (GBK, LATIN1, ISO-8859-*, Windows-1252) |
-| `target_encoding` | Encode to target database encoding (future use) |
 
 ## Extensions
 
