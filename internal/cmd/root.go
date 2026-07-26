@@ -13,6 +13,10 @@ var (
 	version   = "0.1.0"
 	commitID  = "unknown"
 	buildTime = "unknown"
+
+	progressDB string
+	jobID      string
+	parentPID  int
 )
 
 // rootCmd represents the base command.
@@ -38,6 +42,13 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "./migrate.yaml", "config file path")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "override log level (debug/info/warn/error)")
+
+	rootCmd.PersistentFlags().StringVar(&progressDB, "progress-db", "", "path to shared SQLite database for progress events (worker mode)")
+	rootCmd.PersistentFlags().StringVar(&jobID, "job-id", "", "job identifier for progress reporting (worker mode)")
+	rootCmd.PersistentFlags().IntVar(&parentPID, "parent-pid", 0, "parent process PID for orphan detection (worker mode)")
+	rootCmd.PersistentFlags().MarkHidden("progress-db")
+	rootCmd.PersistentFlags().MarkHidden("job-id")
+	rootCmd.PersistentFlags().MarkHidden("parent-pid")
 
 	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(validateCmd())

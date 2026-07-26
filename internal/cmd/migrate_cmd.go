@@ -20,6 +20,7 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	"github.com/cangyunye/go-owl-migrate/internal/logger"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
 )
@@ -66,6 +67,28 @@ Use --resume to skip tables completed in a previous run.`,
 		}
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			cfg.DDL.NoQuoteIdentifiers = noQuote
+		}
+
+		var pw *service.ProgressWriter
+		if progressDB != "" && jobID != "" {
+			pw, err = service.NewProgressWriter(progressDB, jobID)
+			if err != nil {
+				return fmt.Errorf("init progress writer: %w", err)
+			}
+			defer pw.Close()
+		}
+
+		if parentPID > 0 {
+			hbPath := filepath.Join(os.TempDir(), "owl-migrate-master.heartbeat")
+			monitor := service.NewHeartbeatMonitor(hbPath, 10*time.Second, 20*time.Second)
+			monitor.OnParentDeath = func() {
+				fmt.Println("[WORKER] Parent process died, finishing current work and exiting...")
+				if pw != nil {
+					pw.SetJobInterrupted()
+				}
+				os.Exit(0)
+			}
+			monitor.Start(cmd.Context())
 		}
 
 		report := NewMigrationReport(cfg.Source.Type, cfg.Target.Type)
@@ -271,9 +294,15 @@ Use --resume to skip tables completed in a previous run.`,
 		for _, r := range allExportResults {
 			if r.Error != nil {
 				fmt.Printf("  FAIL %s.%s: %v\n", r.Schema, r.Table, r.Error)
+				if pw != nil {
+					pw.WriteImportComplete(r.Schema, r.Table, 0, 0, r.Error.Error())
+				}
 				continue
 			}
 			fmt.Printf("  %s.%s → %d rows\n", r.Schema, r.Table, r.Rows)
+			if pw != nil {
+				pw.WriteExportComplete(r.Schema, r.Table, r.Rows)
+			}
 		}
 
 		// Step 5.5: Generate INSERT SQL (SQL output mode)
@@ -383,6 +412,9 @@ Use --resume to skip tables completed in a previous run.`,
 							ms.markImported(key, 0, r.Err)
 							fmt.Printf("  FAIL %s.%s: %v\n", r.Schema, r.Table, r.Err)
 							report.AddTable(r.Schema, r.Table, r.Expected, r.Actual, r.Skipped, r.Errors, r.Err.Error())
+							if pw != nil {
+								pw.WriteImportComplete(tbl.TableSchema, tbl.TableName, 0, 0, r.Err.Error())
+							}
 						} else {
 							ms.markImported(key, r.Actual, nil)
 							status := "✅"
@@ -391,6 +423,9 @@ Use --resume to skip tables completed in a previous run.`,
 							}
 							fmt.Printf("  %s %s.%s: %d/%d rows\n", status, r.Schema, r.Table, r.Actual, r.Expected)
 							report.AddTable(r.Schema, r.Table, r.Expected, r.Actual, r.Skipped, r.Errors, "")
+							if pw != nil {
+								pw.WriteImportComplete(tbl.TableSchema, tbl.TableName, r.Actual, r.Skipped, "")
+							}
 						}
 						break
 					}
@@ -428,13 +463,22 @@ Use --resume to skip tables completed in a previous run.`,
 					}
 				}
 				if exportErrors > 0 || importErrors > 0 {
+					if pw != nil {
+						pw.SetJobFailed(fmt.Sprintf("%d export errors, %d import errors", exportErrors, importErrors))
+					}
 					return fmt.Errorf("migration completed with %d export errors, %d import errors", exportErrors, importErrors)
 				}
 			} else if exportErrors > 0 {
+				if pw != nil {
+					pw.SetJobFailed(fmt.Sprintf("%d export errors", exportErrors))
+				}
 				return fmt.Errorf("export completed with %d export errors", exportErrors)
 			}
 		}
 
+		if pw != nil {
+			pw.SetJobCompleted()
+		}
 		return nil
 	}
 
