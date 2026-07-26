@@ -154,12 +154,23 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 		b.WriteString("  ")
 		b.WriteString(quote(col.ColumnName))
 		b.WriteString(" ")
-		b.WriteString(col.DataType)
+		useSerial := opts.IdentityToSerial && col.IsIdentityColumn()
+		if useSerial {
+			if isBigintCol(col) {
+				b.WriteString("BIGSERIAL")
+			} else {
+				b.WriteString("SERIAL")
+			}
+		} else {
+			b.WriteString(col.DataType)
+		}
 		if col.Nullable == "NO" {
 			b.WriteString(" NOT NULL")
 		}
-		if hasDef, defVal := col.HasDefault(); hasDef {
-			b.WriteString(" DEFAULT " + defVal)
+		if !useSerial {
+			if hasDef, defVal := col.HasDefault(); hasDef {
+				b.WriteString(" DEFAULT " + defVal)
+			}
 		}
 		if i < len(cols)-1 {
 			b.WriteString(",")
@@ -175,6 +186,14 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 		}
 	}
 	return b.String(), nil
+}
+
+func isBigintCol(col *md.ColumnDef) bool {
+	dt := strings.ToUpper(col.DataType)
+	if strings.Contains(dt, "BIGINT") || strings.Contains(dt, "INT8") {
+		return true
+	}
+	return col.DataPrecision > 9
 }
 
 func (PGDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {

@@ -158,10 +158,13 @@ func (OracleDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptio
 		if hasDef, defVal := col.HasDefault(); hasDef {
 			b.WriteString(" DEFAULT " + defVal)
 		}
-		if i < len(cols)-1 {
+		if i < len(cols)-1 || opts.AddRowIDColumn {
 			b.WriteString(",")
 		}
 		b.WriteString("\n")
+	}
+	if opts.AddRowIDColumn {
+		b.WriteString("  " + quote("ORIG_ROWID") + " ROWID\n")
 	}
 	b.WriteString(")")
 	return b.String(), nil
