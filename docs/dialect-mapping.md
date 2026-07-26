@@ -34,6 +34,8 @@ Serverless, in-process databases:
 | **SQLite3** | `sqlite3` | `"name"` (double-quote) | mattn/go-sqlite3 | sqlite_master + PRAGMA |
 | **DuckDB** | `duckdb` | `"name"` (double-quote) | duckdb/duckdb-go | information_schema |
 
+> **Build tags**: SQLite3 and DuckDB support is compile-time optional. They are gated behind the `sqlite3` and `duckdb` build tags respectively and are **not** included in the default build. Build with `go build -tags "sqlite3 duckdb" ...` (or `make test/full`) to enable them.
+
 ### Metadata Extraction Steps
 
 When extracting metadata from a live database (`metadata.type: database`), the pipeline queries:
@@ -132,9 +134,9 @@ All database-specific types are normalized to a database-independent `LogicalTyp
 |---|---|
 | LBVarchar | `VARCHAR2(%l)` |
 | LBChar | `CHAR(%l)` |
-| LBInt | `INTEGER` |
-| LBBigInt | `NUMBER(19)` |
-| LBSmallInt | `NUMBER(5)` |
+| LBInt | `NUMBER(%p,0)` |
+| LBBigInt | `NUMBER(%p,0)` |
+| LBSmallInt | `NUMBER(%p,0)` |
 | LBNumeric | `NUMBER(%p,%s)` |
 | LBFloat | `BINARY_FLOAT` |
 | LBDouble | `BINARY_DOUBLE` |

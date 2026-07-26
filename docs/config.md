@@ -268,7 +268,7 @@ This section is not validated by the core config loader — it's available for c
 
 The config loader validates:
 
-1. `metadata.type` must be `csv` or `database`
+1. `metadata.type` must be `csv`, `xlsx`, or `database`
 2. When `metadata.type` is `database`, `source.type` and `source.dsn` are required
 3. `ddl.target_dialect` must be a valid dialect name
 4. `import.batch.error_policy` must be `stop`, `skip_row`, or `log_only`
@@ -285,5 +285,5 @@ panweidb, opengaussdb
 ### Valid Metadata Types
 
 ```
-csv, database
+csv, xlsx, database
 ```

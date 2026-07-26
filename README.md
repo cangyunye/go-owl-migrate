@@ -79,6 +79,8 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 | SQLite3 | ✓ | ✓ | ✓ | ✓ | ✓ |
 | DuckDB | ✓ | ✓ | ✓ | ✓ | ✓ |
 
+> **Note**: SQLite3 and DuckDB are compile-time optional and gated behind the `sqlite3` / `duckdb` build tags. Build with `go build -tags "sqlite3 duckdb" ...` to enable them.
+
 ## Documentation
 
 | Document | Description |
