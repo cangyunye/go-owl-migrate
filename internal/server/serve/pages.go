@@ -13,9 +13,18 @@ type PageData struct {
 	Active string
 }
 
-func (s *Server) registerPages(mux *http.ServeMux) {
-	tmpl := template.Must(template.New("").ParseFS(web.FS, "templates/*.html"))
+// loadPage parses base.html together with a single page file so that each
+// page's {{define "content"}} block is isolated. Parsing all pages into one
+// template set would make every "content" definition collide, and the last
+// one parsed would win for every page.
+func loadPage(pageFile string) *template.Template {
+	return template.Must(template.New("").ParseFS(web.FS,
+		"templates/base.html",
+		"templates/"+pageFile,
+	))
+}
 
+func (s *Server) registerPages(mux *http.ServeMux) {
 	staticFS, _ := fs.Sub(web.FS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
@@ -32,9 +41,12 @@ func (s *Server) registerPages(mux *http.ServeMux) {
 	}
 
 	for _, p := range pages {
+		tmpl := loadPage(p.file)
 		mux.HandleFunc(p.path, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			tmpl.ExecuteTemplate(w, p.file, PageData{Title: p.title, Active: p.active})
+			if err := tmpl.ExecuteTemplate(w, p.file, PageData{Title: p.title, Active: p.active}); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 		})
 	}
 }
