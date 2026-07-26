@@ -17,10 +17,11 @@ type SelectGenerator struct {
 	quoteFn          func(string) string
 	includeRowNumber bool
 	addExportColumns bool
+	oracleRowNum     bool
 }
 
 // NewSelectGenerator creates a SELECT statement generator.
-func NewSelectGenerator(batchMethod string, pageSize int, outputDir string, quoteFn func(string) string, includeRowNumber, addExportColumns bool) *SelectGenerator {
+func NewSelectGenerator(batchMethod string, pageSize int, outputDir string, quoteFn func(string) string, includeRowNumber, addExportColumns, oracleRowNum bool) *SelectGenerator {
 	return &SelectGenerator{
 		batchMethod:      batchMethod,
 		pageSize:         pageSize,
@@ -28,6 +29,7 @@ func NewSelectGenerator(batchMethod string, pageSize int, outputDir string, quot
 		quoteFn:          quoteFn,
 		includeRowNumber: includeRowNumber,
 		addExportColumns: addExportColumns,
+		oracleRowNum:     oracleRowNum,
 	}
 }
 
@@ -73,7 +75,11 @@ func (sg *SelectGenerator) generateForTable(tbl *md.TableDef) (string, error) {
 		quotedCols = append(quotedCols, q)
 	}
 	if sg.includeRowNumber {
-		quotedCols = append(quotedCols, fmt.Sprintf("ROW_NUMBER() OVER (ORDER BY %s) AS rn", strings.Join(sg.orderCols(tbl, pks), ", ")))
+		if sg.oracleRowNum {
+			quotedCols = append(quotedCols, "ROWNUM AS rn")
+		} else {
+			quotedCols = append(quotedCols, fmt.Sprintf("ROW_NUMBER() OVER (ORDER BY %s) AS rn", strings.Join(sg.orderCols(tbl, pks), ", ")))
+		}
 	}
 	if sg.addExportColumns {
 		quotedCols = append(quotedCols, fmt.Sprintf("'%s.%s' AS __export_source", tbl.TableSchema, tbl.TableName))

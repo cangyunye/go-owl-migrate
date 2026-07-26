@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -59,7 +60,8 @@ func genSelectCmd() *cobra.Command {
 		if cmd.Flags().Changed("no-quote-identifiers") && noQuote {
 			quoteFn = func(s string) string { return s }
 		}
-		gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn, cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns)
+		oracleRowNum := strings.Contains(cfg.DDL.TargetDialect, "oracle")
+		gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn, cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum)
 
 		files, err := gen.Generate(sm)
 		if err != nil {
