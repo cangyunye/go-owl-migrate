@@ -468,3 +468,77 @@ func readXLSXRows(t *testing.T, path string) [][]string {
 	}
 	return rows
 }
+
+func TestCSVWriter_NullOverrides(t *testing.T) {
+	w := &csvWriter{delim: ",", quote: `"`, nullRep: `\N`, term: "\n", nullOverrides: map[string]string{"name": "__NULL__"}}
+	if got := w.formatValue(nil, ColumnInfo{Name: "name"}); got != "__NULL__" {
+		t.Errorf("override null = %q, want __NULL__", got)
+	}
+	if got := w.formatValue(nil, ColumnInfo{Name: "id"}); got != `\N` {
+		t.Errorf("default null = %q, want \\N", got)
+	}
+}
+
+func TestCSVWriter_EmptyStringToNull(t *testing.T) {
+	w := &csvWriter{delim: ",", quote: `"`, nullRep: `\N`, term: "\n", emptyStringToNull: true}
+	if got := w.formatValue("", ColumnInfo{Name: "x"}); got != `\N` {
+		t.Errorf("empty = %q, want \\N", got)
+	}
+	if got := w.formatValue("v", ColumnInfo{Name: "x"}); got != "v" {
+		t.Errorf("non-empty = %q, want v", got)
+	}
+}
+
+func TestCSVWriter_EscapeChar(t *testing.T) {
+	w := &csvWriter{delim: ",", quote: `"`, escape: `\`, term: "\n"}
+	got := w.formatValue(`a"b`, ColumnInfo{Name: "x"})
+	if got != `"a\"b"` {
+		t.Errorf("escaped = %q, want %q", got, `"a\"b"`)
+	}
+}
+
+func TestCSVWriter_Encoding(t *testing.T) {
+	dir := t.TempDir()
+	w := &csvWriter{
+		path:    filepath.Join(dir, "enc.csv"),
+		delim:   ",",
+		quote:   `"`,
+		nullRep: `\N`,
+		term:    "\n",
+	}
+	enc := encodingByName("GBK")
+	if enc == nil {
+		t.Fatal("expected GBK encoding")
+	}
+	w.enc = enc.NewEncoder()
+	cols := []ColumnInfo{{Name: "name"}}
+	if err := w.WriteHeader(cols); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteRow([]any{"中"}, cols); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(w.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "\xd6\xd0") {
+		t.Errorf("expected GBK bytes for 中, got % x", data)
+	}
+}
+
+func TestEncodingByName(t *testing.T) {
+	for _, name := range []string{"GBK", "GB2312", "LATIN1", "ISO-8859-1", "LATIN9", "WINDOWS-1252"} {
+		if encodingByName(name) == nil {
+			t.Errorf("encodingByName(%q) = nil, want non-nil", name)
+		}
+	}
+	for _, name := range []string{"", "UTF-8", "unknown"} {
+		if encodingByName(name) != nil {
+			t.Errorf("encodingByName(%q) != nil, want nil", name)
+		}
+	}
+}

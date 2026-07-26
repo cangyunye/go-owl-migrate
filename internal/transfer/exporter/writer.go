@@ -6,6 +6,9 @@ import (
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/simplifiedchinese"
 
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 )
@@ -28,14 +31,18 @@ type ExportWriter interface {
 // ── CSV Writer ──
 
 type csvWriter struct {
-	path    string
-	delim   string
-	quote   string
-	nullRep string
-	term    string
-	header  bool
-	f       *os.File
-	first   bool
+	path              string
+	delim             string
+	quote             string
+	escape            string
+	nullRep           string
+	term              string
+	header            bool
+	enc               *encoding.Encoder
+	nullOverrides     map[string]string
+	emptyStringToNull bool
+	f                 *os.File
+	first             bool
 }
 
 func (w *csvWriter) WriteHeader(columns []ColumnInfo) error {
@@ -49,8 +56,7 @@ func (w *csvWriter) WriteHeader(columns []ColumnInfo) error {
 		for i, col := range columns {
 			header[i] = col.Name
 		}
-		_, err := f.WriteString(w.csvLine(header))
-		return err
+		return w.writeLine(w.csvLine(header))
 	}
 	return nil
 }
@@ -60,8 +66,7 @@ func (w *csvWriter) WriteRow(row []any, columns []ColumnInfo) error {
 	for i, v := range row {
 		vals[i] = w.formatValue(v, columns[i])
 	}
-	_, err := w.f.WriteString(w.csvLine(vals))
-	return err
+	return w.writeLine(w.csvLine(vals))
 }
 
 func (w *csvWriter) Close() error {
@@ -75,7 +80,7 @@ func (w *csvWriter) OutputFile() string { return w.path }
 
 func (w *csvWriter) formatValue(v any, col ColumnInfo) string {
 	if v == nil {
-		return w.nullRep
+		return w.nullMarkerFor(col.Name)
 	}
 	var s string
 	switch t := v.(type) {
@@ -90,16 +95,59 @@ func (w *csvWriter) formatValue(v any, col ColumnInfo) string {
 	default:
 		s = fmt.Sprintf("%v", v)
 	}
-	// RFC 4180: quote if contains delimiter, quote char, or newline
+	if w.emptyStringToNull && s == "" {
+		return w.nullMarkerFor(col.Name)
+	}
 	needsQuote := strings.Contains(s, w.delim) ||
 		strings.Contains(s, w.quote) ||
 		strings.Contains(s, "\n") ||
 		strings.Contains(s, "\r")
 	if needsQuote {
 		q := w.quote
-		s = q + strings.ReplaceAll(s, q, q+q) + q
+		if w.escape != "" {
+			s = strings.ReplaceAll(s, w.escape, w.escape+w.escape)
+			s = strings.ReplaceAll(s, q, w.escape+q)
+		} else {
+			s = strings.ReplaceAll(s, q, q+q)
+		}
+		s = q + s + q
 	}
 	return s
+}
+
+func (w *csvWriter) nullMarkerFor(colName string) string {
+	if m, ok := w.nullOverrides[colName]; ok {
+		return m
+	}
+	return w.nullRep
+}
+
+func (w *csvWriter) writeLine(line string) error {
+	if w.enc != nil {
+		b, err := w.enc.Bytes([]byte(line))
+		if err != nil {
+			return err
+		}
+		_, err = w.f.Write(b)
+		return err
+	}
+	_, err := w.f.WriteString(line)
+	return err
+}
+
+func encodingByName(name string) encoding.Encoding {
+	switch strings.ToUpper(strings.TrimSpace(name)) {
+	case "GBK", "GB2312", "GB18030":
+		return simplifiedchinese.GBK
+	case "LATIN1", "ISO-8859-1":
+		return charmap.ISO8859_1
+	case "LATIN9", "ISO-8859-15":
+		return charmap.ISO8859_15
+	case "WINDOWS-1252":
+		return charmap.Windows1252
+	default:
+		return nil
+	}
 }
 
 func (w *csvWriter) csvLine(vals []string) string {

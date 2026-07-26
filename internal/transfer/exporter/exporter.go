@@ -19,17 +19,21 @@ import (
 
 // Config holds exporter configuration.
 type Config struct {
-	OutputDir         string
-	Format            string // csv
-	CSVDelimiter      string
-	CSVQuoteChar      string
-	CSVNullRep        string
-	CSVHeader         bool
-	CSVLineTerminator string
-	PageSize          int
-	MaxWorkers        int
-	DBType            string // oracle/postgres/mysql
-	Logger            *zap.Logger
+	OutputDir            string
+	Format               string // csv
+	CSVDelimiter         string
+	CSVQuoteChar         string
+	CSVNullRep           string
+	CSVHeader            bool
+	CSVLineTerminator    string
+	CSVEscapeChar        string
+	CSVEncoding          string
+	CSVNullOverrides     map[string]string
+	CSVEmptyStringToNull bool
+	PageSize             int
+	MaxWorkers           int
+	DBType               string // oracle/postgres/mysql
+	Logger               *zap.Logger
 }
 
 // Exporter reads data from a database and writes to files.
@@ -295,14 +299,21 @@ func (e *Exporter) createWriter(tbl *md.TableDef, columns []ColumnInfo) (ExportW
 			table:  tbl.TableName,
 		}, nil
 	default: // csv
-		return &csvWriter{
-			path:    filepath.Join(e.cfg.OutputDir, fmt.Sprintf("%s.%s.%s", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName), ext)),
-			delim:   delim,
-			quote:   quote,
-			nullRep: nullRep,
-			term:    term,
-			header:  header,
-		}, nil
+		cw := &csvWriter{
+			path:              filepath.Join(e.cfg.OutputDir, fmt.Sprintf("%s.%s.%s", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName), ext)),
+			delim:             delim,
+			quote:             quote,
+			escape:            e.cfg.CSVEscapeChar,
+			nullRep:           nullRep,
+			term:              term,
+			header:            header,
+			nullOverrides:     e.cfg.CSVNullOverrides,
+			emptyStringToNull: e.cfg.CSVEmptyStringToNull,
+		}
+		if enc := encodingByName(e.cfg.CSVEncoding); enc != nil {
+			cw.enc = enc.NewEncoder()
+		}
+		return cw, nil
 	}
 }
 

@@ -162,17 +162,21 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 		defer logger.Sync()
 
 		exp := exporter.New(db, exporter.Config{
-			OutputDir:         outputDir,
-			Format:            cfg.Export.Format,
-			PageSize:          cfg.Export.Batch.PageSize,
-			MaxWorkers:        cfg.Export.Parallel.MaxWorkers,
-			CSVDelimiter:      cfg.Export.CSV.Delimiter,
-			CSVQuoteChar:      cfg.Export.CSV.QuoteChar,
-			CSVNullRep:        cfg.Export.CSV.NullRepresentation,
-			CSVHeader:         cfg.Export.CSV.Header,
-			CSVLineTerminator: cfg.Export.CSV.LineTerminator,
-			DBType:            cfg.Source.Type,
-			Logger:            logger,
+			OutputDir:            outputDir,
+			Format:               cfg.Export.Format,
+			PageSize:             cfg.Export.Batch.PageSize,
+			MaxWorkers:           cfg.Export.Parallel.MaxWorkers,
+			CSVDelimiter:         cfg.Export.CSV.Delimiter,
+			CSVQuoteChar:         cfg.Export.CSV.QuoteChar,
+			CSVNullRep:           cfg.Export.CSV.NullRepresentation,
+			CSVHeader:            cfg.Export.CSV.Header,
+			CSVLineTerminator:    cfg.Export.CSV.LineTerminator,
+			CSVEscapeChar:        cfg.Export.CSV.EscapeChar,
+			CSVEncoding:          cfg.Export.CSV.Encoding,
+			CSVNullOverrides:     cfg.Export.CSV.NullOverrides,
+			CSVEmptyStringToNull: cfg.Export.CSV.EmptyStringToNull,
+			DBType:               cfg.Source.Type,
+			Logger:               logger,
 		})
 
 		ctx := context.Background()
