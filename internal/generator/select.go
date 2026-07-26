@@ -11,19 +11,23 @@ import (
 
 // SelectGenerator builds SELECT statements with pagination.
 type SelectGenerator struct {
-	batchMethod string // cursor / offset
-	pageSize    int
-	outputDir   string
-	quoteFn     func(string) string
+	batchMethod      string // cursor / offset
+	pageSize         int
+	outputDir        string
+	quoteFn          func(string) string
+	includeRowNumber bool
+	addExportColumns bool
 }
 
 // NewSelectGenerator creates a SELECT statement generator.
-func NewSelectGenerator(batchMethod string, pageSize int, outputDir string, quoteFn func(string) string) *SelectGenerator {
+func NewSelectGenerator(batchMethod string, pageSize int, outputDir string, quoteFn func(string) string, includeRowNumber, addExportColumns bool) *SelectGenerator {
 	return &SelectGenerator{
-		batchMethod: batchMethod,
-		pageSize:    pageSize,
-		outputDir:   outputDir,
-		quoteFn:     quoteFn,
+		batchMethod:      batchMethod,
+		pageSize:         pageSize,
+		outputDir:        outputDir,
+		quoteFn:          quoteFn,
+		includeRowNumber: includeRowNumber,
+		addExportColumns: addExportColumns,
 	}
 }
 
@@ -68,6 +72,12 @@ func (sg *SelectGenerator) generateForTable(tbl *md.TableDef) (string, error) {
 		}
 		quotedCols = append(quotedCols, q)
 	}
+	if sg.includeRowNumber {
+		quotedCols = append(quotedCols, fmt.Sprintf("ROW_NUMBER() OVER (ORDER BY %s) AS rn", strings.Join(sg.orderCols(tbl, pks), ", ")))
+	}
+	if sg.addExportColumns {
+		quotedCols = append(quotedCols, fmt.Sprintf("'%s.%s' AS __export_source", tbl.TableSchema, tbl.TableName))
+	}
 
 	b.WriteString(fmt.Sprintf("SELECT %s\n", strings.Join(quotedCols, ", ")))
 	b.WriteString(fmt.Sprintf("FROM %s.%s", sg.quoteIdent(tbl.TableSchema), sg.quoteIdent(tbl.TableName)))
@@ -108,4 +118,18 @@ func (sg *SelectGenerator) quoteIdent(name string) string {
 		return sg.quoteFn(name)
 	}
 	return name
+}
+
+func (sg *SelectGenerator) orderCols(tbl *md.TableDef, pks []*md.PrimaryKeyDef) []string {
+	if len(pks) > 0 {
+		cols := make([]string, len(pks))
+		for i, pk := range pks {
+			cols[i] = sg.quoteIdent(pk.ColumnName)
+		}
+		return cols
+	}
+	if cols := tbl.GetColumns(); len(cols) > 0 {
+		return []string{sg.quoteIdent(cols[0].ColumnName)}
+	}
+	return nil
 }
