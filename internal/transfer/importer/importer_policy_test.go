@@ -407,3 +407,29 @@ func TestImportOneTable_NumericZeroNotNull(t *testing.T) {
 		t.Errorf("expectations: %v", err)
 	}
 }
+
+func TestImportOneTable_DropIndexes(t *testing.T) {
+	imp, mock, tbl := newGuardImportMock(t, Config{
+		TargetDBType: "postgres",
+		DropIndexes:  true,
+		IndexDDL: func(*md.TableDef) ([]string, []string) {
+			return []string{`DROP INDEX "scott"."idx_emp"`}, []string{`CREATE INDEX "idx_emp" ON "scott"."emp" ("ename")`}
+		},
+	})
+	mock.ExpectExec("DROP INDEX").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectExec("CREATE INDEX").WillReturnResult(sqlmock.NewResult(0, 0))
+
+	res := imp.importOneTable(context.Background(), tbl, "SCOTT")
+	if res.Err != nil {
+		t.Fatalf("unexpected err: %v", res.Err)
+	}
+	if res.Actual != 1 {
+		t.Errorf("got actual=%d, want 1", res.Actual)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations: %v", err)
+	}
+}

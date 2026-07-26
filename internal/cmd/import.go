@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
@@ -74,19 +75,23 @@ func importCmd() *cobra.Command {
 			TruncateBefore:               cfg.Import.Target.TruncateBefore,
 			DisableConstraints:           cfg.Import.Target.DisableConstraints,
 			DisableTriggers:              cfg.Import.Target.DisableTriggers,
-			CommitInterval:               cfg.Import.Batch.CommitInterval,
-			ErrorPolicy:                  cfg.Import.Batch.ErrorPolicy,
-			MaxErrors:                    cfg.Import.Batch.MaxErrorsBeforeStop,
-			MaxWorkers:                   cfg.Import.Parallel.MaxWorkers,
-			RespectForeignKeys:           cfg.Import.Parallel.RespectForeignKeys,
-			DateTimeFormat:               cfg.Import.DataTransforms.DatetimeFormat,
-			DateTimeFormatFallback:       cfg.Import.DataTransforms.DatetimeFormatFallback,
-			DateTimeTruncateToTarget:     cfg.Import.DataTransforms.DatetimeTruncateToTarget,
-			TrimStrings:                  cfg.Import.DataTransforms.TrimStrings,
-			SourceEncoding:               cfg.Import.DataTransforms.SourceEncoding,
-			TargetDBType:                 cfg.Target.Type,
-			Logger:                       logger,
-			NoQuoteIdentifiers:           cfg.DDL.NoQuoteIdentifiers,
+			DropIndexes:                  cfg.Import.Target.DropIndexes,
+			IndexDDL: func(tbl *md.TableDef) ([]string, []string) {
+				return indexDropRecreate(tbl, cfg.DDL.TargetDialect, toBuildOptions(cfg))
+			},
+			CommitInterval:           cfg.Import.Batch.CommitInterval,
+			ErrorPolicy:              cfg.Import.Batch.ErrorPolicy,
+			MaxErrors:                cfg.Import.Batch.MaxErrorsBeforeStop,
+			MaxWorkers:               cfg.Import.Parallel.MaxWorkers,
+			RespectForeignKeys:       cfg.Import.Parallel.RespectForeignKeys,
+			DateTimeFormat:           cfg.Import.DataTransforms.DatetimeFormat,
+			DateTimeFormatFallback:   cfg.Import.DataTransforms.DatetimeFormatFallback,
+			DateTimeTruncateToTarget: cfg.Import.DataTransforms.DatetimeTruncateToTarget,
+			TrimStrings:              cfg.Import.DataTransforms.TrimStrings,
+			SourceEncoding:           cfg.Import.DataTransforms.SourceEncoding,
+			TargetDBType:             cfg.Target.Type,
+			Logger:                   logger,
+			NoQuoteIdentifiers:       cfg.DDL.NoQuoteIdentifiers,
 		})
 
 		tables := sm.GetTables()
@@ -373,4 +378,36 @@ func normalizeColumnType(dataType string) string {
 	default:
 		return t
 	}
+}
+
+func indexDropRecreate(tbl *md.TableDef, dialectName string, opts dialect.BuildOptions) ([]string, []string) {
+	d, err := registry.Get(dialectName)
+	if err != nil {
+		return nil, nil
+	}
+	targetSchema := tbl.TableSchema
+	if m, ok := opts.SchemaMapping[tbl.TableSchema]; ok {
+		targetSchema = m
+	}
+	byName := make(map[string][]*md.IndexDef)
+	var order []string
+	for _, idx := range tbl.GetIndexes() {
+		if _, ok := byName[idx.IndexName]; !ok {
+			order = append(order, idx.IndexName)
+		}
+		byName[idx.IndexName] = append(byName[idx.IndexName], idx)
+	}
+	isMySQL := strings.Contains(d.Name(), "mysql")
+	var drop, recreate []string
+	for _, name := range order {
+		if isMySQL {
+			drop = append(drop, fmt.Sprintf("DROP INDEX %s ON %s.%s", d.Quote(name), d.Quote(targetSchema), d.Quote(tbl.TableName)))
+		} else {
+			drop = append(drop, fmt.Sprintf("DROP INDEX %s.%s", d.Quote(targetSchema), d.Quote(name)))
+		}
+		if ddl, err := d.BuildCreateIndex(byName[name], opts); err == nil && ddl != "" {
+			recreate = append(recreate, ddl)
+		}
+	}
+	return drop, recreate
 }

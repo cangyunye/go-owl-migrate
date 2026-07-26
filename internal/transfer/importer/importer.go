@@ -35,6 +35,8 @@ type Config struct {
 	TruncateBefore               bool
 	DisableConstraints           bool
 	DisableTriggers              bool
+	DropIndexes                  bool
+	IndexDDL                     func(tbl *md.TableDef) (drop []string, recreate []string)
 	CommitInterval               int
 	ErrorPolicy                  string // skip_row/stop/log_only
 	MaxErrors                    int
@@ -430,6 +432,23 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 			for _, stmt := range enableStmts {
 				if _, err := conn.ExecContext(enableCtx, stmt); err != nil {
 					imp.logger.Warn("enable guard failed", zap.String("sql", stmt), zap.Error(err))
+				}
+			}
+		}()
+	}
+
+	if imp.cfg.DropIndexes && imp.cfg.IndexDDL != nil {
+		dropStmts, recreateStmts := imp.cfg.IndexDDL(tbl)
+		for _, stmt := range dropStmts {
+			if _, err := conn.ExecContext(ctx, stmt); err != nil {
+				imp.logger.Warn("drop index failed", zap.String("sql", stmt), zap.Error(err))
+			}
+		}
+		recreateCtx := context.WithoutCancel(ctx)
+		defer func() {
+			for _, stmt := range recreateStmts {
+				if _, err := conn.ExecContext(recreateCtx, stmt); err != nil {
+					imp.logger.Warn("recreate index failed", zap.String("sql", stmt), zap.Error(err))
 				}
 			}
 		}()
