@@ -19,6 +19,7 @@ type Config struct {
 	MasterURL  string
 	ConfigPath string
 	TempDir    string
+	ConfigDir  string
 }
 
 type Server struct {
@@ -26,6 +27,7 @@ type Server struct {
 	masterURL  string
 	configPath string
 	tempDir    string
+	configDir  string
 	hub        *Hub
 
 	mu          sync.RWMutex
@@ -40,6 +42,7 @@ func NewServer(cfg Config) *Server {
 		masterURL:  cfg.MasterURL,
 		configPath: cfg.ConfigPath,
 		tempDir:    cfg.TempDir,
+		configDir:  cfg.ConfigDir,
 		hub:        NewHub(cfg.Store),
 		cfg:        &config.Config{},
 		genOutputs: make(map[string]string),
@@ -73,7 +76,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
 	mux.HandleFunc("GET /api/v1/config/download", s.handleGetConfigDownload)
 	mux.HandleFunc("GET /api/v1/config/status", s.handleGetConfigStatus)
-	mux.HandleFunc("POST /api/v1/config/upload", s.handleUploadConfig)
+	mux.HandleFunc("POST /api/v1/config/upload", s.handleUploadConfigLegacy)
+	mux.HandleFunc("GET /api/v1/configs", s.handleListConfigs)
+	mux.HandleFunc("POST /api/v1/configs", s.handleUploadConfig)
+	mux.HandleFunc("GET /api/v1/configs/{name}", s.handleDownloadConfig)
+	mux.HandleFunc("POST /api/v1/configs/{name}/load", s.handleLoadConfig)
+	mux.HandleFunc("DELETE /api/v1/configs/{name}", s.handleDeleteConfig)
 	mux.HandleFunc("POST /api/v1/metadata/load", s.handleMetadataLoad)
 	mux.HandleFunc("GET /api/v1/metadata/tables", s.handleMetadataTables)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/ws", s.handleWebSocket)

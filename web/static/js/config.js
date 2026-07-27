@@ -17,6 +17,7 @@
         dsnExamples = data.dsn_examples || {};
         renderPills();
         selectScenario(allScenarios.some(s => s.name === initialScenario) ? initialScenario : allScenarios[0].name);
+        loadConfigLib();
     }
 
     function renderPills() {
@@ -182,26 +183,105 @@
         });
     }
 
-    // Upload a YAML config: parse it server-side, switch to the matching
-    // scenario, populate the form, and show the uploaded YAML in the preview.
+    // Apply an uploaded/loaded config: switch scenario, fill form, show YAML.
+    function applyConfigResp(resp) {
+        if (resp.scenario && allScenarios.some(s => s.name === resp.scenario)) {
+            history.replaceState(null, '', '/config?scenario=' + resp.scenario);
+            selectScenario(resp.scenario);
+        }
+        applyFormValues(resp.values || {});
+        clearTimeout(previewTimer);
+        document.getElementById('yaml-preview').textContent = resp.yaml || '';
+    }
+
+    // ── Config library ──
+
+    async function loadConfigLib() {
+        const list = await api.get('/api/v1/configs');
+        renderConfigLib(list);
+    }
+
+    function renderConfigLib(list) {
+        const tbody = document.getElementById('config-lib-body');
+        tbody.innerHTML = '';
+        if (!list.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="lib-empty">暂无保存的配置，上传后即可复用</td></tr>';
+            return;
+        }
+        list.forEach(c => {
+            const tr = document.createElement('tr');
+            const flow = [c.source_type, c.target_type].filter(Boolean).join(' → ') || '-';
+            tr.innerHTML =
+                `<td class="mono">${c.name}</td>` +
+                `<td>${c.scenario || '-'}</td>` +
+                `<td class="mono">${flow}</td>` +
+                `<td>${humanSize(c.size)}</td>` +
+                `<td>${(c.modified || '').replace('T', ' ').slice(0, 19)}</td>` +
+                `<td class="lib-actions"></td>`;
+            const actions = tr.querySelector('.lib-actions');
+            actions.appendChild(libButton('加载', 'btn-primary', () => loadConfig(c.name)));
+            const dl = document.createElement('a');
+            dl.className = 'btn-ghost'; dl.textContent = '下载';
+            dl.href = '/api/v1/configs/' + encodeURIComponent(c.name);
+            actions.appendChild(dl);
+            actions.appendChild(libButton('删除', 'btn-danger', () => deleteConfig(c.name)));
+            tbody.appendChild(tr);
+        });
+    }
+
+    function libButton(text, cls, onclick) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = cls; b.textContent = text;
+        b.addEventListener('click', onclick);
+        return b;
+    }
+
+    async function loadConfig(name) {
+        const status = document.getElementById('upload-status');
+        try {
+            const resp = await api.post('/api/v1/configs/' + encodeURIComponent(name) + '/load', {});
+            applyConfigResp(resp);
+            status.textContent = '✓ 已加载配置：' + name; status.className = 'status-msg ok';
+        } catch (e) {
+            status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+        }
+    }
+
+    async function deleteConfig(name) {
+        if (!confirm('确认删除配置 "' + name + '"？')) return;
+        const status = document.getElementById('upload-status');
+        try {
+            await api.del('/api/v1/configs/' + encodeURIComponent(name));
+            status.textContent = '✓ 已删除：' + name; status.className = 'status-msg ok';
+            loadConfigLib();
+        } catch (e) {
+            status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+        }
+    }
+
+    function humanSize(bytes) {
+        if (!bytes && bytes !== 0) return '-';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    // Upload a YAML config into the library (and make it the active config).
     window.uploadFile = async function () {
         const input = document.getElementById('cfg-file');
         const status = document.getElementById('upload-status');
         if (!input.files.length) {
             status.textContent = '✗ 请先选择文件'; status.className = 'status-msg fail'; return;
         }
-        const text = await input.files[0].text();
+        const file = input.files[0];
+        const text = await file.text();
         try {
-            const resp = await api.post('/api/v1/config/upload', { yaml: text });
-            if (resp.scenario && allScenarios.some(s => s.name === resp.scenario)) {
-                history.replaceState(null, '', '/config?scenario=' + resp.scenario);
-                selectScenario(resp.scenario);
-            }
-            applyFormValues(resp.values || {});
-            clearTimeout(previewTimer);
-            document.getElementById('yaml-preview').textContent = resp.yaml || '';
-            status.textContent = '✓ 已上传并填入表单' + (resp.path ? '，保存到 ' + resp.path : '');
+            const resp = await api.post('/api/v1/configs', { name: file.name, yaml: text });
+            applyConfigResp(resp);
+            loadConfigLib();
+            status.textContent = '✓ 已存入配置库并填入表单：' + resp.name;
             status.className = 'status-msg ok';
+            input.value = '';
         } catch (e) {
             status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
         }

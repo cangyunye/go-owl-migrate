@@ -6,13 +6,19 @@
 </div>
 
 <div class="panel upload-panel">
-    <h3>已有配置？</h3>
+    <div class="panel-title-row">
+        <h3>配置库</h3>
+        <a class="btn-ghost" href="/api/v1/config/download">下载当前配置</a>
+    </div>
     <div class="upload-row">
         <input type="file" id="cfg-file" accept=".yaml,.yml">
-        <button onclick="uploadFile()">上传 YAML 文件</button>
-        <a class="btn-ghost" href="/api/v1/config/download">下载当前配置</a>
+        <button class="btn-primary" onclick="uploadFile()">上传到配置库</button>
         <span id="upload-status" class="status-msg"></span>
     </div>
+    <table class="data-table config-lib-table">
+        <thead><tr><th>名称</th><th>场景</th><th>源 → 目标</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
+        <tbody id="config-lib-body"></tbody>
+    </table>
 </div>
 
 <nav class="scenario-pills" id="scenario-pills"></nav>

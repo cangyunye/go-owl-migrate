@@ -80,7 +80,7 @@ func (s *Server) handleGetConfigStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleUploadConfig parses user-supplied YAML (from a file or pasted text)
 // and makes it the current config, persisting it to disk.
-func (s *Server) handleUploadConfig(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleUploadConfigLegacy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		YAML string `json:"yaml"`
 	}

@@ -27,6 +27,7 @@ func serveCmd() *cobra.Command {
 		tempDir    string
 		dbPath     string
 		configOut  string
+		configDir  string
 	)
 
 	cmd := &cobra.Command{
@@ -46,8 +47,12 @@ No authentication is required — intended for local or trusted-network use.`,
 			if configOut == "" {
 				configOut = filepath.Join(tempDir, "owl-migrate.yaml")
 			}
+			if configDir == "" {
+				configDir = "./configs/library/"
+			}
 			os.MkdirAll(tempDir, 0755)
 			os.MkdirAll(filepath.Dir(dbPath), 0755)
+			os.MkdirAll(configDir, 0755)
 
 			store, err := service.NewJobStore(dbPath)
 			if err != nil {
@@ -93,6 +98,7 @@ No authentication is required — intended for local or trusted-network use.`,
 				MasterURL:  fmt.Sprintf("http://%s", ipcAddr),
 				ConfigPath: configOut,
 				TempDir:    tempDir,
+				ConfigDir:  configDir,
 			})
 
 			serveAddr := fmt.Sprintf("%s:%d", host, port)
@@ -140,6 +146,7 @@ No authentication is required — intended for local or trusted-network use.`,
 	cmd.Flags().StringVar(&tempDir, "temp-dir", "./output/temp/", "temp directory for jobs and exports")
 	cmd.Flags().StringVar(&dbPath, "db", "", "SQLite database path (default: <temp-dir>/owl-migrate.db)")
 	cmd.Flags().StringVar(&configOut, "config-out", "", "where saved configs are written (default: <temp-dir>/owl-migrate.yaml)")
+	cmd.Flags().StringVar(&configDir, "config-dir", "", "directory for the reusable config library (default: ./configs/library/)")
 
 	return cmd
 }
