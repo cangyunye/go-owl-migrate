@@ -141,3 +141,54 @@ func TestWebSocket_NoEvents(t *testing.T) {
 		t.Error("expected timeout (no events), got a message")
 	}
 }
+
+func TestWebSocket_TerminalOnConnect(t *testing.T) {
+	srv, ts := newTestWSServer(t)
+	srv.store.CreateJob("job-done", "migrate", "{}")
+	srv.store.WriteEvent("job-done", "export_complete", "SCOTT", "EMP", 14, "done")
+	srv.store.UpdateJobStatus("job-done", "completed")
+
+	conn := wsConnect(t, ts, "job-done")
+
+	// Catch-up event first, then the terminal signal.
+	msg1 := readWSMessage(t, conn)
+	if msg1["event"] != "export_complete" {
+		t.Errorf("msg1 event = %v, want export_complete", msg1["event"])
+	}
+	msg2 := readWSMessage(t, conn)
+	if msg2["type"] != "complete" {
+		t.Errorf("terminal type = %v, want complete", msg2["type"])
+	}
+}
+
+func TestWebSocket_TerminalAfterCompletion(t *testing.T) {
+	srv, ts := newTestWSServer(t)
+	srv.store.CreateJob("job-live", "migrate", "{}")
+
+	conn := wsConnect(t, ts, "job-live")
+	time.Sleep(100 * time.Millisecond)
+
+	srv.store.WriteEvent("job-live", "export_complete", "SCOTT", "EMP", 14, "done")
+	srv.store.UpdateJobStatus("job-live", "completed")
+
+	msg1 := readWSMessage(t, conn)
+	if msg1["event"] != "export_complete" {
+		t.Errorf("msg1 event = %v, want export_complete", msg1["event"])
+	}
+	msg2 := readWSMessage(t, conn)
+	if msg2["type"] != "complete" {
+		t.Errorf("terminal type = %v, want complete", msg2["type"])
+	}
+}
+
+func TestWebSocket_TerminalCancelled(t *testing.T) {
+	srv, ts := newTestWSServer(t)
+	srv.store.CreateJob("job-cancel", "migrate", "{}")
+	srv.store.UpdateJobStatus("job-cancel", "cancelled")
+
+	conn := wsConnect(t, ts, "job-cancel")
+	msg := readWSMessage(t, conn)
+	if msg["type"] != "cancelled" {
+		t.Errorf("terminal type = %v, want cancelled", msg["type"])
+	}
+}
