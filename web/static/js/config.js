@@ -281,9 +281,28 @@
             loadConfigLib();
             status.textContent = '✓ 已存入配置库并填入表单：' + resp.name;
             status.className = 'status-msg ok';
-            input.value = '';
+            clearFilePicker();
         } catch (e) {
             status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
         }
     };
+
+    function clearFilePicker() {
+        const input = document.getElementById('cfg-file');
+        input.value = '';
+        document.getElementById('file-picker').classList.remove('has-file');
+        document.getElementById('cfg-file-name').textContent = '.yaml / .yml 配置文件';
+    }
+
+    // Reflect the chosen file in the custom picker.
+    document.getElementById('cfg-file').addEventListener('change', function () {
+        const picker = document.getElementById('file-picker');
+        const nameEl = document.getElementById('cfg-file-name');
+        if (this.files.length) {
+            picker.classList.add('has-file');
+            nameEl.textContent = this.files[0].name;
+        } else {
+            clearFilePicker();
+        }
+    });
 })();

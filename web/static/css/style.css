@@ -55,7 +55,15 @@ select, input[type="text"] { padding: 6px 10px; border: 1px solid #ddd; border-r
 /* ── Config upload ── */
 .upload-panel { margin-bottom: 18px; }
 .upload-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.upload-row input[type="file"] { font-size: 13px; }
+
+/* Custom file picker matching the form-input look */
+.file-picker { display: inline-flex; align-items: stretch; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.file-picker:hover { border-color: #2563eb; }
+.file-picker:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.12); }
+.file-picker-label { display: flex; align-items: center; padding: 8px 14px; background: #f3f4f6; color: #374151; font-size: 14px; font-weight: 500; border-right: 1px solid #d1d5db; white-space: nowrap; transition: background .15s; }
+.file-picker:hover .file-picker-label { background: #e5e7eb; }
+.file-picker-name { display: flex; align-items: center; padding: 8px 12px; font-family: "SF Mono", "Fira Code", Consolas, monospace; font-size: 13px; color: #9ca3af; min-width: 200px; transition: color .15s; }
+.file-picker.has-file .file-picker-name { color: #111827; }
 .config-lib-table { margin-top: 14px; }
 .config-lib-table .lib-empty { text-align: center; color: #9ca3af; padding: 18px; }
 .config-lib-table .lib-actions { display: flex; gap: 6px; flex-wrap: wrap; }

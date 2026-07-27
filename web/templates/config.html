@@ -11,7 +11,11 @@
         <a class="btn-ghost" href="/api/v1/config/download">下载当前配置</a>
     </div>
     <div class="upload-row">
-        <input type="file" id="cfg-file" accept=".yaml,.yml">
+        <label class="file-picker" for="cfg-file" id="file-picker">
+            <span class="file-picker-label">选择文件</span>
+            <span class="file-picker-name" id="cfg-file-name">.yaml / .yml 配置文件</span>
+        </label>
+        <input type="file" id="cfg-file" accept=".yaml,.yml" hidden>
         <button class="btn-primary" onclick="uploadFile()">上传到配置库</button>
         <span id="upload-status" class="status-msg"></span>
     </div>
