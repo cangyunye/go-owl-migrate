@@ -26,6 +26,7 @@ func serveCmd() *cobra.Command {
 		masterPort int
 		tempDir    string
 		dbPath     string
+		configOut  string
 	)
 
 	cmd := &cobra.Command{
@@ -41,6 +42,9 @@ No authentication is required — intended for local or trusted-network use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
 				dbPath = filepath.Join(tempDir, "owl-migrate.db")
+			}
+			if configOut == "" {
+				configOut = filepath.Join(tempDir, "owl-migrate.yaml")
 			}
 			os.MkdirAll(tempDir, 0755)
 			os.MkdirAll(filepath.Dir(dbPath), 0755)
@@ -85,8 +89,9 @@ No authentication is required — intended for local or trusted-network use.`,
 			}()
 
 			srv := serve.NewServer(serve.Config{
-				Store:     store,
-				MasterURL: fmt.Sprintf("http://%s", ipcAddr),
+				Store:      store,
+				MasterURL:  fmt.Sprintf("http://%s", ipcAddr),
+				ConfigPath: configOut,
 			})
 
 			serveAddr := fmt.Sprintf("%s:%d", host, port)
@@ -133,6 +138,7 @@ No authentication is required — intended for local or trusted-network use.`,
 	cmd.Flags().IntVar(&masterPort, "master-ipc-port", 0, "master IPC port (0=auto-select)")
 	cmd.Flags().StringVar(&tempDir, "temp-dir", "./output/temp/", "temp directory for jobs and exports")
 	cmd.Flags().StringVar(&dbPath, "db", "", "SQLite database path (default: <temp-dir>/owl-migrate.db)")
+	cmd.Flags().StringVar(&configOut, "config-out", "", "where saved configs are written (default: <temp-dir>/owl-migrate.yaml)")
 
 	return cmd
 }

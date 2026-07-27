@@ -15,14 +15,16 @@ import (
 )
 
 type Config struct {
-	Store     *service.JobStore
-	MasterURL string
+	Store      *service.JobStore
+	MasterURL  string
+	ConfigPath string
 }
 
 type Server struct {
-	store     *service.JobStore
-	masterURL string
-	hub       *Hub
+	store      *service.JobStore
+	masterURL  string
+	configPath string
+	hub        *Hub
 
 	mu          sync.RWMutex
 	cfg         *config.Config
@@ -34,6 +36,7 @@ func NewServer(cfg Config) *Server {
 	return &Server{
 		store:      cfg.Store,
 		masterURL:  cfg.MasterURL,
+		configPath: cfg.ConfigPath,
 		hub:        NewHub(cfg.Store),
 		cfg:        &config.Config{},
 		genOutputs: make(map[string]string),
@@ -63,6 +66,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/dialects", s.handleGetDialects)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
+	mux.HandleFunc("GET /api/v1/config/download", s.handleGetConfigDownload)
+	mux.HandleFunc("GET /api/v1/config/status", s.handleGetConfigStatus)
+	mux.HandleFunc("POST /api/v1/config/upload", s.handleUploadConfig)
 	mux.HandleFunc("POST /api/v1/metadata/load", s.handleMetadataLoad)
 	mux.HandleFunc("GET /api/v1/metadata/tables", s.handleMetadataTables)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/ws", s.handleWebSocket)
@@ -183,7 +189,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	s.cfg = cfg
 	s.mu.Unlock()
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "saved"})
+	path, err := s.persistConfig()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "save config: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "saved", "path": path})
 }
 
 func (s *Server) handleMetadataLoad(w http.ResponseWriter, r *http.Request) {

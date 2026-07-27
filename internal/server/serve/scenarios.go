@@ -51,6 +51,10 @@ func (s *Server) handleBuildScenarioConfig(w http.ResponseWriter, r *http.Reques
 		s.mu.Lock()
 		s.cfg = cfg
 		s.mu.Unlock()
+		if _, err := s.persistConfig(); err != nil {
+			writeError(w, http.StatusInternalServerError, "save config: "+err.Error())
+			return
+		}
 	}
 
 	out, err := configToMap(cfg)
@@ -69,5 +73,6 @@ func (s *Server) handleBuildScenarioConfig(w http.ResponseWriter, r *http.Reques
 		"config":   out,
 		"yaml":     string(yamlBytes),
 		"saved":    req.Save,
+		"path":     s.configPath,
 	})
 }

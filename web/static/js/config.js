@@ -153,11 +153,13 @@
 
     document.getElementById('btn-save').addEventListener('click', async () => {
         const status = document.getElementById('save-status');
+        const pathEl = document.getElementById('saved-path');
         try {
-            await api.post(`/api/v1/scenarios/${activeScenario.name}/build`,
+            const resp = await api.post(`/api/v1/scenarios/${activeScenario.name}/build`,
                 { values: collectValues(), save: true });
             status.textContent = '✓ 已保存为当前配置';
             status.className = 'save-status ok';
+            pathEl.textContent = resp.path ? '已写入文件：' + resp.path : '';
         } catch (e) {
             status.textContent = '✗ ' + e.message;
             status.className = 'save-status fail';

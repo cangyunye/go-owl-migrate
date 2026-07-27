@@ -1,7 +1,10 @@
 const api = {
     async get(path) {
         const resp = await fetch(path);
-        if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.error || `${resp.status} ${resp.statusText}`);
+        }
         return resp.json();
     },
     async post(path, body) {

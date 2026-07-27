@@ -68,6 +68,10 @@ func tablesField() Field {
 func metaType() Field {
 	return Field{Name: "metadata_type", Label: "元数据来源", Type: "select", Options: []string{"csv", "xlsx", "database"}, Default: "csv", Required: true}
 }
+func schemaMappingField() Field {
+	return Field{Name: "schema_mapping", Label: "Schema 映射", Type: "text",
+		Help: "源 schema 重命名到目标 schema，格式 源:目标，多个用逗号分隔，如 SCOTT:public,HR:hr。留空则不改名"}
+}
 func csvPath() Field {
 	return Field{Name: "csv_path", Label: "CSV 元数据目录", Type: "text", Default: "./testdata/csv/", ShowWhen: &FieldCond{"metadata_type", "csv"}}
 }
@@ -102,7 +106,7 @@ func ScenarioSchemas() []Scenario {
 			Name: "export-ddl", Label: "生成 DDL", Command: "owl-migrate export ddl",
 			Description: "从元数据生成目标库建表语句",
 			Fields: append([]Field{metaType(), csvPath(), xlsxPath()},
-				append(dbSourceFields(), tgtType())...),
+				append(dbSourceFields(), tgtType(), schemaMappingField())...),
 		},
 		{
 			Name: "gen-select", Label: "生成 SELECT", Command: "owl-migrate gen-select",
@@ -145,7 +149,7 @@ func ScenarioSchemas() []Scenario {
 			Name: "validate", Label: "校验配置", Command: "owl-migrate validate",
 			Description: "校验元数据与配置的正确性",
 			Fields: append([]Field{metaType(), csvPath(), xlsxPath()},
-				append(dbSourceFields(), tgtType())...),
+				append(dbSourceFields(), tgtType(), schemaMappingField())...),
 		},
 	}
 }
@@ -291,10 +295,26 @@ func buildDDLCfg(v map[string]string) *config.Config {
 		},
 	}
 	setMetadataSource(cfg, v)
-	if v["source_schema"] != "" {
-		cfg.DDL.SchemaMapping = map[string]string{v["source_schema"]: v["source_schema"]}
+	if m := parseSchemaMapping(v["schema_mapping"]); len(m) > 0 {
+		cfg.DDL.SchemaMapping = m
 	}
 	return cfg
+}
+
+// parseSchemaMapping parses "SRC:DST,SRC2:DST2" into a schema mapping.
+func parseSchemaMapping(s string) map[string]string {
+	m := map[string]string{}
+	for _, pair := range strings.Split(s, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		kv := strings.SplitN(pair, ":", 2)
+		if len(kv) == 2 {
+			m[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+		}
+	}
+	return m
 }
 
 func buildSelectCfg(v map[string]string) *config.Config {

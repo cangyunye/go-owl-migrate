@@ -5,6 +5,16 @@
     <p class="subtitle">选择场景，填写表单，实时生成配置</p>
 </div>
 
+<div class="panel upload-panel">
+    <h3>已有配置？</h3>
+    <div class="upload-row">
+        <input type="file" id="cfg-file" accept=".yaml,.yml">
+        <button onclick="uploadFile()">上传 YAML 文件</button>
+        <a class="btn-ghost" href="/api/v1/config/download">下载当前配置</a>
+        <span id="upload-status" class="status-msg"></span>
+    </div>
+</div>
+
 <nav class="scenario-pills" id="scenario-pills"></nav>
 
 <div class="cfg-layout">
@@ -19,6 +29,7 @@
             <button type="button" class="btn-primary" id="btn-save">保存为当前配置</button>
             <span class="save-status" id="save-status"></span>
         </div>
+        <p class="saved-path" id="saved-path"></p>
     </section>
 
     <aside class="panel cfg-preview-panel">
@@ -32,4 +43,21 @@
 {{end}}
 {{define "scripts"}}
 <script src="/static/js/config.js"></script>
+<script>
+async function uploadFile() {
+    const input = document.getElementById('cfg-file');
+    const status = document.getElementById('upload-status');
+    if (!input.files.length) { status.textContent = '✗ 请先选择文件'; status.className = 'status-msg fail'; return; }
+    const text = await input.files[0].text();
+    try {
+        const resp = await api.post('/api/v1/config/upload', { yaml: text });
+        status.textContent = '✓ 已上传' + (resp.path ? '，保存到 ' + resp.path : '');
+        status.className = 'status-msg ok';
+        if (typeof refreshConfigBar === 'function') refreshConfigBar();
+        location.reload();
+    } catch (e) {
+        status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+    }
+}
+</script>
 {{end}}

@@ -136,6 +136,54 @@ func TestBuildScenarioConfig_Import(t *testing.T) {
 	}
 }
 
+func TestBuildScenarioConfig_ExportDDL_SchemaMapping(t *testing.T) {
+	cfg, _ := BuildScenarioConfig("export-ddl", map[string]string{
+		"metadata_type": "csv", "csv_path": "./meta/", "target_type": "postgres",
+		"schema_mapping": "SCOTT:public, HR:hr",
+	})
+	if cfg.DDL.SchemaMapping["SCOTT"] != "public" {
+		t.Errorf("SchemaMapping[SCOTT] = %q, want public", cfg.DDL.SchemaMapping["SCOTT"])
+	}
+	if cfg.DDL.SchemaMapping["HR"] != "hr" {
+		t.Errorf("SchemaMapping[HR] = %q, want hr", cfg.DDL.SchemaMapping["HR"])
+	}
+}
+
+func TestBuildScenarioConfig_ExportDDL_NoSelfMapping(t *testing.T) {
+	// A source schema alone must NOT produce a self-mapping (regression).
+	cfg, _ := BuildScenarioConfig("export-ddl", map[string]string{
+		"metadata_type": "database", "source_type": "oracle", "source_dsn": "oracle://x",
+		"source_schema": "billing", "target_type": "postgres",
+	})
+	if len(cfg.DDL.SchemaMapping) != 0 {
+		t.Errorf("SchemaMapping = %v, want empty (no explicit mapping given)", cfg.DDL.SchemaMapping)
+	}
+}
+
+func TestParseSchemaMapping(t *testing.T) {
+	tests := []struct {
+		in   string
+		want map[string]string
+	}{
+		{"", map[string]string{}},
+		{"SCOTT:public", map[string]string{"SCOTT": "public"}},
+		{"SCOTT:public,HR:hr", map[string]string{"SCOTT": "public", "HR": "hr"}},
+		{"bad-no-colon", map[string]string{}},
+	}
+	for _, tt := range tests {
+		got := parseSchemaMapping(tt.in)
+		if len(got) != len(tt.want) {
+			t.Errorf("parseSchemaMapping(%q) = %v, want %v", tt.in, got, tt.want)
+			continue
+		}
+		for k, v := range tt.want {
+			if got[k] != v {
+				t.Errorf("parseSchemaMapping(%q)[%q] = %q, want %q", tt.in, k, got[k], v)
+			}
+		}
+	}
+}
+
 func TestBuildScenarioConfig_Unknown(t *testing.T) {
 	_, err := BuildScenarioConfig("bogus", map[string]string{})
 	if err == nil {

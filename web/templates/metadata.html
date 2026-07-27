@@ -1,11 +1,45 @@
 {{template "base.html" .}}
 {{define "content"}}
 <h1>元数据</h1>
-<p class="subtitle">按当前配置加载表结构，供 DDL / SELECT 生成与校验使用</p>
+<p class="subtitle">指定元数据来源并加载表结构，供 DDL / SELECT 生成与校验使用</p>
+
 <div class="panel">
-    <button class="btn-primary" onclick="loadMeta()">加载元数据</button>
-    <button onclick="validateMeta()">校验</button>
-    <span id="meta-status" class="status-msg"></span>
+    <h3>元数据来源</h3>
+    <div class="field">
+        <label>来源类型</label>
+        <select id="m-type" onchange="toggleMetaFields()">
+            <option value="csv">CSV 目录</option>
+            <option value="xlsx">XLSX 文件</option>
+            <option value="database">数据库</option>
+        </select>
+    </div>
+    <div class="field" id="f-csv">
+        <label>CSV 元数据目录</label>
+        <input type="text" id="m-csv-path" value="./testdata/csv/">
+        <div class="field-help">包含 tables.csv / columns.csv 等的目录</div>
+    </div>
+    <div class="field hidden" id="f-xlsx">
+        <label>XLSX 文件路径</label>
+        <input type="text" id="m-xlsx-path" value="./metadata/schema.xlsx">
+    </div>
+    <div class="field hidden" id="f-db-type">
+        <label>数据库类型</label>
+        <select id="m-src-type"></select>
+    </div>
+    <div class="field hidden" id="f-db-dsn">
+        <label>数据库 DSN</label>
+        <input type="text" id="m-src-dsn" class="mono">
+        <div class="field-help" id="m-dsn-hint"></div>
+    </div>
+    <div class="field hidden" id="f-db-schema">
+        <label>Schema</label>
+        <input type="text" id="m-src-schema">
+    </div>
+    <div class="form-actions">
+        <button class="btn-primary" onclick="loadMeta()">加载元数据</button>
+        <button onclick="validateMeta()">校验</button>
+        <span id="meta-status" class="status-msg"></span>
+    </div>
 </div>
 
 <div class="panel" id="tables-panel" style="display:none">
@@ -28,11 +62,69 @@
 {{end}}
 {{define "scripts"}}
 <script>
+let dsnExamples = {};
+
+(async function initMetaForm() {
+    // Populate dialect dropdown + DSN hints, and prefill from current config.
+    const data = await api.get('/api/v1/scenarios');
+    dsnExamples = data.dsn_examples || {};
+    const dialects = (data.scenarios[0].fields.find(f => f.name === 'source_type') || {}).options || [];
+    const sel = document.getElementById('m-src-type');
+    dialects.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
+
+    try {
+        const cfg = await api.get('/api/v1/config');
+        if (cfg.metadata && cfg.metadata.type) document.getElementById('m-type').value = cfg.metadata.type;
+        if (cfg.metadata && cfg.metadata.csv && cfg.metadata.csv.path) document.getElementById('m-csv-path').value = cfg.metadata.csv.path;
+        if (cfg.metadata && cfg.metadata.xlsx && cfg.metadata.xlsx.path) document.getElementById('m-xlsx-path').value = cfg.metadata.xlsx.path;
+        if (cfg.source) {
+            if (cfg.source.type) sel.value = cfg.source.type;
+            if (cfg.source.dsn) document.getElementById('m-src-dsn').value = cfg.source.dsn;
+            if (cfg.source.schema) document.getElementById('m-src-schema').value = cfg.source.schema;
+        }
+    } catch (e) {}
+    toggleMetaFields();
+    sel.addEventListener('change', updateDsnHint);
+    updateDsnHint();
+})();
+
+function toggleMetaFields() {
+    const type = document.getElementById('m-type').value;
+    document.getElementById('f-csv').classList.toggle('hidden', type !== 'csv');
+    document.getElementById('f-xlsx').classList.toggle('hidden', type !== 'xlsx');
+    const isDB = type === 'database';
+    ['f-db-type', 'f-db-dsn', 'f-db-schema'].forEach(id =>
+        document.getElementById(id).classList.toggle('hidden', !isDB));
+}
+
+function updateDsnHint() {
+    const dialect = document.getElementById('m-src-type').value;
+    const hint = document.getElementById('m-dsn-hint');
+    hint.textContent = dsnExamples[dialect] ? '格式示例：' + dsnExamples[dialect] : '';
+}
+
+function buildMetaPayload() {
+    const type = document.getElementById('m-type').value;
+    const payload = { metadata: { type: type }, source: {} };
+    if (type === 'csv') {
+        payload.metadata.csv = { path: document.getElementById('m-csv-path').value, column_name_matching: 'case_insensitive' };
+    } else if (type === 'xlsx') {
+        payload.metadata.xlsx = { path: document.getElementById('m-xlsx-path').value };
+    } else {
+        payload.source = {
+            type: document.getElementById('m-src-type').value,
+            dsn: document.getElementById('m-src-dsn').value,
+            schema: document.getElementById('m-src-schema').value,
+        };
+    }
+    return payload;
+}
+
 async function loadMeta() {
     const status = document.getElementById('meta-status');
     status.textContent = '加载中…'; status.className = 'status-msg';
     try {
-        const resp = await api.post('/api/v1/metadata/load', await currentConfig());
+        const resp = await api.post('/api/v1/metadata/load', buildMetaPayload());
         document.getElementById('tables-panel').style.display = 'block';
         document.getElementById('table-count').textContent = resp.table_count + ' 张表';
         renderTables();
@@ -40,11 +132,6 @@ async function loadMeta() {
     } catch (e) {
         status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
     }
-}
-
-async function currentConfig() {
-    const cfg = await api.get('/api/v1/config');
-    return { metadata: cfg.metadata || {}, source: cfg.source || {} };
 }
 
 async function renderTables() {
@@ -74,6 +161,7 @@ async function showDetail(schema, name) {
 }
 
 async function validateMeta() {
+    const status = document.getElementById('meta-status');
     try {
         const resp = await api.get('/api/v1/metadata/validate');
         document.getElementById('validate-panel').style.display = 'block';
@@ -88,7 +176,7 @@ async function validateMeta() {
         });
         if (resp.count === 0) ul.innerHTML = '<li>✓ 无校验问题</li>';
     } catch (e) {
-        document.getElementById('meta-status').textContent = '✗ ' + e.message;
+        status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
     }
 }
 </script>

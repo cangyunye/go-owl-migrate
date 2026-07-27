@@ -22,9 +22,32 @@
         <a href="/docs" class="nav-link">文档</a>
     </nav>
     <main class="content">
+        <div class="config-bar" id="config-bar"></div>
         {{block "content" .}}{{end}}
     </main>
     <script src="/static/js/app.js"></script>
+    <script>
+    // Global config status bar — shows which config is active on every page.
+    (async function () {
+        try {
+            const st = await api.get('/api/v1/config/status');
+            const bar = document.getElementById('config-bar');
+            const parts = [];
+            parts.push(st.on_disk
+                ? '配置文件：<span class="mono">' + st.path + '</span>'
+                : '配置：<i>未保存到磁盘</i>');
+            if (st.target_dialect) parts.push('目标方言：<b>' + st.target_dialect + '</b>');
+            if (st.metadata_type) parts.push('元数据：<b>' + st.metadata_type + '</b>');
+            if (st.source_type) parts.push('源库：<b>' + st.source_type + '</b>');
+            parts.push(st.metadata_loaded
+                ? '已加载 <b>' + st.table_count + '</b> 张表'
+                : '元数据未加载');
+            bar.innerHTML = parts.map(p => '<span class="cfg-chip">' + p + '</span>').join('') +
+                '<a class="cfg-bar-link" href="/config">编辑配置</a>' +
+                '<a class="cfg-bar-link" href="/api/v1/config/download">下载 YAML</a>';
+        } catch (e) { /* bar is best-effort */ }
+    })();
+    </script>
     {{block "scripts" .}}{{end}}
 </body>
 </html>

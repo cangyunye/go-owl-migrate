@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -45,7 +46,7 @@ func newE2ERig(t *testing.T) (*httptest.Server, *service.JobStore, *recordingSpa
 	masterTS := httptest.NewServer(m.Handler())
 	t.Cleanup(masterTS.Close)
 
-	srv := NewServer(Config{Store: store, MasterURL: masterTS.URL})
+	srv := NewServer(Config{Store: store, MasterURL: masterTS.URL, ConfigPath: filepath.Join(t.TempDir(), "owl-migrate.yaml")})
 	serveTS := httptest.NewServer(srv.Handler())
 	t.Cleanup(serveTS.Close)
 
@@ -418,6 +419,89 @@ func TestE2E_MigrateModeThreadedToSpawner(t *testing.T) {
 	e2ePost(t, ts, "/api/v1/migrate", `{}`)
 	if spawner.requests[1].Mode != "" {
 		t.Errorf("Mode = %q, want empty (direct)", spawner.requests[1].Mode)
+	}
+}
+
+func TestE2E_ConfigUpload(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+
+	resp, body := e2ePost(t, ts, "/api/v1/config/upload",
+		"{\"yaml\":\"ddl:\\n  target_dialect: mysql\\nmetadata:\\n  type: csv\\n\"}")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upload: status %d, body %v", resp.StatusCode, body)
+	}
+	if body["status"] != "uploaded" {
+		t.Errorf("status = %v, want uploaded", body["status"])
+	}
+
+	// The uploaded config is now the current config.
+	getResp, err := http.Get(ts.URL + "/api/v1/config")
+	if err != nil {
+		t.Fatalf("GET config: %v", err)
+	}
+	defer getResp.Body.Close()
+	var cfg map[string]any
+	json.NewDecoder(getResp.Body).Decode(&cfg)
+	ddl := cfg["ddl"].(map[string]any)
+	if ddl["target_dialect"] != "mysql" {
+		t.Errorf("target_dialect = %v, want mysql", ddl["target_dialect"])
+	}
+}
+
+func TestE2E_ConfigUpload_InvalidYAML(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+	resp, _ := e2ePost(t, ts, "/api/v1/config/upload", "{\"yaml\":\":::bad\"}")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("invalid yaml: status %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestE2E_ConfigPersistenceAndStatus(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+
+	// Saving a scenario config persists it to disk.
+	_, body := e2ePost(t, ts, "/api/v1/scenarios/migrate/build",
+		`{"values":{"source_type":"oracle","source_dsn":"o","source_schema":"S","target_type":"postgres","target_dsn":"t"},"save":true}`)
+	path, _ := body["path"].(string)
+	if path == "" {
+		t.Fatal("expected a saved path")
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Errorf("config file %q was not written to disk", path)
+	}
+
+	// Status reflects the persisted config.
+	stResp, err := http.Get(ts.URL + "/api/v1/config/status")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	defer stResp.Body.Close()
+	var st map[string]any
+	json.NewDecoder(stResp.Body).Decode(&st)
+	if st["on_disk"] != true {
+		t.Errorf("on_disk = %v, want true", st["on_disk"])
+	}
+	if st["target_dialect"] != "postgres" {
+		t.Errorf("target_dialect = %v, want postgres", st["target_dialect"])
+	}
+}
+
+func TestE2E_ConfigDownload(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+	e2ePost(t, ts, "/api/v1/scenarios/migrate/build",
+		`{"values":{"source_type":"oracle","source_dsn":"o","target_type":"postgres","target_dsn":"t"},"save":true}`)
+
+	resp, err := http.Get(ts.URL + "/api/v1/config/download")
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("download status = %d, want 200", resp.StatusCode)
+	}
+	data, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(data), "target_dialect: postgres") {
+		t.Errorf("downloaded YAML missing target_dialect:\n%s", string(data))
 	}
 }
 
