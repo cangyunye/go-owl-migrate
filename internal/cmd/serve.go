@@ -212,6 +212,9 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) 
 		if req.TempDir != "" {
 			args = append(args, "--temp-dir", req.TempDir)
 		}
+		if req.Resume {
+			args = append(args, "--resume")
+		}
 		if req.Mode == "sql-out" {
 			args = append(args, "--sql-out", filepath.Join(req.TempDir, "insert"))
 		}

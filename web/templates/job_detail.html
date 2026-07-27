@@ -29,20 +29,38 @@
 <script>
 const jobId = location.pathname.split('/').pop();
 let jobType = 'migrate';
+let pollTimer = null;
+let ws = null;
+let lastSeq = 0;
 document.getElementById('job-id-line').textContent = jobId;
+
+const isActive = s => s === 'running' || s === 'cancelling';
 
 async function load() {
     const job = await api.get('/api/v1/jobs/' + jobId);
     jobType = job.type;
+    renderInfo(job);
+    renderButtons(job.status);
+    await loadCheckpoints();
+    if (isActive(job.status)) startLive();
+    else await loadEvents();
+}
+
+function renderInfo(job) {
     document.getElementById('job-info').innerHTML =
         `<span>类型：<b>${job.type}</b></span><span>状态：<b class="status-${job.status}">${job.status}</b></span>` +
         `<span>PID：${job.pid || '-'}</span><span>创建：${job.created_at}</span>` +
         `<span>完成：${job.finished_at || '-'}</span>`;
-    document.getElementById('btn-cancel').style.display =
-        (job.status === 'running') ? 'inline-block' : 'none';
-    document.getElementById('btn-resume').style.display =
-        (['interrupted','cancelled','failed'].includes(job.status)) ? 'inline-block' : 'none';
+}
 
+function renderButtons(status) {
+    document.getElementById('btn-cancel').style.display =
+        (status === 'running') ? 'inline-block' : 'none';
+    document.getElementById('btn-resume').style.display =
+        (['interrupted', 'cancelled', 'failed'].includes(status)) ? 'inline-block' : 'none';
+}
+
+async function loadCheckpoints() {
     const cps = await api.get('/api/v1/jobs/' + jobId + '/checkpoints');
     document.getElementById('cp-count').textContent = cps.length + ' 张表';
     const tbody = document.getElementById('cp-body');
@@ -53,18 +71,70 @@ async function load() {
             `<td>${c.imported ? '✓' : ''}</td><td>${c.imported_rows}</td>` +
             `<td class="status-${c.status === 'SUCCESS' ? 'ok' : (c.status === 'FAIL' ? 'fail' : 'run')}">${c.status || '-'}</td></tr>`;
     });
+}
 
+async function loadEvents() {
     const events = await api.get('/api/v1/jobs/' + jobId + '/events');
     const log = document.getElementById('progress-log');
-    events.forEach(e => { log.textContent += `[${e.seq}] ${e.event_type} ${e.schema||''}.${e.table_name||''} → ${e.rows} rows ${e.message||''}\n`; });
+    log.textContent = '';
+    lastSeq = 0;
+    events.forEach(e => appendEvent({
+        seq: e.seq, event: e.event_type, schema: e.schema,
+        table: e.table_name, rows: e.rows, message: e.message
+    }));
     if (events.length === 0) log.textContent = '（暂无事件）';
+}
+
+function appendEvent(m) {
+    const log = document.getElementById('progress-log');
+    if (log.textContent === '（暂无事件）') log.textContent = '';
+    log.textContent += `[${m.seq}] ${m.event} ${m.schema || ''}.${m.table || ''} → ${m.rows} rows ${m.message || ''}\n`;
+    log.scrollTop = log.scrollHeight;
+}
+
+// Live mode: stream progress over WebSocket + poll status until the job ends.
+function startLive() {
+    document.getElementById('progress-log').textContent = '';
+    lastSeq = 0;
+    connectWS();
+    pollTimer = setInterval(refreshStatus, 2000);
+}
+
+function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/api/v1/jobs/' + jobId + '/ws');
+    ws.onmessage = (e) => {
+        const m = JSON.parse(e.data);
+        if (m.type === 'progress') {
+            if (m.seq > lastSeq) { appendEvent(m); lastSeq = m.seq; }
+        } else if (m.type === 'complete' || m.type === 'cancelled' || m.type === 'error') {
+            refreshStatus();
+        }
+    };
+}
+
+async function refreshStatus() {
+    let job;
+    try { job = await api.get('/api/v1/jobs/' + jobId); } catch (e) { return; }
+    renderInfo(job);
+    renderButtons(job.status);
+    if (!isActive(job.status)) {
+        stopLive();
+        await loadCheckpoints();
+        await loadEvents();
+    }
+}
+
+function stopLive() {
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    if (ws) { ws.close(); ws = null; }
 }
 
 async function cancelJob() {
     try {
         await api.del('/api/v1/jobs/' + jobId);
         document.getElementById('action-status').textContent = '已发送取消请求';
-        setTimeout(load, 800);
+        refreshStatus();
     } catch (e) { document.getElementById('action-status').textContent = '✗ ' + e.message; }
 }
 

@@ -20,6 +20,7 @@ type SpawnRequest struct {
 	JobID      string
 	JobType    string
 	Mode       string // for migrate: "direct" | "sql-out"
+	Resume     bool   // resume from a previous job's checkpoint
 	ConfigPath string
 	DBPath     string
 	ParentPID  int
@@ -115,14 +116,24 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For resume, the worker reuses the original job's temp dir so it can read
+	// the existing migrate_progress.json checkpoint and skip completed tables.
+	workerTempDir := jobDir
+	resume := false
+	if req.ResumeFrom != "" {
+		workerTempDir = filepath.Join(m.tempDir, req.ResumeFrom)
+		resume = true
+	}
+
 	pid, wait, err := m.spawner.Spawn(SpawnRequest{
 		JobID:      jobID,
 		JobType:    req.Type,
 		Mode:       req.Mode,
+		Resume:     resume,
 		ConfigPath: configPath,
 		DBPath:     m.dbPath,
 		ParentPID:  os.Getpid(),
-		TempDir:    jobDir,
+		TempDir:    workerTempDir,
 	})
 	if err != nil {
 		m.store.UpdateJobStatus(jobID, "failed")
