@@ -61,11 +61,10 @@ services:
       - "5433:5432"
     networks:
       - app-net
-  # Oracle 仅使用Docker内置命名卷，不挂载外置磁盘
+  # Oracle Free 23ai — ARM 原生镜像（Apple Silicon 不走 x86 模拟，避免 IPC 监听失败）
+  # 走私有镜像源 docker.xuanyuan.run；ORACLE_DATABASE=XEPDB1 保持 PDB 名不变，DSN 无需改动
   oracle:
-    image: gvenzl/oracle-xe:21-slim-faststart
-    platform: linux/amd64
-    pull_policy: never
+    image: docker.xuanyuan.run/gvenzl/oracle-free:23-slim
     container_name: oracle
     restart: always
     environment:
@@ -73,20 +72,19 @@ services:
       ORACLE_DATABASE: XEPDB1
       APP_USER: appuser
       APP_USER_PASSWORD: App123!
-      SGA_TARGET: 768M
     volumes:
-      # 只保留oradata数据卷，删掉diag/logs额外挂载（极易引发软链接冲突）
       - oracle-data:/opt/oracle/oradata
     ports:
       - "1521:1521"
-      - "5500:5500"
+    shm_size: 1g
     networks:
       - app-net
-    deploy:
-      resources:
-        limits:
-          cpus: '3'
-          memory: 3G
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
 
   # Nginx 外置硬盘挂载
   nginx:
