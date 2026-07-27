@@ -18,12 +18,14 @@ type Config struct {
 	Store      *service.JobStore
 	MasterURL  string
 	ConfigPath string
+	TempDir    string
 }
 
 type Server struct {
 	store      *service.JobStore
 	masterURL  string
 	configPath string
+	tempDir    string
 	hub        *Hub
 
 	mu          sync.RWMutex
@@ -37,6 +39,7 @@ func NewServer(cfg Config) *Server {
 		store:      cfg.Store,
 		masterURL:  cfg.MasterURL,
 		configPath: cfg.ConfigPath,
+		tempDir:    cfg.TempDir,
 		hub:        NewHub(cfg.Store),
 		cfg:        &config.Config{},
 		genOutputs: make(map[string]string),
@@ -63,6 +66,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/jobs/{id}", s.handleGetJob)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/events", s.handleGetJobEvents)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/checkpoints", s.handleGetJobCheckpoints)
+	mux.HandleFunc("GET /api/v1/jobs/{id}/output", s.handleJobOutput)
+	mux.HandleFunc("GET /api/v1/jobs/{id}/output/download", s.handleJobOutputDownload)
 	mux.HandleFunc("GET /api/v1/dialects", s.handleGetDialects)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)

@@ -92,6 +92,7 @@ No authentication is required — intended for local or trusted-network use.`,
 				Store:      store,
 				MasterURL:  fmt.Sprintf("http://%s", ipcAddr),
 				ConfigPath: configOut,
+				TempDir:    tempDir,
 			})
 
 			serveAddr := fmt.Sprintf("%s:%d", host, port)

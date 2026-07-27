@@ -17,6 +17,20 @@
     <h3>进度 <span class="badge" id="job-id-badge"></span></h3>
     <div id="progress-log" class="log-box"></div>
 </div>
+
+<div id="download-panel" class="panel" style="display:none">
+    <h3>SQL 输出结果</h3>
+    <p id="output-summary" class="field-help"></p>
+    <div class="form-row">
+        <label>下载格式</label>
+        <select id="dl-format">
+            <option value="tar.gz">tar.gz（压缩，推荐大文件/多文件）</option>
+            <option value="zip">zip</option>
+            <option value="raw">原始 .sql（仅单文件）</option>
+        </select>
+        <button class="btn-primary" onclick="downloadSQL()">下载</button>
+    </div>
+</div>
 {{end}}
 {{define "scripts"}}
 <script>
@@ -28,9 +42,44 @@ document.getElementById('mode-desc').textContent = (mode === 'sql-out')
     ? 'SQL 输出模式：导出后生成 INSERT SQL 文件，不连接目标库。'
     : '直接模式：导出 CSV 后直接导入目标数据库。';
 
+let completedJobId = null;
+let outputFileCount = 0;
+
 async function startMigrate() {
     try { await jobUI.start('/api/v1/migrate', { mode: mode }); }
     catch (e) { alert('启动失败: ' + e.message); }
+}
+
+// After a sql-out job completes, surface its output location + download options.
+jobUI.onComplete = async function (jobId) {
+    if (mode !== 'sql-out') return;
+    completedJobId = jobId;
+    try {
+        const info = await api.get('/api/v1/jobs/' + jobId + '/output');
+        if (!info.has_sql) return;
+        outputFileCount = info.file_count;
+        document.getElementById('output-summary').textContent =
+            '输出目录：' + info.dir + ' ｜ ' + info.file_count + ' 个文件，共 ' + humanSize(info.total_size);
+        const fmt = document.getElementById('dl-format');
+        if (info.file_count === 1) fmt.value = 'raw';
+        else if (info.total_size > 10 * 1024 * 1024 || info.file_count > 5) fmt.value = 'tar.gz';
+        document.getElementById('download-panel').style.display = 'block';
+    } catch (e) { /* best-effort */ }
+};
+
+function downloadSQL() {
+    const fmt = document.getElementById('dl-format').value;
+    if (fmt === 'raw' && outputFileCount !== 1) {
+        alert('原始文件下载仅适用于单个文件，多文件请选 tar.gz 或 zip');
+        return;
+    }
+    window.location = '/api/v1/jobs/' + completedJobId + '/output/download?format=' + encodeURIComponent(fmt);
+}
+
+function humanSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 </script>
 {{end}}

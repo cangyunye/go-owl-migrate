@@ -47,6 +47,7 @@ const jobUI = {
     jobId: null,
     ws: null,
     logEl: null,
+    onComplete: null, // optional callback(jobId) invoked when a job completes
 
     bind(logSelector) {
         this.logEl = document.querySelector(logSelector);
@@ -83,6 +84,7 @@ const jobUI = {
             } else if (m.type === 'complete') {
                 this.log('✅ 完成: ' + (m.status || ''));
                 this.finish();
+                if (this.onComplete) this.onComplete(this.jobId);
             } else if (m.type === 'cancelled') {
                 this.log('🚫 已取消');
                 this.finish();
