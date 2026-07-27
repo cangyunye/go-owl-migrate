@@ -364,7 +364,7 @@ Use --resume to skip tables completed in a previous run.`,
 					NullIdentifierRegex:          cfg.Import.CSV.NullIdentifiers.Regex,
 					OracleEmptyStringIsNull:      cfg.Import.CSV.NullSemantics.OracleEmptyStringIsNull,
 					NumericZeroNotNull:           cfg.Import.CSV.NullSemantics.NumericZeroNotNull,
-					TruncateBefore:               resume, // truncate on resume to avoid duplicate key errors
+					TruncateBefore:               cfg.Import.Target.TruncateBefore || resume, // honor config; also truncate on resume to avoid duplicate key errors
 					DisableConstraints:           cfg.Import.Target.DisableConstraints,
 					DisableTriggers:              cfg.Import.Target.DisableTriggers,
 					DropIndexes:                  cfg.Import.Target.DropIndexes,
