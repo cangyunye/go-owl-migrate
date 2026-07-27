@@ -27,7 +27,9 @@ type SpawnRequest struct {
 }
 
 type Spawner interface {
-	Spawn(req SpawnRequest) (int, error)
+	// Spawn starts a worker and returns its PID plus a wait function that
+	// blocks until the worker exits, returning its exit error (if any).
+	Spawn(req SpawnRequest) (pid int, wait func() error, err error)
 }
 
 type Config struct {
@@ -113,7 +115,7 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pid, err := m.spawner.Spawn(SpawnRequest{
+	pid, wait, err := m.spawner.Spawn(SpawnRequest{
 		JobID:      jobID,
 		JobType:    req.Type,
 		Mode:       req.Mode,
@@ -129,6 +131,7 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.store.UpdateJobPID(jobID, pid)
+	go m.monitorWorker(jobID, wait)
 
 	writeJSON(w, http.StatusCreated, StartJobResponse{
 		JobID:     jobID,
@@ -136,6 +139,32 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 		Status:    "running",
 		CreatedAt: time.Now().Format(time.RFC3339),
 	})
+}
+
+// monitorWorker waits for a worker to exit and finalizes the job status if the
+// worker did not set it itself. Workers that report progress (migrate) set
+// their own terminal status; this is the safety net for crashes and cancels.
+func (m *Master) monitorWorker(jobID string, wait func() error) {
+	exitErr := wait()
+
+	job, err := m.store.GetJob(jobID)
+	if err != nil {
+		return
+	}
+	switch job.Status {
+	case "completed", "failed", "cancelled", "interrupted":
+		return // worker already finalized
+	case "cancelling":
+		m.store.UpdateJobStatus(jobID, "cancelled")
+		return
+	}
+	// Still "running": worker exited without reporting. Infer from exit code.
+	if exitErr != nil {
+		m.store.WriteEvent(jobID, "error", "", "", 0, "worker exited: "+exitErr.Error())
+		m.store.UpdateJobStatus(jobID, "failed")
+	} else {
+		m.store.UpdateJobStatus(jobID, "completed")
+	}
 }
 
 func (m *Master) handleCancelJob(w http.ResponseWriter, r *http.Request) {

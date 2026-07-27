@@ -1,0 +1,41 @@
+# 导出数据：Oracle (SCOTT) → CSV 文件（输出到 ./output/data/）
+# 用法：在「配置」页上传此文件 → 「导出」页 → 开始导出
+# 导出后的 CSV 可供「导入」页或「生成 INSERT」使用
+general:
+  log_level: info
+  log_format: text
+
+metadata:
+  type: csv
+  csv:
+    path: ./testdata/db/oracle/
+    delimiter: ","
+    encoding: utf-8
+    has_header: true
+    column_name_matching: case_insensitive
+
+source:
+  type: oracle
+  dsn: "oracle://scott:tiger@127.0.0.1:1521/XEPDB1"
+
+ddl:
+  target_dialect: postgres
+
+export:
+  output_dir: ./output/data/
+  format: csv
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    encoding: utf-8
+    header: true
+    null_representation: "\\N"
+    line_terminator: "\n"
+  batch:
+    method: cursor
+    page_size: 5000
+  parallel:
+    enabled: true
+    max_workers: 4
+  tables:
+    include: ["*"]

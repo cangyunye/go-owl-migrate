@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 )
 
@@ -44,7 +45,7 @@ Supported output formats: csv (default), sql, xlsx`,
 	cmd.Flags().StringVar(&xlsxPath, "xlsx", "", "path to xlsx file with @ data sheets (offline mode)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: csv (default), sql, xlsx")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	cmd.RunE = func(cmd *cobra.Command, args []string) (retErr error) {
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
 			cfg = &config.Config{}
@@ -54,6 +55,19 @@ Supported output formats: csv (default), sql, xlsx`,
 		}
 		if cmd.Flags().Changed("format") {
 			cfg.Export.Format = format
+		}
+
+		var pw *service.ProgressWriter
+		if progressDB != "" && jobID != "" {
+			if w, e := service.NewProgressWriter(progressDB, jobID); e == nil {
+				pw = w
+				defer pw.Close()
+				defer func() {
+					if retErr != nil {
+						pw.SetJobFailed(retErr.Error())
+					}
+				}()
+			}
 		}
 
 		// Determine if we're in offline mode (CSV or XLSX) or online mode (DB)
@@ -91,6 +105,7 @@ Supported output formats: csv (default), sql, xlsx`,
 				return err
 			}
 			printExportResults(results)
+			reportExportToStore(pw, results)
 			return nil
 		}
 
@@ -125,6 +140,7 @@ Supported output formats: csv (default), sql, xlsx`,
 				return err
 			}
 			printExportResults(results)
+			reportExportToStore(pw, results)
 			return nil
 		}
 
@@ -191,6 +207,7 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 			return err
 		}
 		printExportResults(results)
+		reportExportToStore(pw, results)
 		return nil
 	}
 
@@ -209,4 +226,26 @@ func printExportResults(results []exporter.TableResult) {
 		totalRows += r.Rows
 	}
 	fmt.Printf("Exported %d rows across %d tables\n", totalRows, len(results))
+}
+
+// reportExportToStore writes per-table progress and the final job status to the
+// shared store when running as a web worker.
+func reportExportToStore(pw *service.ProgressWriter, results []exporter.TableResult) {
+	if pw == nil {
+		return
+	}
+	failed := false
+	for _, r := range results {
+		if r.Error != nil {
+			failed = true
+			pw.WriteTableError(r.Schema, r.Table, r.Error.Error())
+		} else {
+			pw.WriteExportComplete(r.Schema, r.Table, r.Rows)
+		}
+	}
+	if failed {
+		pw.SetJobFailed("one or more tables failed to export")
+	} else {
+		pw.SetJobCompleted()
+	}
 }

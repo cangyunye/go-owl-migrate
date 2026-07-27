@@ -14,6 +14,7 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
 )
 
@@ -27,13 +28,26 @@ func importCmd() *cobra.Command {
 
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	cmd.RunE = func(cmd *cobra.Command, args []string) (retErr error) {
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			cfg.DDL.NoQuoteIdentifiers = noQuote
+		}
+
+		var pw *service.ProgressWriter
+		if progressDB != "" && jobID != "" {
+			if w, e := service.NewProgressWriter(progressDB, jobID); e == nil {
+				pw = w
+				defer pw.Close()
+				defer func() {
+					if retErr != nil {
+						pw.SetJobFailed(retErr.Error())
+					}
+				}()
+			}
 		}
 
 		sm, err := loadSchemaModel(cfg)
@@ -109,9 +123,14 @@ func importCmd() *cobra.Command {
 		totalExpected := int64(0)
 		totalActual := int64(0)
 		totalSkipped := int64(0)
+		failed := false
 		for _, r := range results {
 			if r.Err != nil {
+				failed = true
 				fmt.Printf("  FAIL %s.%s: %v\n", r.Schema, r.Table, r.Err)
+				if pw != nil {
+					pw.WriteTableError(r.Schema, r.Table, r.Err.Error())
+				}
 				continue
 			}
 			status := "✅"
@@ -123,10 +142,20 @@ func importCmd() *cobra.Command {
 			totalExpected += r.Expected
 			totalActual += r.Actual
 			totalSkipped += r.Skipped
+			if pw != nil {
+				pw.WriteImportComplete(r.Schema, r.Table, r.Actual, r.Skipped, "")
+			}
 		}
 		fmt.Printf("Imported %d/%d rows across %d tables\n", totalActual, totalExpected, len(results))
 		if totalSkipped > 0 {
 			fmt.Printf("  ⚠️ %d rows skipped due to errors\n", totalSkipped)
+		}
+		if pw != nil {
+			if failed {
+				pw.SetJobFailed("one or more tables failed to import")
+			} else {
+				pw.SetJobCompleted()
+			}
 		}
 		return nil
 	}

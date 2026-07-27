@@ -49,6 +49,14 @@ func (pw *ProgressWriter) SetJobCompleted() error {
 	return pw.store.UpdateJobStatus(pw.jobID, "completed")
 }
 
+// WriteTableError records a per-table failure as an event and a FAIL checkpoint.
+func (pw *ProgressWriter) WriteTableError(schema, table, msg string) error {
+	if err := pw.store.WriteEvent(pw.jobID, "error", schema, table, 0, msg); err != nil {
+		return err
+	}
+	return pw.store.WriteCheckpoint(pw.jobID, schema, table, false, 0, false, 0, "FAIL", msg)
+}
+
 func (pw *ProgressWriter) SetJobFailed(reason string) error {
 	pw.store.WriteEvent(pw.jobID, "error", "", "", 0, reason)
 	return pw.store.UpdateJobStatus(pw.jobID, "failed")

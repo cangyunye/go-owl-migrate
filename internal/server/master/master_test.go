@@ -2,6 +2,7 @@ package master
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
@@ -16,14 +18,22 @@ import (
 type mockSpawner struct {
 	spawned []SpawnRequest
 	pid     int
+	waitErr error
+	release chan struct{} // wait blocks until closed, simulating a running worker
 }
 
-func (m *mockSpawner) Spawn(req SpawnRequest) (int, error) {
+func (m *mockSpawner) Spawn(req SpawnRequest) (int, func() error, error) {
 	m.spawned = append(m.spawned, req)
 	if m.pid == 0 {
 		m.pid = 99999
 	}
-	return m.pid, nil
+	wait := func() error {
+		if m.release != nil {
+			<-m.release
+		}
+		return m.waitErr
+	}
+	return m.pid, wait, nil
 }
 
 func newTestMaster(t *testing.T) (*Master, *mockSpawner) {
@@ -35,7 +45,7 @@ func newTestMaster(t *testing.T) (*Master, *mockSpawner) {
 	}
 	t.Cleanup(func() { store.Close() })
 
-	spawner := &mockSpawner{}
+	spawner := &mockSpawner{release: make(chan struct{})}
 	m := New(Config{
 		Store:   store,
 		Spawner: spawner,
@@ -228,5 +238,53 @@ func TestSelectPort(t *testing.T) {
 		if err == nil {
 			t.Error("expected error when all ports occupied")
 		}
+	})
+}
+
+func waitForStatus(t *testing.T, m *Master, jobID, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if job, err := m.store.GetJob(jobID); err == nil && job.Status == want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	job, _ := m.store.GetJob(jobID)
+	t.Fatalf("job %s status = %q, want %q", jobID, job.Status, want)
+}
+
+func TestMaster_WorkerExitFinalizesStatus(t *testing.T) {
+	t.Run("clean exit -> completed", func(t *testing.T) {
+		m, spawner := newTestMaster(t)
+		w := doMasterRequest(t, m, "POST", "/api/v1/jobs", `{"type":"export","config":{}}`)
+		var resp StartJobResponse
+		json.Unmarshal(w.Body.Bytes(), &resp)
+
+		spawner.waitErr = nil
+		close(spawner.release)
+		waitForStatus(t, m, resp.JobID, "completed")
+	})
+
+	t.Run("error exit -> failed", func(t *testing.T) {
+		m, spawner := newTestMaster(t)
+		w := doMasterRequest(t, m, "POST", "/api/v1/jobs", `{"type":"export","config":{}}`)
+		var resp StartJobResponse
+		json.Unmarshal(w.Body.Bytes(), &resp)
+
+		spawner.waitErr = fmt.Errorf("exit status 1")
+		close(spawner.release)
+		waitForStatus(t, m, resp.JobID, "failed")
+	})
+
+	t.Run("cancel -> cancelled", func(t *testing.T) {
+		m, spawner := newTestMaster(t)
+		w := doMasterRequest(t, m, "POST", "/api/v1/jobs", `{"type":"migrate","config":{}}`)
+		var resp StartJobResponse
+		json.Unmarshal(w.Body.Bytes(), &resp)
+
+		doMasterRequest(t, m, "DELETE", "/api/v1/jobs/"+resp.JobID, "")
+		close(spawner.release)
+		waitForStatus(t, m, resp.JobID, "cancelled")
 	})
 }

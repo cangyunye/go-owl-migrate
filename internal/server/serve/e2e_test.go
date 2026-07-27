@@ -16,11 +16,18 @@ import (
 
 type recordingSpawner struct {
 	requests []master.SpawnRequest
+	release  chan struct{} // wait blocks until closed, simulating a running worker
 }
 
-func (r *recordingSpawner) Spawn(req master.SpawnRequest) (int, error) {
+func (r *recordingSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) {
 	r.requests = append(r.requests, req)
-	return 4242, nil
+	wait := func() error {
+		if r.release != nil {
+			<-r.release
+		}
+		return nil
+	}
+	return 4242, wait, nil
 }
 
 // newE2ERig wires a real Server and a real Master (with a recording spawner)
@@ -36,7 +43,7 @@ func newE2ERig(t *testing.T) (*httptest.Server, *service.JobStore, *recordingSpa
 	}
 	t.Cleanup(func() { store.Close() })
 
-	spawner := &recordingSpawner{}
+	spawner := &recordingSpawner{release: make(chan struct{})}
 	m := master.New(master.Config{
 		Store:   store,
 		Spawner: spawner,

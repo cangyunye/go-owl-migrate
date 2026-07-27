@@ -180,36 +180,40 @@ type execSpawner struct {
 	tempDir string
 }
 
-func (s *execSpawner) Spawn(req master.SpawnRequest) (int, error) {
+func (s *execSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return 0, fmt.Errorf("find executable: %w", err)
+		return 0, nil, fmt.Errorf("find executable: %w", err)
 	}
 
-	var subCmd string
+	// "export" is a parent command; the data export lives at "export data".
+	var args []string
 	switch req.JobType {
-	case "migrate":
-		subCmd = "migrate"
 	case "export":
-		subCmd = "export"
+		args = []string{"export", "data"}
 	case "import":
-		subCmd = "import"
-	default:
-		subCmd = "migrate"
+		args = []string{"import"}
+	default: // migrate
+		args = []string{"migrate"}
 	}
 
-	args := []string{
-		subCmd,
+	args = append(args,
 		"--config", req.ConfigPath,
 		"--progress-db", req.DBPath,
 		"--job-id", req.JobID,
 		"--parent-pid", fmt.Sprintf("%d", req.ParentPID),
-	}
-	if req.TempDir != "" {
-		args = append(args, "--temp-dir", req.TempDir)
-	}
-	if req.JobType == "migrate" && req.Mode == "sql-out" {
-		args = append(args, "--sql-out", filepath.Join(req.TempDir, "insert"))
+	)
+
+	// Command-specific flags. --temp-dir only exists on migrate. Export defaults
+	// to ./output/data/ (shared with import's source_dir so the two chain).
+	switch req.JobType {
+	case "migrate":
+		if req.TempDir != "" {
+			args = append(args, "--temp-dir", req.TempDir)
+		}
+		if req.Mode == "sql-out" {
+			args = append(args, "--sql-out", filepath.Join(req.TempDir, "insert"))
+		}
 	}
 
 	cmd := exec.Command(exe, args...)
@@ -218,12 +222,8 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {
-		return 0, fmt.Errorf("start worker: %w", err)
+		return 0, nil, fmt.Errorf("start worker: %w", err)
 	}
 
-	go func() {
-		cmd.Wait()
-	}()
-
-	return cmd.Process.Pid, nil
+	return cmd.Process.Pid, cmd.Wait, nil
 }

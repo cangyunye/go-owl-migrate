@@ -1,0 +1,46 @@
+# 导入数据：CSV (./output/data/) → PostgreSQL (public)
+# 用法：先用「导出」把 Oracle 数据导出到 ./output/data/，再上传此文件 → 「导入」页 → 开始导入
+# 会在目标库自动建表（include_if_not_exists），并按 SCOTT→public 映射导入
+general:
+  log_level: info
+  log_format: text
+
+metadata:
+  type: csv
+  csv:
+    path: ./testdata/db/oracle/
+    delimiter: ","
+    encoding: utf-8
+    has_header: true
+    column_name_matching: case_insensitive
+
+target:
+  type: postgres
+  dsn: "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
+
+ddl:
+  target_dialect: postgres
+  include_if_not_exists: true
+  schema_mapping:
+    SCOTT: public
+
+import:
+  source_dir: ./output/data/
+  format: csv
+  csv:
+    delimiter: ","
+    has_header: true
+    null_marker: "\\N"
+  target:
+    truncate_before: true
+  batch:
+    commit_interval: 1000
+    error_policy: stop
+  parallel:
+    enabled: true
+    max_workers: 2
+    respect_foreign_keys: false
+  data_transforms:
+    datetime_format: "yyyyMMddHHmmss"
+    trim_strings: true
+    null_if: ["NULL", "null", "\\N"]
