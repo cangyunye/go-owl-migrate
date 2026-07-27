@@ -98,8 +98,9 @@ func ScenarioSchemas() []Scenario {
 			Name: "migrate", Label: "完整迁移", Command: "owl-migrate migrate",
 			Description: "源库 → 导出 CSV → 目标库，端到端自动完成",
 			Fields: []Field{
+				metaType(), csvPath(), xlsxPath(),
 				srcType(), srcDSN(), srcSchema(), tablesField(),
-				tgtType(), tgtDSN(), tgtSchema(),
+				tgtType(), tgtDSN(), tgtSchema(), schemaMappingField(),
 			},
 		},
 		{
@@ -233,7 +234,9 @@ func splitTables(s string) []string {
 func setMetadataSource(cfg *config.Config, v map[string]string) {
 	switch v["metadata_type"] {
 	case "csv":
-		cfg.Metadata = config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{Path: v["csv_path"]}}
+		cfg.Metadata = config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{
+			Path: v["csv_path"], Delimiter: ",", HasHeader: true, ColumnNameMatching: "case_insensitive",
+		}}
 	case "xlsx":
 		cfg.Metadata = config.MetadataConfig{Type: "xlsx", XLSX: config.XLSXConfig{Path: v["xlsx_path"]}}
 	case "database":
@@ -248,15 +251,16 @@ func buildMigrateCfg(v map[string]string) *config.Config {
 	if tgtSchema == "" {
 		tgtSchema = srcSchema
 	}
-	schemaMapping := map[string]string{}
-	if srcSchema != "" {
-		schemaMapping[srcSchema] = tgtSchema
+	// Prefer an explicit schema_mapping; fall back to source→target.
+	schemaMapping := parseSchemaMapping(v["schema_mapping"])
+	if len(schemaMapping) == 0 && srcSchema != "" {
+		schemaMapping = map[string]string{srcSchema: tgtSchema}
 	}
-	return &config.Config{
-		General:  config.GeneralConfig{LogLevel: "info"},
-		Metadata: config.MetadataConfig{Type: "database"},
-		Source:   config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: srcSchema},
-		Target:   config.DBConfig{Type: v["target_type"], DSN: v["target_dsn"], Schema: tgtSchema},
+
+	cfg := &config.Config{
+		General: config.GeneralConfig{LogLevel: "info"},
+		Source:  config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: srcSchema},
+		Target:  config.DBConfig{Type: v["target_type"], DSN: v["target_dsn"], Schema: tgtSchema},
 		DDL: config.DDLConfig{
 			TargetDialect:      v["target_type"],
 			IncludeIfNotExists: true,
@@ -283,6 +287,8 @@ func buildMigrateCfg(v map[string]string) *config.Config {
 			},
 		},
 	}
+	setMetadataSource(cfg, v)
+	return cfg
 }
 
 func buildDDLCfg(v map[string]string) *config.Config {
@@ -315,6 +321,74 @@ func parseSchemaMapping(s string) map[string]string {
 		}
 	}
 	return m
+}
+
+func formatSchemaMapping(m map[string]string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	pairs := make([]string, 0, len(m))
+	for k, val := range m {
+		pairs = append(pairs, k+":"+val)
+	}
+	sort.Strings(pairs)
+	return strings.Join(pairs, ",")
+}
+
+// ExtractFormValues reverse-maps a Config into form field values so an uploaded
+// config can populate a scenario form. It extracts every known field; the
+// frontend applies only those present in the active scenario's form.
+func ExtractFormValues(cfg *config.Config) map[string]string {
+	v := map[string]string{}
+	switch cfg.Metadata.Type {
+	case "csv":
+		v["metadata_type"] = "csv"
+		v["csv_path"] = cfg.Metadata.CSV.Path
+	case "xlsx":
+		v["metadata_type"] = "xlsx"
+		v["xlsx_path"] = cfg.Metadata.XLSX.Path
+		v["data_output_dir"] = cfg.Metadata.XLSX.DataOutputDir
+	case "database":
+		v["metadata_type"] = "database"
+	}
+	v["source_type"] = cfg.Source.Type
+	v["source_dsn"] = cfg.Source.DSN
+	v["source_schema"] = cfg.Source.Schema
+	v["target_type"] = cfg.Target.Type
+	if v["target_type"] == "" {
+		v["target_type"] = cfg.DDL.TargetDialect
+	}
+	v["target_dsn"] = cfg.Target.DSN
+	v["target_schema"] = cfg.Target.Schema
+	if len(cfg.Export.Tables.Include) > 0 {
+		v["tables"] = strings.Join(cfg.Export.Tables.Include, ",")
+	} else {
+		v["tables"] = "*"
+	}
+	v["schema_mapping"] = formatSchemaMapping(cfg.DDL.SchemaMapping)
+	v["data_dir"] = cfg.Import.SourceDir
+	return v
+}
+
+// DetectScenario guesses which scenario form best matches a config, so an
+// upload can switch the form to the right scenario automatically.
+func DetectScenario(cfg *config.Config) string {
+	hasSource := cfg.Source.Type != ""
+	hasTarget := cfg.Target.Type != ""
+	hasExport := cfg.Export.CSV.Delimiter != "" || cfg.Export.Batch.PageSize > 0 || len(cfg.Export.Tables.Include) > 0
+	hasImport := cfg.Import.SourceDir != "" || cfg.Import.CSV.NullMarker != "" || cfg.Import.Batch.CommitInterval > 0
+	switch {
+	case hasSource && hasTarget:
+		return "migrate"
+	case hasSource && hasExport:
+		return "export"
+	case hasTarget && hasImport:
+		return "import"
+	case cfg.Metadata.Type != "" && cfg.DDL.TargetDialect != "":
+		return "export-ddl"
+	default:
+		return "migrate"
+	}
 }
 
 func buildSelectCfg(v map[string]string) *config.Config {

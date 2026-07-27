@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
 // persistConfig writes the current config to disk as YAML so it can be used
@@ -100,18 +101,23 @@ func (s *Server) handleUploadConfig(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.cfg = &cfg
+	path := s.configPath
 	s.mu.Unlock()
 
-	path, err := s.persistConfig()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "save config: "+err.Error())
-		return
+	// Persist the uploaded YAML verbatim so the file on disk matches what the
+	// user uploaded (rather than a re-marshaled/normalized copy).
+	if path != "" {
+		if err := os.WriteFile(path, []byte(req.YAML), 0644); err != nil {
+			writeError(w, http.StatusInternalServerError, "save config: "+err.Error())
+			return
+		}
 	}
 
-	out, _ := configToMap(&cfg)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "uploaded",
-		"path":   path,
-		"config": out,
+		"status":   "uploaded",
+		"path":     path,
+		"scenario": service.DetectScenario(&cfg),
+		"values":   service.ExtractFormValues(&cfg),
+		"yaml":     req.YAML,
 	})
 }

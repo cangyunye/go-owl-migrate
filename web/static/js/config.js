@@ -166,4 +166,44 @@
         }
         setTimeout(() => { status.textContent = ''; }, 3000);
     });
+
+    // Fill the active scenario's form fields from a {name: value} map.
+    function applyFormValues(values) {
+        document.querySelectorAll('#cfg-form [name]').forEach(el => {
+            const val = values[el.name];
+            if (val !== undefined && val !== '') el.value = val;
+        });
+        applyConditions();
+        activeScenario.fields.forEach(f => {
+            if (isDSN(f.name)) {
+                const wrap = document.querySelector(`#cfg-form .field[data-name="${f.name}"]`);
+                if (wrap) updateDSNHint(f, wrap);
+            }
+        });
+    }
+
+    // Upload a YAML config: parse it server-side, switch to the matching
+    // scenario, populate the form, and show the uploaded YAML in the preview.
+    window.uploadFile = async function () {
+        const input = document.getElementById('cfg-file');
+        const status = document.getElementById('upload-status');
+        if (!input.files.length) {
+            status.textContent = '✗ 请先选择文件'; status.className = 'status-msg fail'; return;
+        }
+        const text = await input.files[0].text();
+        try {
+            const resp = await api.post('/api/v1/config/upload', { yaml: text });
+            if (resp.scenario && allScenarios.some(s => s.name === resp.scenario)) {
+                history.replaceState(null, '', '/config?scenario=' + resp.scenario);
+                selectScenario(resp.scenario);
+            }
+            applyFormValues(resp.values || {});
+            clearTimeout(previewTimer);
+            document.getElementById('yaml-preview').textContent = resp.yaml || '';
+            status.textContent = '✓ 已上传并填入表单' + (resp.path ? '，保存到 ' + resp.path : '');
+            status.className = 'status-msg ok';
+        } catch (e) {
+            status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+        }
+    };
 })();

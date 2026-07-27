@@ -429,6 +429,50 @@ func TestE2E_MigrateModeThreadedToSpawner(t *testing.T) {
 	}
 }
 
+func TestE2E_ConfigUpload_MigrateRoundTrip(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+
+	uploaded := "metadata:\n  type: csv\n  csv:\n    path: ./testdata/db/oracle/\nsource:\n  type: oracle\n  dsn: oracle://scott:tiger@h:1521/XEPDB1\n  schema: SCOTT\ntarget:\n  type: postgres\n  dsn: host=h dbname=db\n  schema: public\nddl:\n  target_dialect: postgres\n  schema_mapping:\n    SCOTT: public\n"
+	body := map[string]any{"yaml": uploaded}
+	raw, _ := json.Marshal(body)
+	resp, err := http.Post(ts.URL+"/api/v1/config/upload", "application/json", strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	defer resp.Body.Close()
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+
+	// Detected scenario should be migrate (has source + target).
+	if out["scenario"] != "migrate" {
+		t.Errorf("scenario = %v, want migrate", out["scenario"])
+	}
+	// Extracted values should populate the migrate form.
+	values, _ := out["values"].(map[string]any)
+	if values["source_type"] != "oracle" || values["target_type"] != "postgres" {
+		t.Errorf("values = %v, missing source/target types", values)
+	}
+	if values["schema_mapping"] != "SCOTT:public" {
+		t.Errorf("schema_mapping = %v, want SCOTT:public", values["schema_mapping"])
+	}
+	if values["csv_path"] != "./testdata/db/oracle/" {
+		t.Errorf("csv_path = %v", values["csv_path"])
+	}
+
+	// The saved file must contain the uploaded content verbatim.
+	path, _ := out["path"].(string)
+	if path == "" {
+		t.Fatal("expected a saved path")
+	}
+	saved, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if string(saved) != uploaded {
+		t.Errorf("saved file does not match uploaded YAML:\n--- saved ---\n%s", string(saved))
+	}
+}
+
 func TestE2E_ConfigUpload(t *testing.T) {
 	ts, _, _ := newE2ERig(t)
 

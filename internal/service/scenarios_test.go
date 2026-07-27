@@ -184,6 +184,57 @@ func TestParseSchemaMapping(t *testing.T) {
 	}
 }
 
+func TestExtractFormValues_Migrate(t *testing.T) {
+	// Build a migrate config, then reverse-map it and check key fields survive.
+	cfg, _ := BuildScenarioConfig("migrate", map[string]string{
+		"metadata_type": "csv", "csv_path": "./testdata/db/oracle/",
+		"source_type": "oracle", "source_dsn": "oracle://scott:tiger@h:1521/XEPDB1", "source_schema": "SCOTT",
+		"target_type": "postgres", "target_dsn": "host=h dbname=db", "target_schema": "public",
+		"tables": "EMP,DEPT", "schema_mapping": "SCOTT:public",
+	})
+	v := ExtractFormValues(cfg)
+
+	checks := map[string]string{
+		"metadata_type":  "csv",
+		"csv_path":       "./testdata/db/oracle/",
+		"source_type":    "oracle",
+		"source_schema":  "SCOTT",
+		"target_type":    "postgres",
+		"target_schema":  "public",
+		"schema_mapping": "SCOTT:public",
+	}
+	for k, want := range checks {
+		if v[k] != want {
+			t.Errorf("ExtractFormValues[%q] = %q, want %q", k, v[k], want)
+		}
+	}
+	if v["tables"] != "EMP,DEPT" {
+		t.Errorf("tables = %q, want EMP,DEPT", v["tables"])
+	}
+}
+
+func TestDetectScenario(t *testing.T) {
+	tests := []struct {
+		scenario string
+		want     string
+	}{
+		{"migrate", "migrate"},
+		{"export", "export"},
+		{"import", "import"},
+	}
+	for _, tt := range tests {
+		cfg, _ := BuildScenarioConfig(tt.scenario, map[string]string{
+			"metadata_type": "csv", "csv_path": "./m/",
+			"source_type": "oracle", "source_dsn": "o", "source_schema": "S",
+			"target_type": "postgres", "target_dsn": "t", "target_schema": "public",
+			"data_dir": "./data/",
+		})
+		if got := DetectScenario(cfg); got != tt.want {
+			t.Errorf("DetectScenario(%s config) = %q, want %q", tt.scenario, got, tt.want)
+		}
+	}
+}
+
 func TestBuildScenarioConfig_Unknown(t *testing.T) {
 	_, err := BuildScenarioConfig("bogus", map[string]string{})
 	if err == nil {
