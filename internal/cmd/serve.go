@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cangyunye/go-owl-migrate/internal/paths"
 	"github.com/cangyunye/go-owl-migrate/internal/server/master"
 	"github.com/cangyunye/go-owl-migrate/internal/server/serve"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
@@ -42,13 +43,13 @@ with real-time progress monitoring via WebSocket.
 No authentication is required — intended for local or trusted-network use.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
-				dbPath = filepath.Join(tempDir, "owl-migrate.db")
+				dbPath = paths.DBPath()
 			}
 			if configOut == "" {
-				configOut = filepath.Join(tempDir, "owl-migrate.yaml")
+				configOut = paths.ConfigFile()
 			}
 			if configDir == "" {
-				configDir = "./configs/library/"
+				configDir = paths.ConfigLibraryDir()
 			}
 			os.MkdirAll(tempDir, 0755)
 			os.MkdirAll(filepath.Dir(dbPath), 0755)
@@ -144,9 +145,9 @@ No authentication is required — intended for local or trusted-network use.`,
 	cmd.Flags().StringVar(&host, "host", "127.0.0.1", "web UI listen address")
 	cmd.Flags().IntVar(&masterPort, "master-ipc-port", 0, "master IPC port (0=auto-select)")
 	cmd.Flags().StringVar(&tempDir, "temp-dir", "./output/temp/", "temp directory for jobs and exports")
-	cmd.Flags().StringVar(&dbPath, "db", "", "SQLite database path (default: <temp-dir>/owl-migrate.db)")
-	cmd.Flags().StringVar(&configOut, "config-out", "", "where saved configs are written (default: <temp-dir>/owl-migrate.yaml)")
-	cmd.Flags().StringVar(&configDir, "config-dir", "", "directory for the reusable config library (default: ./configs/library/)")
+	cmd.Flags().StringVar(&dbPath, "db", "", "SQLite database path (default: ~/.owl/migrate/owl-migrate.db)")
+	cmd.Flags().StringVar(&configOut, "config-out", "", "where saved configs are written (default: ~/.owl/migrate/migrate.yaml)")
+	cmd.Flags().StringVar(&configDir, "config-dir", "", "directory for the reusable config library (default: ~/.owl/migrate/configs/library/)")
 
 	return cmd
 }

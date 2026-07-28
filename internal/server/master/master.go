@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/cangyunye/go-owl-migrate/internal/paths"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -59,7 +60,7 @@ type Master struct {
 func New(cfg Config) *Master {
 	hbPath := cfg.HeartbeatPath
 	if hbPath == "" {
-		hbPath = filepath.Join(os.TempDir(), "owl-migrate-master.heartbeat")
+		hbPath = paths.HeartbeatPath()
 	}
 	return &Master{
 		store:         cfg.Store,

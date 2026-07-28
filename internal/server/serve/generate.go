@@ -12,6 +12,7 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvvalidator "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
+	"github.com/cangyunye/go-owl-migrate/internal/paths"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
@@ -60,7 +61,7 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outDir := filepath.Join(os.TempDir(), "owl-migrate-ddl-"+randSuffix())
+	outDir := filepath.Join(paths.TempDir(), "ddl-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
 	gen := generator.NewDDLGenerator(d, service.ToBuildOptions(cfg), outDir)
 
@@ -126,7 +127,7 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 		pageSize = 5000
 	}
 
-	outDir := filepath.Join(os.TempDir(), "owl-migrate-select-"+randSuffix())
+	outDir := filepath.Join(paths.TempDir(), "select-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
 
 	oracleRowNum := strings.Contains(cfg.DDL.TargetDialect, "oracle")
@@ -167,7 +168,7 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outDir := filepath.Join(os.TempDir(), "owl-migrate-insert-"+randSuffix())
+	outDir := filepath.Join(paths.TempDir(), "insert-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
 
 	gen := generator.NewInsertGenerator(generator.InsertConfig{

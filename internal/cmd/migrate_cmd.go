@@ -20,6 +20,7 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	"github.com/cangyunye/go-owl-migrate/internal/logger"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/paths"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/importer"
@@ -79,7 +80,7 @@ Use --resume to skip tables completed in a previous run.`,
 		}
 
 		if parentPID > 0 {
-			hbPath := filepath.Join(os.TempDir(), "owl-migrate-master.heartbeat")
+			hbPath := paths.HeartbeatPath()
 			monitor := service.NewHeartbeatMonitor(hbPath, 10*time.Second, 20*time.Second)
 			monitor.OnParentDeath = func() {
 				fmt.Println("[WORKER] Parent process died, finishing current work and exiting...")

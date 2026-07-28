@@ -10,6 +10,31 @@ owl-migrate init --source-type oracle --source-dsn "..." --source-schema SCOTT \
   -o ./migrate.yaml
 ```
 
+## Config File Resolution
+
+When no `-c` flag is given, the config file is resolved in this order:
+
+1. `./migrate.yaml` (current directory, if it exists)
+2. `$OWL_MIGRATE_CONFIG` (environment variable)
+3. `~/.owl/migrate/migrate.yaml` (global default)
+
+The `init` command always writes to `./migrate.yaml` by default (use `-o` to override).
+
+## Environment Variables
+
+Tool-level state defaults to `~/.owl/migrate/` (isolated from go-owl's `~/.owl/`).
+Override with environment variables:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `OWL_MIGRATE_HOME` | Root directory for tool state | `~/.owl/migrate` |
+| `OWL_MIGRATE_CONFIG` | Global config file path | `~/.owl/migrate/migrate.yaml` |
+| `OWL_MIGRATE_DB_PATH` | SQLite database (serve mode) | `~/.owl/migrate/owl-migrate.db` |
+| `OWL_MIGRATE_LOG_DIR` | Log directory | `~/.owl/migrate/logs` |
+
+Project-level outputs (DDL, SELECT, INSERT, data export, checkpoints) remain
+CWD-relative under `./output/` and are controlled by CLI flags (`-o`, `--temp-dir`).
+
 ## Full Config Structure
 
 ```yaml

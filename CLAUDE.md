@@ -76,6 +76,7 @@ internal/
     exporter/                # CSV export (cursor-paginated reads, parallel workers, binary encoding)
     importer/                # CSV import (batched transactions, encoding conversion, data transforms, error policies)
   config/                    # YAML config loading (cobra + yaml.v3)
+  paths/                     # Centralized path resolution (~/.owl/migrate/, env vars)
   mapping/                   # External type mapping file loader (YAML)
   logger/                    # Structured logging (zap)
 ```
@@ -97,3 +98,39 @@ internal/
 - **No single-table parallel writes**: write concurrency is table-level only
 - **Test data**: `testdata/csv/` contains SCOTT schema (EMP, DEPT, BONUS) for testing
 - **Full design doc**: See plan file at `/Users/vigil/.claude/plans/serialized-stirring-hickey.md`
+
+### File Layout & Path Resolution
+
+Tool-level state lives under `~/.owl/migrate/` (isolated from go-owl's `~/.owl/`):
+
+```
+~/.owl/migrate/              # Tool state (small, cross-project)
+  migrate.yaml               # Global default config
+  owl-migrate.db             # serve mode SQLite (job history)
+  logs/                      # Application logs
+  configs/library/           # Reusable config library (serve)
+  temp/                      # Heartbeat, web UI generation temp
+```
+
+Project-level artifacts stay CWD-relative (potentially large):
+
+```
+./migrate.yaml               # Project config (init default)
+./output/ddl/                # DDL generation output
+./output/select/             # SELECT generation output
+./output/insert/             # INSERT SQL output
+./output/data/               # Data export output
+./output/temp/               # Checkpoint, CSV intermediates
+./output/migration_report.json
+```
+
+Config resolution order: `-c` flag > `./migrate.yaml` > `$OWL_MIGRATE_CONFIG` > `~/.owl/migrate/migrate.yaml`
+
+Environment variables (override tool-state defaults):
+
+| Variable | Purpose |
+|----------|---------|
+| `OWL_MIGRATE_HOME` | Override `~/.owl/migrate` root |
+| `OWL_MIGRATE_CONFIG` | Override global config path |
+| `OWL_MIGRATE_DB_PATH` | Override SQLite path |
+| `OWL_MIGRATE_LOG_DIR` | Override log directory |

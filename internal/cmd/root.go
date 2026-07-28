@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/cangyunye/go-owl-migrate/internal/paths"
 )
 
 var (
@@ -27,8 +29,14 @@ var rootCmd = &cobra.Command{
 and generates DDL, SELECT, INSERT statements and data export/import pipelines.
 
 Supported dialects: oracle, postgres, mysql
-Supported metadata sources: csv, xlsx, database`,
+Supported metadata sources: csv, xlsx, database
+
+Config resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml`,
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commitID, buildTime),
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		cfgFile = paths.ResolveConfigPath(cfgFile)
+		return nil
+	},
 }
 
 // Execute runs the root command.
@@ -40,7 +48,7 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "./migrate.yaml", "config file path")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default: ./migrate.yaml or ~/.owl/migrate/migrate.yaml)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "override log level (debug/info/warn/error)")
 
 	rootCmd.PersistentFlags().StringVar(&progressDB, "progress-db", "", "path to shared SQLite database for progress events (worker mode)")
