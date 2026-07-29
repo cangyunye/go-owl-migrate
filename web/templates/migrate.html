@@ -10,8 +10,17 @@
 <p class="mode-desc" id="mode-desc"></p>
 
 <div class="panel">
-    <button class="btn-primary" id="btn-start" onclick="startMigrate()">开始迁移</button>
-    <button class="btn-danger" id="btn-cancel" onclick="jobUI.cancel()" style="display:none">取消</button>
+    <h3>迁移选项</h3>
+    <div class="field">
+        <label><input type="checkbox" id="opt-skip-ddl"> 跳过建表（--skip-ddl，仅导数据）</label>
+    </div>
+    <div class="field">
+        <label><input type="checkbox" id="opt-continue-on-error"> 部分表失败不中断（--continue-on-error）</label>
+    </div>
+    <div class="form-actions">
+        <button class="btn-primary" id="btn-start" onclick="startMigrate()">开始迁移</button>
+        <button class="btn-danger" id="btn-cancel" onclick="jobUI.cancel()" style="display:none">取消</button>
+    </div>
 </div>
 <div id="progress-panel" class="panel" style="display:none">
     <h3>进度 <span class="badge" id="job-id-badge"></span></h3>
@@ -46,8 +55,13 @@ let completedJobId = null;
 let outputFileCount = 0;
 
 async function startMigrate() {
-    try { await jobUI.start('/api/v1/migrate', { mode: mode }); }
-    catch (e) { alert('启动失败: ' + e.message); }
+    try {
+        await jobUI.start('/api/v1/migrate', {
+            mode: mode,
+            skip_ddl: document.getElementById('opt-skip-ddl').checked,
+            continue_on_error: document.getElementById('opt-continue-on-error').checked,
+        });
+    } catch (e) { alert('启动失败: ' + e.message); }
 }
 
 // After a sql-out job completes, surface its output location + download options.

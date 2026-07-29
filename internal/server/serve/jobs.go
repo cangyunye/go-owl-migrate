@@ -28,7 +28,9 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request, jobType string
 	}
 
 	var body struct {
-		Mode string `json:"mode"`
+		Mode            string `json:"mode"`
+		SkipDDL         bool   `json:"skip_ddl"`
+		ContinueOnError bool   `json:"continue_on_error"`
 	}
 	json.NewDecoder(r.Body).Decode(&body)
 
@@ -38,6 +40,12 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request, jobType string
 	}
 	if body.Mode != "" {
 		payload["mode"] = body.Mode
+	}
+	if body.SkipDDL {
+		payload["skip_ddl"] = true
+	}
+	if body.ContinueOnError {
+		payload["continue_on_error"] = true
 	}
 	if resumeFrom := r.URL.Query().Get("resume_from"); resumeFrom != "" {
 		payload["resume_from"] = resumeFrom

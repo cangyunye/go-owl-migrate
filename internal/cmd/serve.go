@@ -226,6 +226,12 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) 
 		if req.Mode == "sql-out" {
 			args = append(args, "--sql-out", filepath.Join(req.TempDir, "insert"))
 		}
+		if req.SkipDDL {
+			args = append(args, "--skip-ddl")
+		}
+		if req.ContinueOnError {
+			args = append(args, "--continue-on-error")
+		}
 	}
 
 	cmd := exec.Command(exe, args...)

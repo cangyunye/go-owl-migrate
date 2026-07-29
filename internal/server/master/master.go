@@ -18,14 +18,16 @@ import (
 )
 
 type SpawnRequest struct {
-	JobID      string
-	JobType    string
-	Mode       string // for migrate: "direct" | "sql-out"
-	Resume     bool   // resume from a previous job's checkpoint
-	ConfigPath string
-	DBPath     string
-	ParentPID  int
-	TempDir    string
+	JobID           string
+	JobType         string
+	Mode            string // for migrate: "direct" | "sql-out"
+	Resume          bool   // resume from a previous job's checkpoint
+	SkipDDL         bool   // skip table creation in target (data-only)
+	ContinueOnError bool   // exit 0 even if some tables have errors
+	ConfigPath      string
+	DBPath          string
+	ParentPID       int
+	TempDir         string
 }
 
 type Spawner interface {
@@ -85,10 +87,12 @@ func (m *Master) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type       string          `json:"type"`
-		Mode       string          `json:"mode"`
-		Config     json.RawMessage `json:"config"`
-		ResumeFrom string          `json:"resume_from"`
+		Type            string          `json:"type"`
+		Mode            string          `json:"mode"`
+		Config          json.RawMessage `json:"config"`
+		ResumeFrom      string          `json:"resume_from"`
+		SkipDDL         bool            `json:"skip_ddl"`
+		ContinueOnError bool            `json:"continue_on_error"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
@@ -127,14 +131,16 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pid, wait, err := m.spawner.Spawn(SpawnRequest{
-		JobID:      jobID,
-		JobType:    req.Type,
-		Mode:       req.Mode,
-		Resume:     resume,
-		ConfigPath: configPath,
-		DBPath:     m.dbPath,
-		ParentPID:  os.Getpid(),
-		TempDir:    workerTempDir,
+		JobID:           jobID,
+		JobType:         req.Type,
+		Mode:            req.Mode,
+		Resume:          resume,
+		SkipDDL:         req.SkipDDL,
+		ContinueOnError: req.ContinueOnError,
+		ConfigPath:      configPath,
+		DBPath:          m.dbPath,
+		ParentPID:       os.Getpid(),
+		TempDir:         workerTempDir,
 	})
 	if err != nil {
 		m.store.UpdateJobStatus(jobID, "failed")
