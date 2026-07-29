@@ -43,3 +43,10 @@ coverage.out
 # Claude memory
 memory/
 .reasonix/
+
+# Tool config
+.codegraph/
+reasonix.toml
+
+# Docs site local symlink (docs-site/docs -> ../docs)
+docs-site/docs

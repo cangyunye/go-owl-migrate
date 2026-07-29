@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>go-owl-migrate 文档</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23722ed1' stroke-width='2'%3E%3Cellipse cx='12' cy='5' rx='9' ry='3'/%3E%3Cpath d='M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5'/%3E%3Cpath d='M3 12c0 1.66 4 3 9 3s9-1.34 9-3'/%3E%3C/svg%3E">
+<style>
+:root{
+  --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+  --font-mono:"SF Mono","JetBrains Mono","Fira Code",Monaco,Menlo,"Ubuntu Mono",Consolas,monospace;
+}
+.light-theme{
+  --bg:#f0f2f5; --card:#ffffff; --border:#e8e8e8; --border-strong:#d9d9d9;
+  --text:#262626; --text-secondary:#666; --text-tertiary:#8b949e;
+  --hover:#f0f1f3; --primary:#1890ff; --primary-bg:#e6f4ff; --code-bg:#f6f8fa;
+  --grid:rgba(0,0,0,0.05); --shadow:0 1px 2px rgba(0,0,0,0.04),0 4px 16px rgba(0,0,0,0.06);
+  --shadow-hover:0 2px 4px rgba(0,0,0,0.06),0 8px 28px rgba(24,144,255,0.12);
+  --glow:rgba(24,144,255,0.10);
+}
+.dark-theme{
+  --bg:#0d1117; --card:#161b22; --border:#30363d; --border-strong:#3d444d;
+  --text:#f0f6fc; --text-secondary:#8b949e; --text-tertiary:#6e7681;
+  --hover:#21262d; --primary:#58a6ff; --primary-bg:rgba(56,139,253,0.15); --code-bg:#0d1117;
+  --grid:rgba(255,255,255,0.035); --shadow:0 1px 2px rgba(0,0,0,0.4),0 4px 16px rgba(0,0,0,0.35);
+  --shadow-hover:0 2px 4px rgba(0,0,0,0.5),0 8px 28px rgba(88,166,255,0.14);
+  --glow:rgba(88,166,255,0.08);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font-sans);
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  transition:background .3s ease,color .3s ease;
+  overflow-x:hidden;
+}
+::selection{background:var(--primary);color:#fff}
+
+/* ===== ambient background ===== */
+.page-background{position:fixed;inset:0;pointer-events:none;z-index:0}
+.bg-grid{
+  position:absolute;inset:0;opacity:.6;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:24px 24px;
+  mask-image:radial-gradient(ellipse at 50% 0%,#000 0%,transparent 75%);
+  -webkit-mask-image:radial-gradient(ellipse at 50% 0%,#000 0%,transparent 75%);
+}
+.bg-glow{
+  position:absolute;inset:-20%;
+  background:
+    radial-gradient(600px 400px at 15% 10%,var(--glow),transparent 70%),
+    radial-gradient(700px 500px at 85% 15%,var(--glow),transparent 70%);
+  animation:glowDrift 24s ease-in-out infinite alternate;
+}
+@keyframes glowDrift{
+  0%{transform:translate(0,0) scale(1)}
+  100%{transform:translate(3%,2%) scale(1.06)}
+}
+
+/* ===== reading progress ===== */
+.reading-progress{position:fixed;top:0;left:0;right:0;height:3px;z-index:100;background:transparent}
+.reading-progress-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--primary),#722ed1);transition:width .1s linear;box-shadow:0 0 8px var(--primary)}
+
+/* ===== layout shell ===== */
+.doc-page{position:relative;z-index:1;max-width:1440px;margin:0 auto;padding:0 28px 40px}
+
+/* ===== header ===== */
+.page-header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:34px 0 22px;position:relative}
+.header-decoration{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.deco-line{width:64px;height:2px;border-radius:1px;background:var(--border-strong);position:relative;overflow:hidden}
+.deco-line::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,var(--primary),transparent);transform:translateX(-100%);animation:shimmer 4s ease-in-out infinite}
+.header-decoration.right .deco-line::after{animation-delay:2s}
+@keyframes shimmer{0%{transform:translateX(-100%)}55%,100%{transform:translateX(100%)}}
+.deco-circle{width:9px;height:9px;border-radius:50%;border:2px solid var(--border-strong);animation:circlePulse 3s ease-in-out infinite}
+.header-decoration.right .deco-circle{animation-delay:1.5s}
+@keyframes circlePulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.35);opacity:1;border-color:var(--primary)}}
+.header-content{flex:1;text-align:center}
+.main-title{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:10px}
+.title-icon{display:inline-flex;color:#722ed1;animation:iconFloat 5s ease-in-out infinite}
+@keyframes iconFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+.title-icon svg{width:34px;height:34px}
+.title-text{font-size:30px;font-weight:700;letter-spacing:-.5px}
+.title-text .mono{font-family:var(--font-mono);font-weight:600}
+.title-text .accent{color:var(--text-secondary);font-weight:500;margin-left:6px}
+.subtitle{font-size:14px;color:var(--text-secondary)}
+.header-stats{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap}
+.stat-chip{
+  display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);
+  background:var(--card);border:1px solid var(--border);border-radius:999px;padding:4px 12px;
+  transition:transform .2s ease,border-color .2s ease,color .2s ease;
+}
+.stat-chip:hover{transform:translateY(-2px);border-color:var(--primary);color:var(--primary)}
+.stat-chip b{font-family:var(--font-mono);font-weight:600;color:var(--primary)}
+.theme-toggle{
+  position:absolute;top:30px;right:0;width:38px;height:38px;border-radius:10px;
+  border:1px solid var(--border);background:var(--card);color:var(--text-secondary);
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .25s ease;
+}
+.theme-toggle:hover{border-color:var(--primary);color:var(--primary);transform:rotate(15deg) scale(1.08);box-shadow:var(--shadow-hover)}
+.theme-toggle svg{width:18px;height:18px}
+
+/* ===== search bar ===== */
+.search-bar{display:flex;justify-content:center;gap:12px;margin-bottom:26px;flex-wrap:wrap}
+.search-wrap{
+  position:relative;display:flex;align-items:center;width:100%;max-width:560px;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:0 14px;transition:all .25s ease;box-shadow:var(--shadow);
+}
+.search-wrap:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-bg),var(--shadow)}
+.search-icon{display:flex;color:var(--text-tertiary);flex:0 0 auto}
+.search-icon svg{width:16px;height:16px}
+.search-wrap input{
+  flex:1;border:none;outline:none;background:transparent;color:var(--text);
+  font-size:14px;font-family:var(--font-sans);padding:12px 10px;
+}
+.search-wrap input::placeholder{color:var(--text-tertiary)}
+.search-wrap kbd{
+  font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);
+  border:1px solid var(--border);border-radius:5px;padding:2px 7px;background:var(--hover);
+  flex:0 0 auto;transition:opacity .2s;
+}
+.search-wrap:focus-within kbd{opacity:0}
+.category-select{
+  position:relative;background:var(--card);border:1px solid var(--border);border-radius:10px;
+  box-shadow:var(--shadow);transition:all .25s ease;
+}
+.category-select:hover{border-color:var(--primary)}
+.category-select select{
+  appearance:none;-webkit-appearance:none;border:none;outline:none;background:transparent;
+  color:var(--text);font-size:14px;font-family:var(--font-sans);
+  padding:12px 40px 12px 16px;cursor:pointer;min-width:150px;
+}
+.category-select::after{
+  content:"";position:absolute;right:16px;top:50%;transform:translateY(-70%) rotate(45deg);
+  width:7px;height:7px;border-right:2px solid var(--text-tertiary);border-bottom:2px solid var(--text-tertiary);
+  pointer-events:none;
+}
+
+/* ===== content layout ===== */
+.content-layout{display:grid;grid-template-columns:400px 1fr;gap:24px;height:calc(100vh - 265px);min-height:480px}
+.list-panel,.detail-panel{height:100%;overflow:hidden;min-width:0}
+.card{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  box-shadow:var(--shadow);height:100%;display:flex;flex-direction:column;
+  transition:border-color .25s ease,box-shadow .25s ease;overflow:hidden;
+}
+.card:hover{border-color:var(--border-strong)}
+.list-card:hover{box-shadow:var(--shadow-hover)}
+.list-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;border-bottom:1px solid var(--border);flex:0 0 auto;
+}
+.list-header .label{font-size:13px;font-weight:600;color:var(--text-secondary);letter-spacing:.5px;text-transform:uppercase}
+.count-badge{
+  font-family:var(--font-mono);font-size:12px;color:var(--primary);
+  background:var(--primary-bg);border-radius:999px;padding:2px 10px;font-weight:600;
+}
+.doc-list{flex:1;overflow-y:auto;padding:16px}
+
+/* ===== doc list ===== */
+.category-group{margin-bottom:22px}
+.category-group:last-child{margin-bottom:6px}
+.category-header{
+  display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;
+  border-bottom:1px solid var(--border);
+}
+.category-header .cat-icon{display:flex}
+.category-header .cat-icon svg{width:14px;height:14px}
+.category-name{font-weight:600;font-size:14px}
+.category-count{
+  margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);
+  background:var(--hover);border-radius:999px;padding:1px 8px;
+}
+.doc-items{display:flex;flex-direction:column;gap:8px}
+.doc-item{
+  position:relative;padding:12px 14px;border-radius:8px;cursor:pointer;
+  border:1px solid transparent;background:transparent;overflow:hidden;
+  transition:background .2s ease,border-color .2s ease,transform .2s ease;
+  animation:itemIn .4s ease both;
+}
+@keyframes itemIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.doc-item::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:0 3px 3px 0;
+  background:var(--cat-color,var(--primary));transform:scaleY(0);transform-origin:center;
+  transition:transform .25s ease;
+}
+.doc-item:hover{background:var(--hover);border-color:var(--border);transform:translateX(4px)}
+.doc-item:hover::before{transform:scaleY(1)}
+.doc-item.selected{background:var(--primary-bg);border-color:var(--primary)}
+.doc-item.selected::before{transform:scaleY(1)}
+.doc-name-row{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+.doc-name-en{font-family:var(--font-mono);font-size:13.5px;font-weight:600;color:var(--primary)}
+.doc-name-zh{font-size:12px;color:var(--text-secondary)}
+.doc-desc{
+  font-size:12px;color:var(--text-tertiary);line-height:1.6;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:var(--text-tertiary);text-align:center;gap:14px}
+.empty-state svg{width:48px;height:48px;opacity:.4}
+.empty-state .msg{font-size:14px}
+.empty-state button{
+  border:1px solid var(--border);background:var(--hover);color:var(--text-secondary);
+  border-radius:8px;padding:6px 16px;font-size:13px;cursor:pointer;transition:all .2s;
+}
+.empty-state button:hover{border-color:var(--primary);color:var(--primary)}
+
+/* ===== detail ===== */
+.detail-card{overflow:hidden}
+.doc-detail{flex:1;overflow-y:auto;padding:26px 32px 60px;scroll-behavior:smooth}
+.detail-inner{animation:detailIn .35s ease both;max-width:860px}
+@keyframes detailIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.detail-header{margin-bottom:26px;padding-bottom:18px;border-bottom:1px solid var(--border)}
+.breadcrumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-tertiary);margin-bottom:16px;flex-wrap:wrap}
+.breadcrumb a{color:var(--text-secondary);text-decoration:none;transition:color .2s}
+.breadcrumb a:hover{color:var(--primary)}
+.breadcrumb .sep{opacity:.5}
+.breadcrumb .current{color:var(--text)}
+.doc-title-row{display:flex;align-items:center;gap:14px;margin-bottom:10px;flex-wrap:wrap}
+.category-tag{
+  font-size:12px;padding:2px 10px;border-radius:6px;font-weight:500;
+  color:#fff;background:var(--cat-color,var(--primary));
+  box-shadow:0 2px 6px color-mix(in srgb,var(--cat-color,var(--primary)) 40%,transparent);
+}
+.doc-title-en{font-family:var(--font-mono);font-size:25px;font-weight:700;letter-spacing:-.3px}
+.doc-title-zh{font-size:17px;color:var(--text-secondary);font-weight:500}
+.doc-description{font-size:14px;color:var(--text-secondary);display:block;margin-top:6px;line-height:1.7}
+
+/* ===== markdown ===== */
+.markdown-content{line-height:1.8;font-size:14.5px;color:var(--text)}
+.markdown-content h1{font-size:24px;margin:26px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.markdown-content h2{font-size:20px;margin:24px 0 12px;scroll-margin-top:20px}
+.markdown-content h3{font-size:16px;margin:18px 0 8px;scroll-margin-top:20px}
+.markdown-content h4{font-size:14.5px;margin:14px 0 6px}
+.markdown-content p{margin-bottom:12px}
+.markdown-content a{color:var(--primary);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .2s}
+.markdown-content a:hover{border-bottom-color:var(--primary)}
+.markdown-content strong{font-weight:600}
+.markdown-content blockquote{
+  border-left:3px solid var(--primary);background:var(--primary-bg);
+  padding:10px 16px;margin:14px 0;border-radius:0 8px 8px 0;color:var(--text-secondary);
+}
+.table-wrap{overflow-x:auto;margin:16px 0;border:1px solid var(--border);border-radius:8px}
+.markdown-content table{width:100%;border-collapse:collapse;font-size:13.5px}
+.markdown-content th,.markdown-content td{padding:9px 14px;text-align:left;border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
+.markdown-content th:last-child,.markdown-content td:last-child{border-right:none}
+.markdown-content tr:last-child td{border-bottom:none}
+.markdown-content th{background:var(--hover);font-weight:600;white-space:nowrap}
+.markdown-content tbody tr{transition:background .15s}
+.markdown-content tbody tr:hover{background:var(--hover)}
+.markdown-content ul,.markdown-content ol{margin:12px 0;padding-left:26px}
+.markdown-content li{margin-bottom:5px}
+.markdown-content hr{border:none;border-top:1px solid var(--border);margin:24px 0}
+.markdown-content code{
+  font-family:var(--font-mono);font-size:.88em;background:var(--hover);
+  padding:2px 6px;border-radius:5px;color:var(--primary);
+}
+.code-block{margin:16px 0;border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:border-color .25s}
+.code-block:hover{border-color:var(--border-strong)}
+.code-header{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--hover);padding:7px 14px;border-bottom:1px solid var(--border);
+}
+.code-lang{font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px}
+.copy-btn{
+  display:inline-flex;align-items:center;gap:5px;border:none;background:transparent;
+  color:var(--text-tertiary);font-size:12px;font-family:var(--font-sans);cursor:pointer;
+  padding:3px 8px;border-radius:6px;transition:all .2s;
+}
+.copy-btn:hover{background:var(--card);color:var(--primary)}
+.copy-btn.copied{color:#52c41a}
+.copy-btn svg{width:13px;height:13px}
+.code-block pre{margin:0;background:var(--code-bg);padding:16px;overflow-x:auto}
+.code-block pre code{background:transparent;padding:0;color:var(--text);font-size:13px;line-height:1.7}
+
+/* ===== loading ===== */
+.loading{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:80px 0;color:var(--text-tertiary);font-size:13px}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== scrollbars ===== */
+.doc-list::-webkit-scrollbar,.doc-detail::-webkit-scrollbar,.code-block pre::-webkit-scrollbar{width:8px;height:8px}
+.doc-list::-webkit-scrollbar-thumb,.doc-detail::-webkit-scrollbar-thumb,.code-block pre::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.doc-list::-webkit-scrollbar-thumb:hover,.doc-detail::-webkit-scrollbar-thumb:hover{background:var(--text-tertiary)}
+.doc-list::-webkit-scrollbar-track,.doc-detail::-webkit-scrollbar-track{background:transparent}
+
+/* ===== responsive ===== */
+@media (max-width:1024px){
+  .content-layout{grid-template-columns:1fr;height:auto}
+  .list-panel{max-height:340px}
+  .detail-panel{min-height:60vh}
+  .header-decoration{display:none}
+  .doc-page{padding:0 16px 32px}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+<div id="app" class="doc-page">
+  <div class="reading-progress"><div class="reading-progress-bar" id="progress-bar"></div></div>
+  <div class="page-background"><div class="bg-grid"></div><div class="bg-glow"></div></div>
+
+  <header class="page-header">
+    <div class="header-decoration left"><div class="deco-line"></div><div class="deco-circle"></div></div>
+    <div class="header-content">
+      <h1 class="main-title">
+        <span class="title-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>
+        </span>
+        <span class="title-text"><span class="mono">go-owl-migrate</span><span class="accent">文档</span></span>
+      </h1>
+      <p class="subtitle">离线优先的数据库迁移工具 · 结构迁移 / 数据迁移 / 方言映射</p>
+      <div class="header-stats" id="header-stats"></div>
+    </div>
+    <div class="header-decoration right"><div class="deco-circle"></div><div class="deco-line"></div></div>
+    <button class="theme-toggle" id="theme-toggle" title="切换主题" aria-label="切换主题"></button>
+  </header>
+
+  <div class="search-bar">
+    <div class="search-wrap">
+      <span class="search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
+      <input id="search-input" type="text" placeholder="搜索文档（中英文均可）" autocomplete="off">
+      <kbd>/</kbd>
+    </div>
+    <div class="category-select">
+      <select id="category-select" aria-label="按分类筛选"></select>
+    </div>
+  </div>
+
+  <div class="content-layout">
+    <aside class="list-panel">
+      <div class="card list-card">
+        <div class="list-header">
+          <span class="label">文档目录</span>
+          <span class="count-badge" id="count-badge">0</span>
+        </div>
+        <div class="doc-list" id="doc-list"></div>
+      </div>
+    </aside>
+    <main class="detail-panel">
+      <div class="card detail-card">
+        <div class="doc-detail" id="doc-detail"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="vendor/marked.min.js"></script>
+<script>
+"use strict";
+
+const CATEGORIES = {
+  guide:    { name: "快速入门",   color: "#1890ff" },
+  cli:      { name: "命令参考",   color: "#722ed1" },
+  config:   { name: "配置说明",   color: "#faad14" },
+  pipeline: { name: "迁移流程",   color: "#52c41a" },
+  metadata: { name: "元数据查询", color: "#eb2f96" },
+  dev:      { name: "开发测试",   color: "#f5222d" },
+  design:   { name: "设计文档",   color: "#13c2c2" },
+  testplan: { name: "测试计划",   color: "#fa8c16" }
+};
+
+const DOCS = [
+  { path:"index.md", en:"Overview", zh:"文档总览", cat:"guide", desc:"文档索引、支持数据库矩阵与快速上手命令" },
+  { path:"getting-started.md", en:"Getting Started", zh:"快速开始", cat:"guide", desc:"安装构建与配置生成的快速入门指南" },
+  { path:"cli-commands.md", en:"CLI Commands", zh:"命令参考", cat:"cli", desc:"export ddl/data/insert、gen-select、import、migrate 完整命令参考" },
+  { path:"config.md", en:"Configuration", zh:"配置说明", cat:"config", desc:"所有配置项说明与示例" },
+  { path:"csv-format.md", en:"CSV Metadata Format", zh:"CSV 元数据格式", cat:"config", desc:"离线 Schema 定义的 CSV 文件格式" },
+  { path:"migration-pipeline.md", en:"Migration Pipeline", zh:"迁移流水线", cat:"pipeline", desc:"端到端导出/导入流水线、断点续传、错误处理与编码" },
+  { path:"dialect-mapping.md", en:"Dialect & Type Mapping", zh:"方言与类型映射", cat:"pipeline", desc:"支持的方言、类型映射体系与数据库特有行为" },
+  { path:"database-metadata/index.md", en:"Metadata Index", zh:"元数据查询总览", cat:"metadata", desc:"各数据库元数据查询方案与提取架构索引" },
+  { path:"database-metadata/oracle.md", en:"Oracle Metadata", zh:"Oracle 元数据查询", cat:"metadata", desc:"Oracle 字典视图九大类元数据查询 SQL" },
+  { path:"database-metadata/postgresql.md", en:"PostgreSQL Metadata", zh:"PostgreSQL 元数据查询", cat:"metadata", desc:"PG 系统视图八大类元数据查询 SQL" },
+  { path:"database-metadata/mysql.md", en:"MySQL Metadata", zh:"MySQL 元数据查询", cat:"metadata", desc:"MySQL information_schema 八大类元数据查询" },
+  { path:"database-metadata/duckdb.md", en:"DuckDB Metadata", zh:"DuckDB 元数据查询", cat:"metadata", desc:"DuckDB 元数据查询 SQL 及字段获取限制" },
+  { path:"database-metadata/sqlite3.md", en:"SQLite3 Metadata", zh:"SQLite3 元数据查询", cat:"metadata", desc:"SQLite 系统表与 PRAGMA 命令元数据查询" },
+  { path:"database-metadata/compound-dialects.md", en:"Compound Dialects", zh:"组合方言元数据查询", cat:"metadata", desc:"GoldenDB/OceanBase 等组合方言到基础提取器的映射" },
+  { path:"database-metadata/runtime-data-migration.md", en:"Runtime Data Migration", zh:"运行时数据迁移 SQL", cat:"metadata", desc:"导出导入运行时的游标分页与写入 SQL 模式" },
+  { path:"development.md", en:"Developer Guide", zh:"开发者指南", cat:"dev", desc:"环境要求、项目结构与模块说明、方言扩展" },
+  { path:"e2e-test-manual.md", en:"E2E Test Manual", zh:"E2E 测试用例手册", cat:"dev", desc:"基于 Docker 数据库容器的手动 E2E 测试用例" },
+  { path:"plans/prd-web-service.md", en:"PRD — Web Service", zh:"产品需求文档", cat:"design", desc:"Web 服务产品需求、方案概述与用户故事" },
+  { path:"plans/adr-web-service.md", en:"ADR — Web Service", zh:"架构决策记录", cat:"design", desc:"Web 服务架构决策记录（进度上报等 ADR）" },
+  { path:"plans/glossary-web-service.md", en:"Glossary", zh:"术语表", cat:"design", desc:"Web 服务术语表：进程、数据存储与网络概念" },
+  { path:"plans/documentation-management.md", en:"Documentation Mgmt", zh:"文档管理", cat:"design", desc:"Web 服务文档目录结构与受众划分管理规划" },
+  { path:"plans/e2e-test-design.md", en:"E2E Test Design", zh:"E2E 测试设计", cat:"design", desc:"Web 服务端到端测试架构、环境与用例设计" },
+  { path:"plans/unit-test-design.md", en:"Unit Test Design", zh:"单元测试设计", cat:"design", desc:"Web 服务各模块单元测试规范与用例设计" },
+  { path:"plans/2026-07-26-remaining-work.md", en:"Remaining Work", zh:"剩余工作实施计划", cat:"design", desc:"清理死配置、补齐方言特性与测试缺口" },
+  { path:"test-plans/goldendb-mysql.md", en:"GoldenDB MySQL", zh:"GoldenDB MySQL 租户测试", cat:"testplan", desc:"GoldenDB MySQL 租户方言继承关系与 E2E 测试" },
+  { path:"test-plans/goldendb-oracle.md", en:"GoldenDB Oracle", zh:"GoldenDB Oracle 租户测试", cat:"testplan", desc:"GoldenDB Oracle 租户方言继承关系与 E2E 测试" },
+  { path:"test-plans/oceanbase-mysql.md", en:"OceanBase MySQL", zh:"OceanBase MySQL 租户测试", cat:"testplan", desc:"OceanBase MySQL 租户方言差异与 E2E 测试方案" },
+  { path:"test-plans/oceanbase-oracle.md", en:"OceanBase Oracle", zh:"OceanBase Oracle 租户测试", cat:"testplan", desc:"OceanBase Oracle 租户方言差异与 E2E 测试方案" },
+  { path:"test-plans/opengaussdb.md", en:"OpenGaussDB", zh:"OpenGaussDB 测试", cat:"testplan", desc:"OpenGaussDB 方言继承关系、差异与 E2E 测试" },
+  { path:"test-plans/panweidb.md", en:"PanWeiDB PG", zh:"PanWeiDB PG 模式测试", cat:"testplan", desc:"PanWeiDB PG 模式方言继承关系与 E2E 测试方案" },
+  { path:"test-plans/panweidb-mysql.md", en:"PanWeiDB MySQL (B)", zh:"PanWeiDB B 模式测试", cat:"testplan", desc:"PanWeiDB B 模式 MySQL 兼容方言 E2E 测试方案" },
+  { path:"test-plans/panweidb-oracle.md", en:"PanWeiDB Oracle (A)", zh:"PanWeiDB A 模式测试", cat:"testplan", desc:"PanWeiDB A 模式 Oracle 兼容方言 E2E 测试方案" }
+];
+
+const BASE_CANDIDATES = ["../docs", "docs", "/docs"];
+let DOCS_BASE = BASE_CANDIDATES[0];
+const state = { query: "", category: "all", current: null, theme: "light" };
+
+async function detectBase(){
+  for (const base of BASE_CANDIDATES){
+    try {
+      const res = await fetch(`${base}/index.md`, { method: "HEAD" });
+      if (res.ok){ DOCS_BASE = base; return; }
+    } catch (e){}
+  }
+}
+
+const $ = id => document.getElementById(id);
+const listEl = $("doc-list"), detailEl = $("doc-detail");
+const searchEl = $("search-input"), catEl = $("category-select");
+const badgeEl = $("count-badge"), progressBar = $("progress-bar");
+
+const ICONS = {
+  tag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29a1 1 0 0 0 1.42 0l8.58-8.58a1 1 0 0 0 0-1.42z"/><circle cx="7" cy="7" r="1.5"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+  empty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/></svg>'
+};
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+
+function initTheme(){
+  const saved = localStorage.getItem("owl-docs-theme");
+  state.theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  applyTheme();
+}
+function applyTheme(){
+  document.body.className = state.theme === "dark" ? "dark-theme" : "light-theme";
+  $("theme-toggle").innerHTML = state.theme === "dark" ? ICONS.sun : ICONS.moon;
+  localStorage.setItem("owl-docs-theme", state.theme);
+}
+$("theme-toggle").addEventListener("click", () => {
+  state.theme = state.theme === "dark" ? "light" : "dark";
+  applyTheme();
+});
+
+function initStats(){
+  const cats = new Set(DOCS.map(d => d.cat)).size;
+  $("header-stats").innerHTML =
+    `<span class="stat-chip"><b>${DOCS.length}</b> 篇文档</span>` +
+    `<span class="stat-chip"><b>${cats}</b> 个分类</span>` +
+    `<span class="stat-chip"><b>11</b> 种数据库</span>` +
+    `<span class="stat-chip"><b>Oracle → PG / MySQL / GoldenDB / OceanBase</b></span>`;
+}
+
+function initCategorySelect(){
+  const opts = [{ v:"all", l:"全部分类" }].concat(
+    Object.entries(CATEGORIES).map(([v, c]) => ({ v, l: c.name }))
+  );
+  catEl.innerHTML = opts.map(o => `<option value="${o.v}">${o.l}</option>`).join("");
+  catEl.addEventListener("change", () => { state.category = catEl.value; renderList(); });
+}
+
+function filteredDocs(){
+  const q = state.query.trim().toLowerCase();
+  return DOCS.filter(d => {
+    if (state.category !== "all" && d.cat !== state.category) return false;
+    if (!q) return true;
+    return d.en.toLowerCase().includes(q) || d.zh.includes(state.query.trim()) ||
+           d.desc.toLowerCase().includes(q) || d.path.toLowerCase().includes(q);
+  });
+}
+
+function renderList(){
+  const docs = filteredDocs();
+  badgeEl.textContent = docs.length;
+
+  if (!docs.length){
+    listEl.innerHTML =
+      `<div class="empty-state">${ICONS.empty}<div class="msg">未找到匹配的文档</div>` +
+      `<button id="clear-filter">清除筛选</button></div>`;
+    $("clear-filter").addEventListener("click", () => {
+      state.query = ""; searchEl.value = ""; state.category = "all"; catEl.value = "all"; renderList();
+    });
+    return;
+  }
+
+  const groups = {};
+  docs.forEach(d => { (groups[d.cat] = groups[d.cat] || []).push(d); });
+
+  let html = "", idx = 0;
+  for (const [cat, items] of Object.entries(groups)){
+    const c = CATEGORIES[cat];
+    html += `<div class="category-group">
+      <div class="category-header">
+        <span class="cat-icon" style="color:${c.color}">${ICONS.tag}</span>
+        <span class="category-name">${c.name}</span>
+        <span class="category-count">${items.length}</span>
+      </div><div class="doc-items">`;
+    for (const d of items){
+      const sel = state.current === d.path ? " selected" : "";
+      const delay = Math.min(idx * 35, 350);
+      html += `<div class="doc-item${sel}" data-path="${d.path}" style="--cat-color:${c.color};animation-delay:${delay}ms">
+        <div class="doc-name-row"><span class="doc-name-en">${escapeHtml(d.en)}</span><span class="doc-name-zh">${escapeHtml(d.zh)}</span></div>
+        <div class="doc-desc">${escapeHtml(d.desc)}</div></div>`;
+      idx++;
+    }
+    html += `</div></div>`;
+  }
+  listEl.innerHTML = html;
+
+  listEl.querySelectorAll(".doc-item").forEach(el => {
+    el.addEventListener("click", () => navigate(el.dataset.path));
+  });
+}
+
+function markSelected(){
+  listEl.querySelectorAll(".doc-item").forEach(el => {
+    el.classList.toggle("selected", el.dataset.path === state.current);
+  });
+}
+
+function resolveDocPath(base, href){
+  if (/^https?:\/\//i.test(href)) return null;
+  href = href.split("#")[0];
+  if (!href.endsWith(".md")) return null;
+  const parts = base.split("/"); parts.pop();
+  href.split("/").forEach(seg => {
+    if (seg === "..") parts.pop();
+    else if (seg !== "." && seg !== "") parts.push(seg);
+  });
+  if (parts[0] === "docs") parts.shift();
+  return parts.join("/");
+}
+
+function decorateMarkdown(container, docPath){
+  container.querySelectorAll("pre").forEach(pre => {
+    const code = pre.querySelector("code");
+    const m = code && code.className.match(/language-([\w+-]+)/);
+    const lang = m ? m[1] : "text";
+    const block = document.createElement("div");
+    block.className = "code-block";
+    block.innerHTML = `<div class="code-header"><span class="code-lang">${escapeHtml(lang)}</span>` +
+      `<button class="copy-btn">${ICONS.copy}<span>复制</span></button></div>`;
+    pre.parentNode.insertBefore(block, pre);
+    block.appendChild(pre);
+    block.querySelector(".copy-btn").addEventListener("click", function(){
+      const text = pre.innerText;
+      const done = () => {
+        this.classList.add("copied");
+        this.innerHTML = ICONS.check + "<span>已复制</span>";
+        setTimeout(() => { this.classList.remove("copied"); this.innerHTML = ICONS.copy + "<span>复制</span>"; }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(done).catch(done);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch(e){}
+        document.body.removeChild(ta); done();
+      }
+    });
+  });
+
+  container.querySelectorAll("table").forEach(t => {
+    const wrap = document.createElement("div");
+    wrap.className = "table-wrap";
+    t.parentNode.insertBefore(wrap, t);
+    wrap.appendChild(t);
+  });
+
+  container.querySelectorAll("a").forEach(a => {
+    const href = a.getAttribute("href") || "";
+    const target = resolveDocPath(docPath, href);
+    if (target){
+      a.addEventListener("click", e => { e.preventDefault(); navigate(target); });
+    } else if (/^https?:\/\//i.test(href)){
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+
+  container.querySelectorAll("h2, h3").forEach(h => {
+    h.style.scrollMarginTop = "20px";
+  });
+}
+
+async function loadDoc(path){
+  const meta = DOCS.find(d => d.path === path) || {
+    path, en: path.split("/").pop().replace(/\.md$/, ""), zh: "", cat: "guide", desc: ""
+  };
+  state.current = path;
+  markSelected();
+  if (location.hash !== "#/doc/" + path){
+    history.replaceState(null, "", "#/doc/" + path);
+  }
+
+  detailEl.innerHTML = `<div class="loading"><div class="spinner"></div><span>正在加载文档…</span></div>`;
+  detailEl.scrollTop = 0;
+  progressBar.style.width = "0%";
+
+  let md;
+  try {
+    const res = await fetch(`${DOCS_BASE}/${path}`);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    md = await res.text();
+  } catch (err){
+    detailEl.innerHTML = `<div class="empty-state">${ICONS.empty}` +
+      `<div class="msg">文档加载失败（${escapeHtml(String(err.message || err))}）</div>` +
+      `<div class="msg" style="font-size:12px;line-height:1.9">无法定位 docs 目录。请任选一种方式启动 HTTP 服务：<br>` +
+      `① 项目根目录运行 <code style="font-family:var(--font-mono)">python3 -m http.server 8080</code>，访问 <code style="font-family:var(--font-mono)">http://localhost:8080/docs-site/</code><br>` +
+      `② 或以 docs-site 为根：<code style="font-family:var(--font-mono)">python3 -m http.server 8080 -d docs-site</code>（需存在软链 <code style="font-family:var(--font-mono)">docs-site/docs → ../docs</code>）</div></div>`;
+    return;
+  }
+
+  const c = CATEGORIES[meta.cat] || CATEGORIES.guide;
+  const html = marked.parse(md, { gfm: true, breaks: true });
+
+  detailEl.innerHTML = `<div class="detail-inner">
+    <div class="detail-header">
+      <div class="breadcrumb">
+        <a href="#/doc/index.md">文档</a><span class="sep">/</span>
+        <span>${escapeHtml(c.name)}</span><span class="sep">/</span>
+        <span class="current">${escapeHtml(meta.en)}</span>
+      </div>
+      <div class="doc-title-row" style="--cat-color:${c.color}">
+        <span class="category-tag" style="--cat-color:${c.color}">${escapeHtml(c.name)}</span>
+        <span class="doc-title-en">${escapeHtml(meta.en)}</span>
+        ${meta.zh ? `<span class="doc-title-zh">${escapeHtml(meta.zh)}</span>` : ""}
+      </div>
+      ${meta.desc ? `<span class="doc-description">${escapeHtml(meta.desc)}</span>` : ""}
+    </div>
+    <div class="markdown-content">${html}</div>
+  </div>`;
+
+  decorateMarkdown(detailEl.querySelector(".markdown-content"), path);
+}
+
+function navigate(path){
+  if (state.current === path) return;
+  loadDoc(path);
+}
+
+function routeFromHash(){
+  const m = location.hash.match(/^#\/doc\/(.+)$/);
+  if (m){
+    const p = decodeURIComponent(m[1]);
+    if (DOCS.some(d => d.path === p)) return p;
+  }
+  return "index.md";
+}
+
+detailEl.addEventListener("scroll", () => {
+  const max = detailEl.scrollHeight - detailEl.clientHeight;
+  progressBar.style.width = (max > 0 ? (detailEl.scrollTop / max) * 100 : 0) + "%";
+});
+
+searchEl.addEventListener("input", () => { state.query = searchEl.value; renderList(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== searchEl){
+    e.preventDefault(); searchEl.focus();
+  } else if (e.key === "Escape" && document.activeElement === searchEl){
+    searchEl.value = ""; state.query = ""; renderList(); searchEl.blur();
+  }
+});
+
+window.addEventListener("hashchange", () => {
+  const p = routeFromHash();
+  if (p !== state.current) loadDoc(p);
+});
+
+(async function bootstrap(){
+  initTheme();
+  initStats();
+  initCategorySelect();
+  renderList();
+  await detectBase();
+  loadDoc(routeFromHash());
+})();
+</script>
+</body>
+</html>

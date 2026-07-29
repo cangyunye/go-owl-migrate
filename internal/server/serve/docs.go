@@ -1,75 +1,71 @@
 package serve
 
 import (
-	"io"
-	"io/fs"
 	"net/http"
-	"sort"
-	"strings"
-
-	"github.com/cangyunye/go-owl-migrate/web"
+	"os"
+	"path/filepath"
 )
 
-// registerDocs serves the embedded user-guide markdown under /docs.
-// Content is rendered as plain text in a styled page to avoid a
-// markdown-parser dependency.
 func (s *Server) registerDocs(mux *http.ServeMux) {
-	docsFS, _ := fs.Sub(web.FS, "docs")
+	siteDir := findDocsSite()
+	if siteDir == "" {
+		mux.HandleFunc("GET /docs/", func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "docs-site/ directory not found", http.StatusNotFound)
+		})
+		return
+	}
 
-	mux.HandleFunc("GET /docs/{$}", func(w http.ResponseWriter, r *http.Request) {
-		entries, err := fs.ReadDir(docsFS, ".")
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		var names []string
-		for _, e := range entries {
-			if strings.HasSuffix(e.Name(), ".md") {
-				names = append(names, strings.TrimSuffix(e.Name(), ".md"))
-			}
-		}
-		sort.Strings(names)
+	docsDir := resolveDocsDir(siteDir)
 
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		var b strings.Builder
-		b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>文档 - owl-migrate</title>`)
-		b.WriteString(`<link rel="stylesheet" href="/static/css/style.css"></head><body class="docs-body">`)
-		b.WriteString(`<div class="docs-wrap"><h1>owl-migrate 文档</h1><ul class="docs-index">`)
-		for _, n := range names {
-			if n == "index" {
-				continue
-			}
-			b.WriteString(`<li><a href="/docs/` + n + `">` + n + `</a></li>`)
-		}
-		b.WriteString(`</ul><p><a href="/">← 返回</a></p></div></body></html>`)
-		io.WriteString(w, b.String())
+	mux.HandleFunc("GET /docs", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs/", http.StatusMovedPermanently)
 	})
 
-	mux.HandleFunc("GET /docs/{name}", func(w http.ResponseWriter, r *http.Request) {
-		name := r.PathValue("name")
-		if strings.Contains(name, "/") || strings.Contains(name, "..") {
-			http.NotFound(w, r)
-			return
+	if docsDir != "" {
+		mux.Handle("GET /docs/docs/", http.StripPrefix("/docs/docs/", http.FileServer(http.Dir(docsDir))))
+	}
+
+	mux.Handle("GET /docs/", http.StripPrefix("/docs/", http.FileServer(http.Dir(siteDir))))
+}
+
+func findDocsSite() string {
+	candidates := []string{
+		"./docs-site",
+		"../docs-site",
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "docs-site"))
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(filepath.Join(c, "index.html")); err == nil && !info.IsDir() {
+			abs, _ := filepath.Abs(c)
+			return abs
 		}
-		data, err := fs.ReadFile(docsFS, name+".md")
+	}
+	return ""
+}
+
+func resolveDocsDir(siteDir string) string {
+	link := filepath.Join(siteDir, "docs")
+	resolved, err := filepath.EvalSymlinks(link)
+	if err == nil {
+		if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+			return resolved
+		}
+	}
+	candidates := []string{
+		filepath.Join(siteDir, "..", "docs"),
+		"./docs",
+	}
+	for _, c := range candidates {
+		abs, err := filepath.Abs(c)
 		if err != nil {
-			http.NotFound(w, r)
-			return
+			continue
 		}
-
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		var b strings.Builder
-		b.WriteString(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>` + name + ` - owl-migrate</title>`)
-		b.WriteString(`<link rel="stylesheet" href="/static/css/style.css"></head><body class="docs-body">`)
-		b.WriteString(`<div class="docs-wrap"><p><a href="/docs">← 文档列表</a></p>`)
-		b.WriteString(`<pre class="docs-content">` + escapeHTML(string(data)) + `</pre></div></body></html>`)
-		io.WriteString(w, b.String())
-	})
+		if info, err := os.Stat(filepath.Join(abs, "index.md")); err == nil && !info.IsDir() {
+			return abs
+		}
+	}
+	return ""
 }
 
-func escapeHTML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	return s
-}
