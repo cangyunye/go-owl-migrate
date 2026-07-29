@@ -1,0 +1,102 @@
+{{template "base.html" .}}
+{{define "content"}}
+<h1>元数据导出</h1>
+<p class="subtitle">从源库提取元数据并导出为 CSV / SQL 文件（供离线迁移使用）</p>
+
+<div class="panel">
+    <h3>导出参数</h3>
+    <div class="field">
+        <label>数据库类型</label>
+        <select id="em-src-type"></select>
+    </div>
+    <div class="field">
+        <label>DSN</label>
+        <input type="text" id="em-src-dsn" class="mono" placeholder="user/pass@host:port/service">
+        <div class="field-help" id="em-dsn-hint"></div>
+    </div>
+    <div class="field">
+        <label>Schema</label>
+        <input type="text" id="em-src-schema" placeholder="SCOTT">
+    </div>
+    <div class="field">
+        <label>导出格式</label>
+        <select id="em-format">
+            <option value="csv">CSV（多文件）</option>
+            <option value="sql">SQL（INSERT 语句）</option>
+        </select>
+    </div>
+    <div class="field">
+        <label>范围</label>
+        <input type="text" id="em-scope" value="all" placeholder="all / schema:NAME / table:T1,T2">
+        <div class="field-help">all = 整个 schema；schema:NAME = 指定 schema；table:T1,T2 = 指定表</div>
+    </div>
+    <div class="form-actions">
+        <button class="btn-primary" id="btn-export" onclick="doExport()">导出元数据</button>
+        <span id="em-status" class="status-msg"></span>
+    </div>
+</div>
+
+<div class="panel" id="em-result" style="display:none">
+    <h3>导出结果 <span class="badge" id="em-count"></span></h3>
+    <div id="em-files"></div>
+    <div class="form-actions">
+        <a id="em-download" class="btn-primary" href="/api/v1/metadata/export/download">下载 ZIP</a>
+    </div>
+</div>
+{{end}}
+{{define "scripts"}}
+<script>
+let dsnExamples = {};
+(async function init() {
+    const data = await api.get('/api/v1/scenarios');
+    dsnExamples = data.dsn_examples || {};
+    const dialects = (data.scenarios[0].fields.find(f => f.name === 'source_type') || {}).options || [];
+    const sel = document.getElementById('em-src-type');
+    dialects.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
+
+    try {
+        const cfg = await api.get('/api/v1/config');
+        if (cfg.source) {
+            if (cfg.source.type) sel.value = cfg.source.type;
+            if (cfg.source.dsn) document.getElementById('em-src-dsn').value = cfg.source.dsn;
+            if (cfg.source.schema) document.getElementById('em-src-schema').value = cfg.source.schema;
+        }
+    } catch (e) {}
+    sel.addEventListener('change', updateHint);
+    updateHint();
+})();
+
+function updateHint() {
+    const dialect = document.getElementById('em-src-type').value;
+    document.getElementById('em-dsn-hint').textContent = dsnExamples[dialect] ? '格式示例：' + dsnExamples[dialect] : '';
+}
+
+async function doExport() {
+    const status = document.getElementById('em-status');
+    status.textContent = '导出中…'; status.className = 'status-msg';
+    document.getElementById('btn-export').disabled = true;
+    try {
+        const resp = await api.post('/api/v1/metadata/export', {
+            source: {
+                type: document.getElementById('em-src-type').value,
+                dsn: document.getElementById('em-src-dsn').value,
+                schema: document.getElementById('em-src-schema').value,
+            },
+            format: document.getElementById('em-format').value,
+            scope: document.getElementById('em-scope').value,
+        });
+        document.getElementById('em-result').style.display = 'block';
+        document.getElementById('em-count').textContent = resp.table_count + ' 张表，' + resp.count + ' 个文件';
+        const div = document.getElementById('em-files');
+        div.innerHTML = '<ul>' + (resp.files || []).map(f =>
+            `<li class="mono">${f.name} <span class="field-help">(${(f.content || '').length} bytes)</span></li>`
+        ).join('') + '</ul>';
+        status.textContent = '✓ 导出完成'; status.className = 'status-msg ok';
+    } catch (e) {
+        status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+    } finally {
+        document.getElementById('btn-export').disabled = false;
+    }
+}
+</script>
+{{end}}

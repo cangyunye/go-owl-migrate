@@ -100,6 +100,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/insert/download", s.handleDownloadGen("insert"))
 	mux.HandleFunc("GET /api/v1/metadata/validate", s.handleMetadataValidate)
 	mux.HandleFunc("GET /api/v1/metadata/tables/{schema}/{table}", s.handleMetadataTableDetail)
+	mux.HandleFunc("POST /api/v1/metadata/export", s.handleExportMetadata)
+	mux.HandleFunc("GET /api/v1/metadata/export/download", s.handleDownloadGen("metadata"))
+	mux.HandleFunc("POST /api/v1/export/offline", s.handleExportOffline)
+	mux.HandleFunc("GET /api/v1/export/offline/download", s.handleDownloadGen("export-offline"))
+	mux.HandleFunc("GET /api/v1/show-query", s.handleShowQuery)
 
 	s.registerPages(mux)
 	s.registerDocs(mux)

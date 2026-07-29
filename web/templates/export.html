@@ -3,12 +3,53 @@
 <h1>导出数据</h1>
 <p class="subtitle">从源库导出数据为 CSV / SQL / XLSX（使用当前配置的 source 与 export 段）</p>
 <div class="panel">
+    <h3>在线导出（需要源库连接）</h3>
     <button class="btn-primary" id="btn-start" onclick="startExport()">开始导出</button>
     <button class="btn-danger" id="btn-cancel" onclick="jobUI.cancel()" style="display:none">取消</button>
 </div>
 <div id="progress-panel" class="panel" style="display:none">
     <h3>进度 <span class="badge" id="job-id-badge"></span></h3>
     <div id="progress-log" class="log-box"></div>
+</div>
+
+<div class="panel">
+    <h3>离线导出（无需数据库）</h3>
+    <p class="field-help">从本地 CSV 目录或 XLSX 文件转换为目标格式</p>
+    <div class="field">
+        <label>输入模式</label>
+        <select id="off-mode" onchange="toggleOfflineFields()">
+            <option value="csv">CSV 目录</option>
+            <option value="xlsx">XLSX 文件</option>
+        </select>
+    </div>
+    <div class="field" id="f-off-csv">
+        <label>CSV 数据目录</label>
+        <input type="text" id="off-data-dir" value="./output/data/" placeholder="./output/data/">
+        <div class="field-help">包含 {schema}.{table}.csv 文件的目录</div>
+    </div>
+    <div class="field hidden" id="f-off-xlsx">
+        <label>XLSX 文件路径</label>
+        <input type="text" id="off-xlsx-path" placeholder="./data.xlsx">
+    </div>
+    <div class="field">
+        <label>输出格式</label>
+        <select id="off-format">
+            <option value="csv">CSV</option>
+            <option value="sql">SQL（INSERT 语句）</option>
+            <option value="xlsx">XLSX</option>
+        </select>
+    </div>
+    <div class="form-actions">
+        <button class="btn-primary" id="btn-offline" onclick="startOffline()">离线导出</button>
+        <span id="off-status" class="status-msg"></span>
+    </div>
+</div>
+<div class="panel" id="off-result" style="display:none">
+    <h3>离线导出结果 <span class="badge" id="off-count"></span></h3>
+    <div id="off-files"></div>
+    <div class="form-actions">
+        <a class="btn-primary" href="/api/v1/export/offline/download">下载 ZIP</a>
+    </div>
 </div>
 {{end}}
 {{define "scripts"}}
@@ -17,6 +58,41 @@ jobUI.bind('#progress-log');
 async function startExport() {
     try { await jobUI.start('/api/v1/export', {}); }
     catch (e) { alert('启动失败: ' + e.message); }
+}
+
+function toggleOfflineFields() {
+    const mode = document.getElementById('off-mode').value;
+    document.getElementById('f-off-csv').classList.toggle('hidden', mode !== 'csv');
+    document.getElementById('f-off-xlsx').classList.toggle('hidden', mode !== 'xlsx');
+}
+
+async function startOffline() {
+    const status = document.getElementById('off-status');
+    status.textContent = '导出中…'; status.className = 'status-msg';
+    document.getElementById('btn-offline').disabled = true;
+    try {
+        const mode = document.getElementById('off-mode').value;
+        const payload = { format: document.getElementById('off-format').value };
+        if (mode === 'xlsx') {
+            payload.xlsx_path = document.getElementById('off-xlsx-path').value;
+        } else {
+            payload.data_dir = document.getElementById('off-data-dir').value;
+        }
+        const resp = await api.post('/api/v1/export/offline', payload);
+        document.getElementById('off-result').style.display = 'block';
+        document.getElementById('off-count').textContent = resp.table_count + ' 张表，' + resp.total_rows + ' 行';
+        const div = document.getElementById('off-files');
+        div.innerHTML = '<ul>' + (resp.files || []).map(f =>
+            `<li class="mono">${f.name}</li>`).join('') + '</ul>';
+        if (resp.errors && resp.errors.length) {
+            div.innerHTML += '<p class="status-msg fail">' + resp.errors.join('<br>') + '</p>';
+        }
+        status.textContent = '✓ 完成'; status.className = 'status-msg ok';
+    } catch (e) {
+        status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+    } finally {
+        document.getElementById('btn-offline').disabled = false;
+    }
 }
 </script>
 {{end}}
