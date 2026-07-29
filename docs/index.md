@@ -13,6 +13,7 @@ Offline-first database migration tool for Oracle, PostgreSQL, MySQL, and derivat
 | [Migration Pipeline](migration-pipeline.md) | End-to-end export/import pipeline, checkpoint/resume, error handling, encoding |
 | [Dialect & Type Mapping](dialect-mapping.md) | Supported dialects, type mapping system, database-specific behavior |
 | [Developer Guide](development.md) | Project structure, testing, extending dialects |
+| [Database Metadata Queries](database-metadata/index.md) | Full metadata query SQL reference per database type (Oracle, PostgreSQL, MySQL, DuckDB, SQLite3) |
 
 ## Quick Summary
 
