@@ -3,6 +3,7 @@ package serve
 import (
 	"archive/zip"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -55,6 +56,11 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg
 	s.mu.RUnlock()
 
+	var req struct {
+		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "unknown target dialect: "+err.Error())
@@ -63,7 +69,11 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 
 	outDir := filepath.Join(paths.TempDir(), "ddl-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
-	gen := generator.NewDDLGenerator(d, service.ToBuildOptions(cfg), outDir)
+	opts := service.ToBuildOptions(cfg)
+	if req.NoQuoteIdentifiers != nil {
+		opts.NoQuoteIdentifiers = *req.NoQuoteIdentifiers
+	}
+	gen := generator.NewDDLGenerator(d, opts, outDir)
 
 	schema := cfg.Source.Schema
 	if schema == "" {
@@ -112,26 +122,44 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg
 	s.mu.RUnlock()
 
+	var req struct {
+		BatchMethod      string `json:"batch_method"`
+		PageSize         int    `json:"page_size"`
+		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "unknown target dialect: "+err.Error())
 		return
 	}
 
-	method := cfg.SelectGen.Batch.Method
+	method := req.BatchMethod
+	if method == "" {
+		method = cfg.SelectGen.Batch.Method
+	}
 	if method == "" {
 		method = "cursor"
 	}
-	pageSize := cfg.SelectGen.Batch.PageSize
+	pageSize := req.PageSize
+	if pageSize == 0 {
+		pageSize = cfg.SelectGen.Batch.PageSize
+	}
 	if pageSize == 0 {
 		pageSize = 5000
+	}
+
+	quoteFn := d.Quote
+	if req.NoQuoteIdentifiers != nil && *req.NoQuoteIdentifiers {
+		quoteFn = func(s string) string { return s }
 	}
 
 	outDir := filepath.Join(paths.TempDir(), "select-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
 
 	oracleRowNum := strings.Contains(cfg.DDL.TargetDialect, "oracle")
-	gen := generator.NewSelectGenerator(method, pageSize, outDir, d.Quote,
+	gen := generator.NewSelectGenerator(method, pageSize, outDir, quoteFn,
 		cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum)
 
 	files, err := gen.Generate(sm)
@@ -153,6 +181,13 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg
 	s.mu.RUnlock()
 
+	var req struct {
+		BatchSize        int   `json:"batch_size"`
+		Truncate         bool  `json:"truncate"`
+		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
 	dataDir := cfg.Import.SourceDir
 	if dataDir == "" {
 		dataDir = "./output/data/"
@@ -171,13 +206,24 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 	outDir := filepath.Join(paths.TempDir(), "insert-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
 
+	batchSize := req.BatchSize
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+
+	noQuote := cfg.DDL.NoQuoteIdentifiers
+	if req.NoQuoteIdentifiers != nil {
+		noQuote = *req.NoQuoteIdentifiers
+	}
+
 	gen := generator.NewInsertGenerator(generator.InsertConfig{
 		OutputDir:          outDir,
-		BatchSize:          100,
+		BatchSize:          batchSize,
+		TruncateBefore:     req.Truncate,
 		Dialect:            dialect,
 		NullMarker:         cfg.Import.CSV.NullMarker,
 		CSVDelimiter:       cfg.Import.CSV.Delimiter,
-		NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
+		NoQuoteIdentifiers: noQuote,
 	})
 
 	files, err := gen.Generate(tables, dataDir)

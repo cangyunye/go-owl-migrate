@@ -3,9 +3,22 @@
 <h1>生成 INSERT</h1>
 <p class="subtitle">从 CSV 数据文件生成 INSERT SQL（离线，无需数据库）。数据目录取自配置的 <code>import.source_dir</code></p>
 <div class="panel">
-    <button class="btn-primary" id="btn-gen" onclick="generate()">生成 INSERT</button>
-    <a class="btn-ghost" id="btn-download" href="/api/v1/insert/download" style="display:none">下载全部 (ZIP)</a>
-    <span id="gen-status" class="status-msg"></span>
+    <h3>生成选项</h3>
+    <div class="form-row">
+        <label>每批行数 (batch_size)</label>
+        <input type="number" id="opt-batch-size" value="100" min="1" max="10000" style="width:100px">
+    </div>
+    <div class="field">
+        <label><input type="checkbox" id="opt-truncate"> INSERT 前加 TRUNCATE TABLE</label>
+    </div>
+    <div class="field">
+        <label><input type="checkbox" id="opt-no-quote"> 不引用标识符（no_quote_identifiers）</label>
+    </div>
+    <div class="form-actions">
+        <button class="btn-primary" id="btn-gen" onclick="generate()">生成 INSERT</button>
+        <a class="btn-ghost" id="btn-download" href="/api/v1/insert/download" style="display:none">下载全部 (ZIP)</a>
+        <span id="gen-status" class="status-msg"></span>
+    </div>
 </div>
 <div class="panel" id="result-panel" style="display:none">
     <h3>生成结果 <span class="badge" id="file-count"></span></h3>
@@ -19,7 +32,11 @@ async function generate() {
     const status = document.getElementById('gen-status');
     status.textContent = '生成中…'; status.className = 'status-msg';
     try {
-        const resp = await api.post('/api/v1/insert/generate', {});
+        const resp = await api.post('/api/v1/insert/generate', {
+            batch_size: parseInt(document.getElementById('opt-batch-size').value) || 100,
+            truncate: document.getElementById('opt-truncate').checked,
+            no_quote_identifiers: document.getElementById('opt-no-quote').checked || null,
+        });
         document.getElementById('result-panel').style.display = 'block';
         document.getElementById('btn-download').style.display = 'inline-block';
         document.getElementById('file-count').textContent = resp.count + ' 个文件';

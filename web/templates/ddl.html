@@ -3,9 +3,15 @@
 <h1>生成 DDL</h1>
 <p class="subtitle">从已加载的元数据生成目标库建表语句（需先在「元数据」页加载）</p>
 <div class="panel">
-    <button class="btn-primary" id="btn-gen" onclick="generate()">生成 DDL</button>
-    <a class="btn-ghost" id="btn-download" href="/api/v1/ddl/download" style="display:none">下载全部 (ZIP)</a>
-    <span id="gen-status" class="status-msg"></span>
+    <h3>生成选项</h3>
+    <div class="field">
+        <label><input type="checkbox" id="opt-no-quote"> 不引用标识符（no_quote_identifiers）</label>
+    </div>
+    <div class="form-actions">
+        <button class="btn-primary" id="btn-gen" onclick="generate()">生成 DDL</button>
+        <a class="btn-ghost" id="btn-download" href="/api/v1/ddl/download" style="display:none">下载全部 (ZIP)</a>
+        <span id="gen-status" class="status-msg"></span>
+    </div>
 </div>
 <div class="panel" id="result-panel" style="display:none">
     <h3>生成结果 <span class="badge" id="file-count"></span></h3>
@@ -19,7 +25,10 @@ async function generate() {
     const status = document.getElementById('gen-status');
     status.textContent = '生成中…'; status.className = 'status-msg';
     try {
-        const resp = await api.post('/api/v1/ddl/generate', {});
+        const noQuote = document.getElementById('opt-no-quote').checked;
+        const resp = await api.post('/api/v1/ddl/generate', {
+            no_quote_identifiers: noQuote ? true : null,
+        });
         document.getElementById('result-panel').style.display = 'block';
         document.getElementById('btn-download').style.display = 'inline-block';
         document.getElementById('file-count').textContent = resp.count + ' 个文件';
