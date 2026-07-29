@@ -177,7 +177,7 @@ func TestE2E_PagesRenderDistinctContent(t *testing.T) {
 	ts, _, _ := newE2ERig(t)
 
 	pages := map[string]string{
-		"/":        "数据库迁移工具",
+		"/":        "数据库迁移工作台",
 		"/config":  "配置",
 		"/migrate": "数据迁移",
 		"/jobs":    "任务历史",

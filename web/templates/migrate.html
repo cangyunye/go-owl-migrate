@@ -1,35 +1,67 @@
 {{template "base.html" .}}
 {{define "content"}}
-<h1>数据迁移</h1>
-<p class="subtitle">端到端迁移：源库 → 导出 → 目标库（或生成 INSERT SQL）</p>
+<div class="page-head reveal" style="--i:0">
+    <div>
+        <div class="overline">execute · migrate</div>
+        <h1>数据迁移</h1>
+        <p class="subtitle">端到端迁移：源库 → 导出 → 目标库（或生成 INSERT SQL）</p>
+    </div>
+</div>
 
-<nav class="mode-tabs">
-    <a href="/migrate?mode=direct" class="mode-tab" data-mode="direct">直接迁移</a>
-    <a href="/migrate?mode=sql" class="mode-tab" data-mode="sql">SQL 输出</a>
+<nav class="tabs reveal" style="--i:1">
+    <a href="/migrate?mode=direct" class="tab" data-mode="direct">直接迁移</a>
+    <a href="/migrate?mode=sql" class="tab" data-mode="sql">SQL 输出</a>
 </nav>
-<p class="mode-desc" id="mode-desc"></p>
+<p class="mode-desc reveal" style="--i:1" id="mode-desc"></p>
 
-<div class="panel">
-    <h3>迁移选项</h3>
+<div class="panel reveal" style="--i:2">
+    <div class="panel-head"><span class="panel-title">迁移管道</span></div>
+    <div class="pipeline" id="pipeline">
+        <div class="pipe-node" id="pn-source">
+            <div class="pn-name"><span class="status-dot" style="color:var(--cyan)"></span>源库</div>
+            <div class="pn-val" id="pv-source">—</div>
+            <div class="pn-sub" id="ps-source">读取元数据与数据</div>
+        </div>
+        <div class="pipe-link" id="pl-1"></div>
+        <div class="pipe-node" id="pn-export">
+            <div class="pn-name"><span class="status-dot" style="color:var(--amber)"></span>导出</div>
+            <div class="pn-val" id="pv-export">—</div>
+            <div class="pn-sub" id="ps-export">CSV 中转 / 游标分页</div>
+        </div>
+        <div class="pipe-link" id="pl-2"></div>
+        <div class="pipe-node" id="pn-target">
+            <div class="pn-name"><span class="status-dot" style="color:var(--green)"></span>目标库</div>
+            <div class="pn-val" id="pv-target">—</div>
+            <div class="pn-sub" id="ps-target">批量写入 / INSERT SQL</div>
+        </div>
+    </div>
+
     <div class="field">
-        <label><input type="checkbox" id="opt-skip-ddl"> 跳过建表（--skip-ddl，仅导数据）</label>
+        <label class="check"><input type="checkbox" id="opt-skip-ddl"> 跳过建表 <code>--skip-ddl</code>（仅导数据）</label>
     </div>
     <div class="field">
-        <label><input type="checkbox" id="opt-continue-on-error"> 部分表失败不中断（--continue-on-error）</label>
+        <label class="check"><input type="checkbox" id="opt-continue-on-error"> 部分表失败不中断 <code>--continue-on-error</code></label>
     </div>
     <div class="form-actions">
-        <button class="btn-primary" id="btn-start" onclick="startMigrate()">开始迁移</button>
+        <button class="btn-primary" id="btn-start" onclick="startMigrate()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            开始迁移
+        </button>
         <button class="btn-danger" id="btn-cancel" onclick="jobUI.cancel()" style="display:none">取消</button>
     </div>
 </div>
-<div id="progress-panel" class="panel" style="display:none">
-    <h3>进度 <span class="badge" id="job-id-badge"></span></h3>
-    <div id="progress-log" class="log-box"></div>
+
+<div id="progress-panel" class="panel reveal" style="--i:3;display:none">
+    <div class="panel-head">
+        <span class="panel-title">实时进度 <span class="badge badge-accent" id="job-id-badge"></span></span>
+        <span class="live-dot"></span>
+    </div>
+    <div id="progress-log" class="term"></div>
 </div>
 
-<div id="download-panel" class="panel" style="display:none">
-    <h3>SQL 输出结果</h3>
-    <p id="output-summary" class="field-help"></p>
+<div id="download-panel" class="panel reveal" style="--i:4;display:none">
+    <div class="panel-head"><span class="panel-title">SQL 输出结果</span></div>
+    <p id="output-summary" class="field-help" style="margin-bottom:14px"></p>
     <div class="form-row">
         <label>下载格式</label>
         <select id="dl-format">
@@ -45,26 +77,67 @@
 <script>
 jobUI.bind('#progress-log');
 const mode = (new URLSearchParams(location.search).get('mode') === 'sql') ? 'sql-out' : 'direct';
-document.querySelectorAll('.mode-tab').forEach(t =>
+document.querySelectorAll('.tab').forEach(t =>
     t.classList.toggle('active', t.dataset.mode === (mode === 'sql-out' ? 'sql' : 'direct')));
 document.getElementById('mode-desc').textContent = (mode === 'sql-out')
     ? 'SQL 输出模式：导出后生成 INSERT SQL 文件，不连接目标库。'
     : '直接模式：导出 CSV 后直接导入目标数据库。';
+if (mode === 'sql-out') {
+    document.getElementById('pv-target').textContent = 'INSERT SQL';
+    document.getElementById('ps-target').textContent = '生成 SQL 文件，不连接目标库';
+}
+
+/* prefill pipeline endpoints from active config */
+(async function prefillPipeline() {
+    try {
+        const st = await api.get('/api/v1/config/status');
+        if (st.source_type) document.getElementById('pv-source').textContent = st.source_type;
+        if (st.target_dialect && mode !== 'sql-out') document.getElementById('pv-target').textContent = st.target_dialect;
+        if (st.metadata_loaded) document.getElementById('ps-source').textContent = st.table_count + ' 张表待迁移';
+    } catch (e) {}
+})();
 
 let completedJobId = null;
 let outputFileCount = 0;
 
+/* mark pipeline stages as progress events arrive */
+const origLogLine = jobUI.logLine.bind(jobUI);
+jobUI.logLine = function (kind, msg, detail) {
+    origLogLine(kind, msg, detail);
+    const m = (msg || '').toLowerCase();
+    if (m.includes('export') || m.includes('导出')) {
+        setStage('pn-source', 'done'); setStage('pn-export', 'active'); flow('pl-1', true);
+    }
+    if (m.includes('import') || m.includes('导入') || m.includes('insert')) {
+        setStage('pn-export', 'done'); setStage('pn-target', 'active'); flow('pl-2', true);
+    }
+};
+function setStage(id, cls) {
+    const el = document.getElementById(id);
+    el.classList.remove('active', 'done');
+    if (cls) el.classList.add(cls);
+}
+function flow(id, on) { document.getElementById(id).classList.toggle('flowing', !!on); }
+
 async function startMigrate() {
+    setStage('pn-source', 'active'); flow('pl-1', false); flow('pl-2', false);
+    setStage('pn-export', ''); setStage('pn-target', '');
     try {
         await jobUI.start('/api/v1/migrate', {
             mode: mode,
             skip_ddl: document.getElementById('opt-skip-ddl').checked,
             continue_on_error: document.getElementById('opt-continue-on-error').checked,
         });
-    } catch (e) { alert('启动失败: ' + e.message); }
+    } catch (e) { toast.err('启动失败', e.message); }
 }
 
-// After a sql-out job completes, surface its output location + download options.
+const origFinish = jobUI.finish.bind(jobUI);
+jobUI.finish = function () {
+    origFinish();
+    flow('pl-1', false); flow('pl-2', false);
+    setStage('pn-source', 'done'); setStage('pn-export', 'done'); setStage('pn-target', 'done');
+};
+
 jobUI.onComplete = async function (jobId) {
     if (mode !== 'sql-out') return;
     completedJobId = jobId;
@@ -84,16 +157,10 @@ jobUI.onComplete = async function (jobId) {
 function downloadSQL() {
     const fmt = document.getElementById('dl-format').value;
     if (fmt === 'raw' && outputFileCount !== 1) {
-        alert('原始文件下载仅适用于单个文件，多文件请选 tar.gz 或 zip');
+        toast.warn('格式不适用', '原始文件下载仅适用于单个文件，多文件请选 tar.gz 或 zip');
         return;
     }
     window.location = '/api/v1/jobs/' + completedJobId + '/output/download?format=' + encodeURIComponent(fmt);
-}
-
-function humanSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / 1024 / 1024).toFixed(1) + ' MB';
 }
 </script>
 {{end}}

@@ -1,28 +1,42 @@
 {{template "base.html" .}}
 {{define "content"}}
-<h1>任务详情</h1>
-<p class="subtitle mono" id="job-id-line"></p>
-
-<div class="panel">
-    <div id="job-info" class="job-info"></div>
-    <div class="form-actions">
-        <button class="btn-danger" id="btn-cancel" onclick="cancelJob()" style="display:none">取消任务</button>
-        <button class="btn-primary" id="btn-resume" onclick="resumeJob()" style="display:none">恢复任务</button>
+<div class="page-head reveal" style="--i:0">
+    <div>
+        <div class="overline">monitor · job detail</div>
+        <h1>任务详情</h1>
+        <p class="subtitle mono" id="job-id-line" style="color:var(--text-3)"></p>
+    </div>
+    <div class="panel-actions">
+        <button class="btn-danger btn-sm" id="btn-cancel" onclick="cancelJob()" style="display:none">取消任务</button>
+        <button class="btn-primary btn-sm" id="btn-resume" onclick="resumeJob()" style="display:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            恢复任务
+        </button>
         <span id="action-status" class="status-msg"></span>
     </div>
 </div>
 
-<div class="panel">
-    <h3>检查点（每表状态）<span class="badge" id="cp-count"></span></h3>
+<div class="panel reveal" style="--i:1">
+    <div class="panel-head"><span class="panel-title">任务信息</span></div>
+    <div id="job-info" class="job-info"></div>
+</div>
+
+<div class="panel reveal" style="--i:2">
+    <div class="panel-head">
+        <span class="panel-title">检查点（每表状态）<span class="badge badge-accent" id="cp-count"></span></span>
+    </div>
     <table class="data-table">
         <thead><tr><th>Schema</th><th>表</th><th>已导出</th><th>导出行数</th><th>已导入</th><th>导入行数</th><th>状态</th></tr></thead>
         <tbody id="cp-body"></tbody>
     </table>
 </div>
 
-<div class="panel">
-    <h3>进度事件</h3>
-    <div id="progress-log" class="log-box"></div>
+<div class="panel reveal" style="--i:3">
+    <div class="panel-head">
+        <span class="panel-title">进度事件</span>
+        <span class="live-dot" id="evt-live" style="display:none"></span>
+    </div>
+    <div id="progress-log" class="term"></div>
 </div>
 {{end}}
 {{define "scripts"}}
@@ -36,6 +50,16 @@ document.getElementById('job-id-line').textContent = jobId;
 
 const isActive = s => s === 'running' || s === 'cancelling';
 
+function statusBadge(s) {
+    const map = {
+        running: ['st-run', true], cancelling: ['st-warn', true],
+        completed: ['st-ok', false], failed: ['st-fail', false],
+        interrupted: ['st-warn', false], cancelled: ['st-warn', false]
+    };
+    const m = map[s] || ['st-run', false];
+    return '<span class="' + m[0] + '"><span class="status-dot' + (m[1] ? ' pulse' : '') + '"></span>' + s + '</span>';
+}
+
 async function load() {
     const job = await api.get('/api/v1/jobs/' + jobId);
     jobType = job.type;
@@ -48,53 +72,77 @@ async function load() {
 
 function renderInfo(job) {
     document.getElementById('job-info').innerHTML =
-        `<span>类型：<b>${job.type}</b></span><span>状态：<b class="status-${job.status}">${job.status}</b></span>` +
-        `<span>PID：${job.pid || '-'}</span><span>创建：${job.created_at}</span>` +
-        `<span>完成：${job.finished_at || '-'}</span>`;
+        '<span>类型 <b>' + job.type + '</b></span>' +
+        '<span>状态 ' + statusBadge(job.status) + '</span>' +
+        '<span>PID <b>' + (job.pid || '—') + '</b></span>' +
+        '<span>创建 <b>' + (job.created_at || '') + '</b></span>' +
+        '<span>完成 <b>' + (job.finished_at || '—') + '</b></span>';
 }
 
 function renderButtons(status) {
-    document.getElementById('btn-cancel').style.display =
-        (status === 'running') ? 'inline-block' : 'none';
+    document.getElementById('btn-cancel').style.display = (status === 'running') ? 'inline-flex' : 'none';
     document.getElementById('btn-resume').style.display =
-        (['interrupted', 'cancelled', 'failed'].includes(status)) ? 'inline-block' : 'none';
+        (['interrupted', 'cancelled', 'failed'].includes(status)) ? 'inline-flex' : 'none';
+}
+
+function cpStatus(s) {
+    if (s === 'SUCCESS') return '<span class="st-ok">✓ SUCCESS</span>';
+    if (s === 'FAIL') return '<span class="st-fail">✗ FAIL</span>';
+    if (s) return '<span class="st-run">' + s + '</span>';
+    return '<span style="color:var(--text-3)">—</span>';
 }
 
 async function loadCheckpoints() {
     const cps = await api.get('/api/v1/jobs/' + jobId + '/checkpoints');
     document.getElementById('cp-count').textContent = cps.length + ' 张表';
     const tbody = document.getElementById('cp-body');
-    tbody.innerHTML = '';
-    cps.forEach(c => {
-        tbody.innerHTML += `<tr><td>${c.schema}</td><td>${c.table_name}</td>` +
-            `<td>${c.exported ? '✓' : ''}</td><td>${c.exported_rows}</td>` +
-            `<td>${c.imported ? '✓' : ''}</td><td>${c.imported_rows}</td>` +
-            `<td class="status-${c.status === 'SUCCESS' ? 'ok' : (c.status === 'FAIL' ? 'fail' : 'run')}">${c.status || '-'}</td></tr>`;
-    });
+    if (!cps.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:16px">暂无检查点</td></tr>';
+        return;
+    }
+    tbody.innerHTML = cps.map(c =>
+        '<tr><td class="mono">' + c.schema + '</td>' +
+        '<td class="mono" style="font-weight:600">' + c.table_name + '</td>' +
+        '<td>' + (c.exported ? '<span class="st-ok">✓</span>' : '<span style="color:var(--text-3)">—</span>') + '</td>' +
+        '<td class="mono">' + c.exported_rows + '</td>' +
+        '<td>' + (c.imported ? '<span class="st-ok">✓</span>' : '<span style="color:var(--text-3)">—</span>') + '</td>' +
+        '<td class="mono">' + c.imported_rows + '</td>' +
+        '<td>' + cpStatus(c.status) + '</td></tr>'
+    ).join('');
+}
+
+function appendEvent(m) {
+    const log = document.getElementById('progress-log');
+    const line = document.createElement('span');
+    line.className = 'term-line';
+    const tbl = ((m.schema || '') + (m.table ? '.' + m.table : '')).trim();
+    line.innerHTML = '<span class="ln-seq">#' + m.seq + '</span>' +
+        '<span class="ln-info">' + escapeHtml(m.event || '') + '</span>' +
+        (tbl ? '  <span style="color:var(--text)">' + escapeHtml(tbl) + '</span>' : '') +
+        (m.rows !== undefined && m.rows !== null ? '  <span class="ln-dim">→ ' + m.rows + ' rows</span>' : '') +
+        (m.message ? '  <span class="ln-dim">' + escapeHtml(m.message) + '</span>' : '');
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
 }
 
 async function loadEvents() {
     const events = await api.get('/api/v1/jobs/' + jobId + '/events');
     const log = document.getElementById('progress-log');
-    log.textContent = '';
+    log.innerHTML = '';
     lastSeq = 0;
+    if (!events.length) {
+        log.innerHTML = '<span class="ln-dim">（暂无事件）</span>';
+        return;
+    }
     events.forEach(e => appendEvent({
         seq: e.seq, event: e.event_type, schema: e.schema,
         table: e.table_name, rows: e.rows, message: e.message
     }));
-    if (events.length === 0) log.textContent = '（暂无事件）';
 }
 
-function appendEvent(m) {
-    const log = document.getElementById('progress-log');
-    if (log.textContent === '（暂无事件）') log.textContent = '';
-    log.textContent += `[${m.seq}] ${m.event} ${m.schema || ''}.${m.table || ''} → ${m.rows} rows ${m.message || ''}\n`;
-    log.scrollTop = log.scrollHeight;
-}
-
-// Live mode: stream progress over WebSocket + poll status until the job ends.
 function startLive() {
-    document.getElementById('progress-log').textContent = '';
+    document.getElementById('progress-log').innerHTML = '';
+    document.getElementById('evt-live').style.display = 'inline-block';
     lastSeq = 0;
     connectWS();
     pollTimer = setInterval(refreshStatus, 2000);
@@ -126,6 +174,7 @@ async function refreshStatus() {
 }
 
 function stopLive() {
+    document.getElementById('evt-live').style.display = 'none';
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     if (ws) { ws.close(); ws = null; }
 }
@@ -134,15 +183,23 @@ async function cancelJob() {
     try {
         await api.del('/api/v1/jobs/' + jobId);
         document.getElementById('action-status').textContent = '已发送取消请求';
+        toast.warn('已发送取消请求', jobId);
         refreshStatus();
-    } catch (e) { document.getElementById('action-status').textContent = '✗ ' + e.message; }
+    } catch (e) {
+        document.getElementById('action-status').textContent = '✗ ' + e.message;
+        toast.err('取消失败', e.message);
+    }
 }
 
 async function resumeJob() {
     try {
-        const resp = await api.post(`/api/v1/${jobType}?resume_from=${jobId}`, {});
+        const resp = await api.post('/api/v1/' + jobType + '?resume_from=' + jobId, {});
+        toast.ok('任务已恢复', resp.job_id);
         location.href = '/jobs/' + resp.job_id;
-    } catch (e) { document.getElementById('action-status').textContent = '✗ ' + e.message; }
+    } catch (e) {
+        document.getElementById('action-status').textContent = '✗ ' + e.message;
+        toast.err('恢复失败', e.message);
+    }
 }
 
 load();

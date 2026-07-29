@@ -1,10 +1,15 @@
 {{template "base.html" .}}
 {{define "content"}}
-<h1>元数据</h1>
-<p class="subtitle">指定元数据来源并加载表结构，供 DDL / SELECT 生成与校验使用</p>
+<div class="page-head reveal" style="--i:0">
+    <div>
+        <div class="overline">prepare · metadata</div>
+        <h1>元数据</h1>
+        <p class="subtitle">指定元数据来源并加载表结构，供 DDL / SELECT 生成与校验使用</p>
+    </div>
+</div>
 
-<div class="panel">
-    <h3>元数据来源</h3>
+<div class="panel reveal" style="--i:1">
+    <div class="panel-head"><span class="panel-title">元数据来源</span></div>
     <div class="field">
         <label>来源类型</label>
         <select id="m-type" onchange="toggleMetaFields()">
@@ -15,12 +20,12 @@
     </div>
     <div class="field" id="f-csv">
         <label>CSV 元数据目录</label>
-        <input type="text" id="m-csv-path" value="./testdata/csv/">
-        <div class="field-help">包含 tables.csv / columns.csv 等的目录</div>
+        <input type="text" id="m-csv-path" class="mono" value="./testdata/csv/">
+        <div class="field-help">包含 <code>tables.csv</code> / <code>columns.csv</code> 等的目录</div>
     </div>
     <div class="field hidden" id="f-xlsx">
         <label>XLSX 文件路径</label>
-        <input type="text" id="m-xlsx-path" value="./metadata/schema.xlsx">
+        <input type="text" id="m-xlsx-path" class="mono" value="./metadata/schema.xlsx">
     </div>
     <div class="field hidden" id="f-db-type">
         <label>数据库类型</label>
@@ -33,30 +38,37 @@
     </div>
     <div class="field hidden" id="f-db-schema">
         <label>Schema</label>
-        <input type="text" id="m-src-schema">
+        <input type="text" id="m-src-schema" class="mono">
     </div>
     <div class="form-actions">
-        <button class="btn-primary" onclick="loadMeta()">加载元数据</button>
-        <button onclick="validateMeta()">校验</button>
+        <button class="btn-primary" onclick="loadMeta()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4"/></svg>
+            加载元数据
+        </button>
+        <button class="btn-ghost" onclick="validateMeta()">校验</button>
         <span id="meta-status" class="status-msg"></span>
     </div>
 </div>
 
-<div class="panel" id="tables-panel" style="display:none">
-    <h3>表列表 <span class="badge" id="table-count"></span></h3>
+<div class="panel reveal" style="--i:2" id="tables-panel" style="display:none">
+    <div class="panel-head">
+        <span class="panel-title">表列表 <span class="badge badge-accent" id="table-count"></span></span>
+    </div>
     <table class="data-table">
         <thead><tr><th>Schema</th><th>表名</th><th>列数</th><th>主键</th><th></th></tr></thead>
         <tbody id="tables-body"></tbody>
     </table>
 </div>
 
-<div class="panel" id="detail-panel" style="display:none">
-    <h3 id="detail-title">表详情</h3>
+<div class="panel reveal" style="--i:3" id="detail-panel" style="display:none">
+    <div class="panel-head"><span class="panel-title" id="detail-title">表详情</span></div>
     <div id="detail-content"></div>
 </div>
 
-<div class="panel" id="validate-panel" style="display:none">
-    <h3>校验结果 <span class="badge" id="validate-count"></span></h3>
+<div class="panel reveal" style="--i:4" id="validate-panel" style="display:none">
+    <div class="panel-head">
+        <span class="panel-title">校验结果 <span class="badge" id="validate-count"></span></span>
+    </div>
     <ul id="validate-list" class="validate-list"></ul>
 </div>
 {{end}}
@@ -65,7 +77,6 @@
 let dsnExamples = {};
 
 (async function initMetaForm() {
-    // Populate dialect dropdown + DSN hints, and prefill from current config.
     const data = await api.get('/api/v1/scenarios');
     dsnExamples = data.dsn_examples || {};
     const dialects = (data.scenarios[0].fields.find(f => f.name === 'source_type') || {}).options || [];
@@ -101,6 +112,7 @@ function updateDsnHint() {
     const dialect = document.getElementById('m-src-type').value;
     const hint = document.getElementById('m-dsn-hint');
     hint.textContent = dsnExamples[dialect] ? '格式示例：' + dsnExamples[dialect] : '';
+    hint.classList.toggle('has-example', !!dsnExamples[dialect]);
 }
 
 function buildMetaPayload() {
@@ -129,8 +141,10 @@ async function loadMeta() {
         document.getElementById('table-count').textContent = resp.table_count + ' 张表';
         renderTables();
         status.textContent = '✓ 已加载 ' + resp.table_count + ' 张表'; status.className = 'status-msg ok';
+        toast.ok('元数据加载完成', resp.table_count + ' 张表');
     } catch (e) {
         status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+        toast.err('加载失败', e.message);
     }
 }
 
@@ -140,24 +154,30 @@ async function renderTables() {
     tbody.innerHTML = '';
     tables.forEach(t => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${t.schema}</td><td>${t.name}</td><td>${t.columns.length}</td>` +
-            `<td>${(t.primary_key || []).join(', ')}</td>` +
-            `<td><a href="#" onclick="showDetail('${t.schema}','${t.name}');return false;">详情</a></td>`;
+        tr.innerHTML = '<td class="mono">' + t.schema + '</td>' +
+            '<td class="mono" style="color:var(--text);font-weight:600">' + t.name + '</td>' +
+            '<td class="mono">' + t.columns.length + '</td>' +
+            '<td class="mono" style="color:var(--text-2)">' + ((t.primary_key || []).join(', ') || '—') + '</td>' +
+            '<td><a href="#" onclick="showDetail(\'' + t.schema + '\',\'' + t.name + '\');return false;">详情</a></td>';
         tbody.appendChild(tr);
     });
 }
 
 async function showDetail(schema, name) {
-    const d = await api.get(`/api/v1/metadata/tables/${schema}/${name}`);
+    const d = await api.get('/api/v1/metadata/tables/' + schema + '/' + name);
     document.getElementById('detail-panel').style.display = 'block';
-    document.getElementById('detail-title').textContent = `${schema}.${name}`;
+    document.getElementById('detail-title').textContent = schema + '.' + name;
     let html = '<table class="data-table"><thead><tr><th>列名</th><th>类型</th><th>可空</th><th>默认值</th></tr></thead><tbody>';
     d.columns.forEach(c => {
-        html += `<tr><td class="mono">${c.name}</td><td class="mono">${c.type}${c.length ? '(' + c.length + ')' : ''}</td><td>${c.nullable ? '是' : '否'}</td><td class="mono">${c.default || ''}</td></tr>`;
+        html += '<tr><td class="mono" style="font-weight:600">' + c.name + '</td>' +
+            '<td class="mono" style="color:var(--cyan)">' + c.type + (c.length ? '(' + c.length + ')' : '') + '</td>' +
+            '<td>' + (c.nullable ? '<span class="st-ok">是</span>' : '<span style="color:var(--text-3)">否</span>') + '</td>' +
+            '<td class="mono" style="color:var(--text-2)">' + (c.default || '—') + '</td></tr>';
     });
     html += '</tbody></table>';
-    html += `<p class="field-help">主键：${(d.primary_keys || []).join(', ') || '无'}</p>`;
+    html += '<p class="field-help" style="margin-top:12px">主键：<span class="mono" style="color:var(--amber)">' + ((d.primary_keys || []).join(', ') || '无') + '</span></p>';
     document.getElementById('detail-content').innerHTML = html;
+    document.getElementById('detail-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function validateMeta() {
@@ -168,15 +188,17 @@ async function validateMeta() {
         document.getElementById('validate-count').textContent = resp.count + ' 项';
         const ul = document.getElementById('validate-list');
         ul.innerHTML = '';
-        (resp.errors || []).forEach(e => {
+        (resp.errors || []).forEach((e, i) => {
             const li = document.createElement('li');
             li.className = 'sev-' + (e.severity || 'info');
-            li.textContent = `[${e.severity}] ${e.message}`;
+            li.style.animationDelay = (i * 40) + 'ms';
+            li.textContent = '[' + e.severity + '] ' + e.message;
             ul.appendChild(li);
         });
-        if (resp.count === 0) ul.innerHTML = '<li>✓ 无校验问题</li>';
+        if (resp.count === 0) ul.innerHTML = '<li class="sev-info">✓ 无校验问题</li>';
     } catch (e) {
         status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+        toast.err('校验失败', e.message);
     }
 }
 </script>

@@ -144,9 +144,9 @@
         try {
             const resp = await api.post(`/api/v1/scenarios/${activeScenario.name}/build`,
                 { values: collectValues(), save: false });
-            pre.textContent = resp.yaml;
+            pre.innerHTML = highlightYAML(resp.yaml || '');
         } catch (e) {
-            pre.innerHTML = '<span class="yaml-err">' + e.message + '</span>';
+            pre.innerHTML = '<span class="yaml-err">' + escapeHtml(e.message) + '</span>';
         } finally {
             dot.classList.remove('busy');
         }
@@ -191,7 +191,8 @@
         }
         applyFormValues(resp.values || {});
         clearTimeout(previewTimer);
-        document.getElementById('yaml-preview').textContent = resp.yaml || '';
+        document.getElementById('live-dot').classList.remove('busy');
+        document.getElementById('yaml-preview').innerHTML = highlightYAML(resp.yaml || '');
     }
 
     // ── Config library ──

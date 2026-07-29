@@ -1,10 +1,15 @@
 {{template "base.html" .}}
 {{define "content"}}
-<h1>元数据导出</h1>
-<p class="subtitle">从源库提取元数据并导出为 CSV / SQL 文件（供离线迁移使用）</p>
+<div class="page-head reveal" style="--i:0">
+    <div>
+        <div class="overline">prepare · extract</div>
+        <h1>元数据导出</h1>
+        <p class="subtitle">从源库提取元数据并导出为 CSV / SQL 文件 — 供离线迁移使用</p>
+    </div>
+</div>
 
-<div class="panel">
-    <h3>导出参数</h3>
+<div class="panel reveal" style="--i:1">
+    <div class="panel-head"><span class="panel-title">导出参数</span></div>
     <div class="field">
         <label>数据库类型</label>
         <select id="em-src-type"></select>
@@ -16,7 +21,7 @@
     </div>
     <div class="field">
         <label>Schema</label>
-        <input type="text" id="em-src-schema" placeholder="SCOTT">
+        <input type="text" id="em-src-schema" class="mono" placeholder="SCOTT">
     </div>
     <div class="field">
         <label>导出格式</label>
@@ -27,21 +32,24 @@
     </div>
     <div class="field">
         <label>范围</label>
-        <input type="text" id="em-scope" value="all" placeholder="all / schema:NAME / table:T1,T2">
-        <div class="field-help">all = 整个 schema；schema:NAME = 指定 schema；table:T1,T2 = 指定表</div>
+        <input type="text" id="em-scope" class="mono" value="all" placeholder="all / schema:NAME / table:T1,T2">
+        <div class="field-help"><code>all</code> = 整个 schema · <code>schema:NAME</code> = 指定 schema · <code>table:T1,T2</code> = 指定表</div>
     </div>
     <div class="form-actions">
-        <button class="btn-primary" id="btn-export" onclick="doExport()">导出元数据</button>
+        <button class="btn-primary" id="btn-export" onclick="doExport()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            导出元数据
+        </button>
         <span id="em-status" class="status-msg"></span>
     </div>
 </div>
 
-<div class="panel" id="em-result" style="display:none">
-    <h3>导出结果 <span class="badge" id="em-count"></span></h3>
-    <div id="em-files"></div>
-    <div class="form-actions">
-        <a id="em-download" class="btn-primary" href="/api/v1/metadata/export/download">下载 ZIP</a>
+<div class="panel reveal" style="--i:2" id="em-result" style="display:none">
+    <div class="panel-head">
+        <span class="panel-title">导出结果 <span class="badge badge-green" id="em-count"></span></span>
+        <a id="em-download" class="btn-primary btn-sm" href="/api/v1/metadata/export/download">下载 ZIP</a>
     </div>
+    <div id="em-files"></div>
 </div>
 {{end}}
 {{define "scripts"}}
@@ -68,7 +76,9 @@ let dsnExamples = {};
 
 function updateHint() {
     const dialect = document.getElementById('em-src-type').value;
-    document.getElementById('em-dsn-hint').textContent = dsnExamples[dialect] ? '格式示例：' + dsnExamples[dialect] : '';
+    const hint = document.getElementById('em-dsn-hint');
+    hint.textContent = dsnExamples[dialect] ? '格式示例：' + dsnExamples[dialect] : '';
+    hint.classList.toggle('has-example', !!dsnExamples[dialect]);
 }
 
 async function doExport() {
@@ -86,14 +96,15 @@ async function doExport() {
             scope: document.getElementById('em-scope').value,
         });
         document.getElementById('em-result').style.display = 'block';
-        document.getElementById('em-count').textContent = resp.table_count + ' 张表，' + resp.count + ' 个文件';
+        document.getElementById('em-count').textContent = resp.table_count + ' 张表 · ' + resp.count + ' 个文件';
         const div = document.getElementById('em-files');
-        div.innerHTML = '<ul>' + (resp.files || []).map(f =>
-            `<li class="mono">${f.name} <span class="field-help">(${(f.content || '').length} bytes)</span></li>`
-        ).join('') + '</ul>';
+        div.innerHTML = '<div class="file-tabs">' + (resp.files || []).map(f =>
+            '<span class="file-tab" title="' + (f.content || '').length + ' bytes">' + f.name + '</span>').join('') + '</div>';
         status.textContent = '✓ 导出完成'; status.className = 'status-msg ok';
+        toast.ok('元数据导出完成', resp.table_count + ' 张表，' + resp.count + ' 个文件');
     } catch (e) {
         status.textContent = '✗ ' + e.message; status.className = 'status-msg fail';
+        toast.err('导出失败', e.message);
     } finally {
         document.getElementById('btn-export').disabled = false;
     }

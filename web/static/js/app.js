@@ -1,57 +1,165 @@
+/* ============================================================
+   owl-migrate · console front-end runtime
+   ============================================================ */
+
+/* ── api: fetch wrappers ─────────────────────────────────── */
 const api = {
-    async get(path) {
-        const resp = await fetch(path);
+    async _handle(resp) {
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
             throw new Error(err.error || `${resp.status} ${resp.statusText}`);
         }
         return resp.json();
     },
-    async post(path, body) {
-        const resp = await fetch(path, {
+    get(path) { return fetch(path).then(r => this._handle(r)); },
+    post(path, body) {
+        return fetch(path, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body || {})
-        });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error || `${resp.status} ${resp.statusText}`);
-        }
-        return resp.json();
+        }).then(r => this._handle(r));
     },
-    async put(path, body) {
-        const resp = await fetch(path, {
+    put(path, body) {
+        return fetch(path, {
             method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body || {})
-        });
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error || `${resp.status} ${resp.statusText}`);
-        }
-        return resp.json();
+        }).then(r => this._handle(r));
     },
-    async del(path) {
-        const resp = await fetch(path, {method: 'DELETE'});
-        if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error(err.error || `${resp.status} ${resp.statusText}`);
-        }
-        return resp.json();
-    }
+    del(path) { return fetch(path, { method: 'DELETE' }).then(r => this._handle(r)); }
 };
 
-// jobUI: shared start/progress/cancel wiring for pages that launch a job
-// (migrate / export / import) and stream progress over WebSocket.
+/* ── util ────────────────────────────────────────────────── */
+function humanSize(bytes) {
+    if (bytes === null || bytes === undefined) return '-';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+    return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/* ── theme ───────────────────────────────────────────────── */
+const theme = {
+    current() { return document.documentElement.getAttribute('data-theme') || 'dark'; },
+    set(t) {
+        document.documentElement.setAttribute('data-theme', t);
+        try { localStorage.setItem('owl-theme', t); } catch (e) {}
+    },
+    toggle() { this.set(this.current() === 'dark' ? 'light' : 'dark'); }
+};
+
+/* ── toast ───────────────────────────────────────────────── */
+const toast = {
+    show(title, msg, type) {
+        type = type || 'info';
+        const root = document.getElementById('toast-root');
+        if (!root) { if (type === 'err') alert(title + (msg ? ': ' + msg : '')); return; }
+        const el = document.createElement('div');
+        el.className = 'toast ' + (type === 'ok' ? 'ok' : type === 'err' ? 'err' : type === 'warn' ? 'warn' : '');
+        el.innerHTML = '<div><div class="toast-title">' + escapeHtml(title) + '</div>' +
+            (msg ? '<div>' + escapeHtml(msg) + '</div>' : '') + '</div>';
+        root.appendChild(el);
+        setTimeout(() => {
+            el.classList.add('out');
+            setTimeout(() => el.remove(), 260);
+        }, type === 'err' ? 6000 : 3200);
+    },
+    ok(title, msg) { this.show(title, msg, 'ok'); },
+    err(title, msg) { this.show(title, msg, 'err'); },
+    warn(title, msg) { this.show(title, msg, 'warn'); }
+};
+
+/* ── SQL / YAML lightweight highlighting ─────────────────── */
+const highlightSQL = (function () {
+    const KW = new Set(('SELECT FROM WHERE INSERT INTO VALUES CREATE TABLE ALTER DROP INDEX VIEW ' +
+        'PRIMARY KEY NOT NULL DEFAULT AND OR ORDER BY GROUP HAVING LIMIT OFFSET FETCH NEXT ROWS ONLY ' +
+        'TRUNCATE CONSTRAINT FOREIGN REFERENCES UNIQUE SEQUENCE TRIGGER FUNCTION PROCEDURE PACKAGE ' +
+        'SYNONYM MATERIALIZED COMMENT ON AS IS BEGIN END CASCADE SET WITH CURSOR OPEN CLOSE LOOP EXIT ' +
+        'WHEN THEN ELSE IF DECLARE RETURN RETURNS NUMBER VARCHAR2 VARCHAR CHAR DATE TIMESTAMP CLOB BLOB ' +
+        'INTEGER INT BIGINT SMALLINT DECIMAL NUMERIC TEXT BOOLEAN FLOAT DOUBLE PRECISION NVARCHAR NCHAR ' +
+        'GRANT REVOKE TO IDENTIFIED TABLESPACE STORAGE PCTFREE INITRANS LOGGING NOLOGGING PARALLEL ' +
+        'USING BTREE ASC DESC IN EXISTS BETWEEN LIKE ISNULL COALESCE CAST INTERVAL DAY MONTH YEAR HOUR ' +
+        'MINUTE SECOND ZONE LOCAL GLOBAL TEMPORARY PRESERVE COMMIT ROLLBACK SAVEPOINT UPDATE DELETE').split(' '));
+    const RE = /(--[^\n]*)|('(?:[^']|'')*')|("(?:[^"]|"")*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_$#]*)/g;
+    return function (text) {
+        return escapeHtml(text).replace(RE, function (m, com, str, qi, num, word) {
+            if (com) return '<span class="tk-com">' + m + '</span>';
+            if (str) return '<span class="tk-str">' + m + '</span>';
+            if (qi) return '<span class="tk-qi">' + m + '</span>';
+            if (num) return '<span class="tk-num">' + m + '</span>';
+            if (word && KW.has(word.toUpperCase())) return '<span class="tk-kw">' + m + '</span>';
+            return m;
+        });
+    };
+})();
+
+const highlightYAML = (function () {
+    return function (text) {
+        return escapeHtml(text).split('\n').map(function (line) {
+            if (/^\s*#/.test(line)) return '<span class="tk-com">' + line + '</span>';
+            return line.replace(/^(\s*)([\w.\-\/]+)(:)(\s*)(.*)$/, function (m, ind, key, colon, sp, val) {
+                let v = val;
+                if (/^(true|false|null|~)$/i.test(val)) v = '<span class="tk-bool">' + val + '</span>';
+                else if (/^-?\d+(\.\d+)?$/.test(val)) v = '<span class="tk-num">' + val + '</span>';
+                else if (val) v = '<span class="tk-str">' + val + '</span>';
+                return ind + '<span class="tk-key">' + key + '</span>' + colon + sp + v;
+            });
+        }).join('\n');
+    };
+})();
+
+/* ── global config status bar (topbar chips) ─────────────── */
+(async function renderConfigBar() {
+    const bar = document.getElementById('config-bar');
+    if (!bar) return;
+    try {
+        const st = await api.get('/api/v1/config/status');
+        const chips = [];
+        chips.push('<span class="cfg-chip" title="' + escapeHtml(st.path || '') + '"><span class="dot ' +
+            (st.metadata_loaded ? '' : 'off') + '"></span>' +
+            (st.target_dialect ? '<b>' + escapeHtml(st.target_dialect) + '</b>' : '未配置') + '</span>');
+        if (st.metadata_loaded) {
+            chips.push('<span class="cfg-chip hide-sm">' + st.table_count + ' 张表</span>');
+        }
+        if (st.source_type) {
+            chips.push('<span class="cfg-chip hide-sm">源 <b>' + escapeHtml(st.source_type) + '</b></span>');
+        }
+        chips.push('<a class="cfg-bar-link" href="/config">编辑配置</a>');
+        bar.innerHTML = chips.join('');
+    } catch (e) { /* best-effort */ }
+})();
+
+/* ── sidebar collapse + theme toggle wiring ──────────────── */
+(function () {
+    const btn = document.getElementById('collapse-btn');
+    if (document.documentElement.classList.contains('pre-collapsed')) {
+        document.body.classList.add('nav-collapsed');
+        document.documentElement.classList.remove('pre-collapsed');
+    }
+    if (btn) {
+        btn.addEventListener('click', () => {
+            document.body.classList.toggle('nav-collapsed');
+            try {
+                localStorage.setItem('owl-nav', document.body.classList.contains('nav-collapsed') ? 'collapsed' : 'expanded');
+            } catch (e) {}
+        });
+    }
+    const tbtn = document.getElementById('theme-btn');
+    if (tbtn) tbtn.addEventListener('click', () => theme.toggle());
+})();
+
+/* ── jobUI: start / stream / cancel a job ────────────────── */
 const jobUI = {
     jobId: null,
     ws: null,
     logEl: null,
-    onComplete: null, // optional callback(jobId) invoked when a job completes
+    onComplete: null,
 
-    bind(logSelector) {
-        this.logEl = document.querySelector(logSelector);
-    },
+    bind(logSelector) { this.logEl = document.querySelector(logSelector); },
 
     async start(endpoint, body) {
         const resp = await api.post(endpoint, body || {});
@@ -63,7 +171,8 @@ const jobUI = {
         const start = document.getElementById('btn-start');
         const cancel = document.getElementById('btn-cancel');
         if (start) start.style.display = 'none';
-        if (cancel) cancel.style.display = 'inline-block';
+        if (cancel) cancel.style.display = 'inline-flex';
+        this.logLine('info', '任务已启动', resp.job_id);
         this.connect(resp.job_id);
         return resp;
     },
@@ -71,7 +180,7 @@ const jobUI = {
     async cancel() {
         if (!this.jobId) return;
         await api.del('/api/v1/jobs/' + this.jobId);
-        this.log('⚠️ 已发送取消请求');
+        this.logLine('warn', '已发送取消请求', '');
     },
 
     connect(jobId) {
@@ -80,42 +189,55 @@ const jobUI = {
         this.ws.onmessage = (e) => {
             const m = JSON.parse(e.data);
             if (m.type === 'progress') {
-                this.log(`[${m.seq}] ${m.event} ${m.schema || ''}.${m.table || ''} → ${m.rows} rows`);
+                const tbl = ((m.schema || '') + (m.table ? '.' + m.table : '')).trim();
+                this.logLine('info', m.event + (tbl ? '  ' + tbl : ''), (m.rows !== undefined && m.rows !== null) ? m.rows + ' rows' : '');
             } else if (m.type === 'complete') {
-                this.log('✅ 完成: ' + (m.status || ''));
+                this.logLine('ok', '任务完成', m.status || '');
+                toast.ok('任务完成', m.status || '');
                 this.finish();
                 if (this.onComplete) this.onComplete(this.jobId);
             } else if (m.type === 'cancelled') {
-                this.log('🚫 已取消');
+                this.logLine('warn', '任务已取消', '');
+                toast.warn('任务已取消', '');
                 this.finish();
             } else if (m.type === 'error') {
-                this.log('❌ ' + (m.error || ''));
+                this.logLine('err', m.error || '未知错误', '');
+                toast.err('任务失败', m.error || '');
                 this.finish();
             }
         };
-        this.ws.onclose = () => this.log('— 连接关闭 —');
+        this.ws.onclose = () => this.logLine('dim', '连接关闭', '');
     },
 
     finish() {
         const start = document.getElementById('btn-start');
         const cancel = document.getElementById('btn-cancel');
-        if (start) start.style.display = 'inline-block';
+        if (start) start.style.display = 'inline-flex';
         if (cancel) cancel.style.display = 'none';
         if (this.ws) this.ws.close();
     },
 
-    log(text) {
+    /* structured terminal line: [tag] message  detail */
+    logLine(kind, msg, detail) {
         if (!this.logEl) return;
-        this.logEl.textContent += text + '\n';
+        const line = document.createElement('span');
+        line.className = 'term-line';
+        const time = new Date().toTimeString().slice(0, 8);
+        line.innerHTML = '<span class="ln-dim">' + time + '</span>  ' +
+            '<span class="ln-' + kind + '">' + escapeHtml(msg) + '</span>' +
+            (detail ? '  <span class="ln-dim">' + escapeHtml(String(detail)) + '</span>' : '');
+        this.logEl.appendChild(line);
         this.logEl.scrollTop = this.logEl.scrollHeight;
-    }
+    },
+
+    log(text) { this.logLine('info', text, ''); }
 };
 
-// renderGenFiles: show generated SQL files as a selectable list + preview.
+/* ── renderGenFiles: file tabs + highlighted SQL preview ─── */
 function renderGenFiles(files, listEl, previewEl) {
     listEl.innerHTML = '';
     if (!files || files.length === 0) {
-        previewEl.textContent = '（无输出文件）';
+        previewEl.innerHTML = '<span class="ln-dim">（无输出文件）</span>';
         return;
     }
     files.forEach((f, i) => {
@@ -126,9 +248,9 @@ function renderGenFiles(files, listEl, previewEl) {
         btn.addEventListener('click', () => {
             listEl.querySelectorAll('.file-tab').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            previewEl.textContent = f.content;
+            previewEl.innerHTML = highlightSQL(f.content || '');
         });
         listEl.appendChild(btn);
     });
-    previewEl.textContent = files[0].content;
+    previewEl.innerHTML = highlightSQL(files[0].content || '');
 }
