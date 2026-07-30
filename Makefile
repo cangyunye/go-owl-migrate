@@ -108,7 +108,7 @@ test/full:
 
 # Run E2E tests against docker-compose databases (requires: docker compose up)
 test/e2e:
-	$(GO) test -tags e2e -v -count=1 ./internal/cmd/ ./internal/transfer/importer/
+	$(GO) test -tags e2e -v -count=1 ./internal/cmd/ ./internal/transfer/importer/ ./internal/transfer/exporter/ ./internal/metadata/extractor/
 
 test-quick:
 	$(GO) test ./...
