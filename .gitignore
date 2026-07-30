@@ -50,3 +50,6 @@ reasonix.toml
 
 # Docs site local symlink (docs-site/docs -> ../docs)
 docs-site/docs
+
+# opencode
+.opencode/
