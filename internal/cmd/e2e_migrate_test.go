@@ -60,8 +60,8 @@ func countTargetRows(t *testing.T, db *sql.DB, schema, table, dbType string) int
 		`SELECT COUNT(*) FROM "%s".%s`,
 		`SELECT COUNT(*) FROM %s."%s"`,
 	}
-	// MySQL-specific quoting
-	if dbType == "mysql" {
+	// MySQL-specific quoting (also matches compound dialects like goldendb-mysql)
+	if strings.Contains(dbType, "mysql") {
 		patterns = []string{
 			"SELECT COUNT(*) FROM `%s`.`%s`",
 			"SELECT COUNT(*) FROM %s.%s",
@@ -189,7 +189,8 @@ func runMigratePipeline(t *testing.T, cfg migratePipelineConfig) {
 	pkMap := buildPKMap(sm)
 
 	// Create target tables
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 	if err := ensureTablesForMigrate(ctx, tgtDB, sm, metaCfg); err != nil {
 		t.Fatalf("create target tables: %v", err)
 	}
@@ -212,7 +213,7 @@ func runMigratePipeline(t *testing.T, cfg migratePipelineConfig) {
 	}
 	for _, r := range exportResults {
 		if r.Error != nil {
-			t.Logf("export %s.%s: %v", r.Schema, r.Table, r.Error)
+			t.Errorf("export %s.%s: %v", r.Schema, r.Table, r.Error)
 		}
 	}
 
@@ -310,6 +311,8 @@ func TestMigrateE2E_PGToMySQL(t *testing.T) {
 	})
 }
 
+// NOTE: Oracle-target tests share the APPUSER schema and must NOT run in
+// parallel (no t.Parallel()). cleanupOracleTarget drops ALL user tables.
 func TestMigrateE2E_PGToOracle(t *testing.T) {
 	tgtDB := connectE2E(t, "oracle", oracleTargetDSN)
 	cleanupOracleTarget(t, tgtDB)
@@ -339,10 +342,10 @@ func TestMigrateE2E_MySQLToOracle(t *testing.T) {
 // ── SQL output mode test ──
 
 func TestMigrateE2E_SQLOutMode(t *testing.T) {
-	schema := fmt.Sprintf("mig_sqlout_%d", os.Getpid())
 	srcDB := connectE2E(t, "oracle", oracleSrcDSN)
-	pkMap := buildPKMap(loadSchemaModelOrDie(t, "oracle", oracleSrcDSN, "SCOTT"))
-	tables := loadSchemaModelOrDie(t, "oracle", oracleSrcDSN, "SCOTT").GetTables()
+	sm := loadSchemaModelOrDie(t, "oracle", oracleSrcDSN, "SCOTT")
+	pkMap := buildPKMap(sm)
+	tables := sm.GetTables()
 
 	tmpDir := t.TempDir()
 	exp := exporter.New(srcDB, exporter.Config{
@@ -385,9 +388,6 @@ func TestMigrateE2E_SQLOutMode(t *testing.T) {
 			t.Errorf("file %s missing INSERT INTO", f)
 		}
 	}
-
-	// Verify target DB was NOT touched
-	_ = schema
 }
 
 func loadSchemaModelOrDie(t *testing.T, dbType, dsn, schema string) *md.SchemaModel {

@@ -20,8 +20,7 @@ import (
 const (
 	expPGDSN      = "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
 	expMySQLDSN   = "root:root123456@tcp(127.0.0.1:3306)/default_db"
-	expOracleDSN  = "oracle://scott:tiger@127.0.0.1:1521/XEPDB1"
-	expOracleDSN2 = "oracle://appuser:App123!@127.0.0.1:1521/XEPDB1"
+	expOracleDSN = "oracle://scott:tiger@127.0.0.1:1521/XEPDB1"
 )
 
 func connectExpDB(t *testing.T, driver, dsn string) *sql.DB {
@@ -302,11 +301,3 @@ func TestExport_PG_QuoteIdent(t *testing.T) {
 	}
 }
 
-// ── helpers ──
-
-func tFatalIf(t *testing.T, err error, msg string) {
-	t.Helper()
-	if err != nil {
-		t.Fatalf("%s: %v", msg, err)
-	}
-}
