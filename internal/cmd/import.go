@@ -207,8 +207,8 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 	b.WriteString("CREATE TABLE ")
 
 	targetType := registry.Normalize(strings.ToLower(cfg.Target.Type))
-	targetIsMySQL := strings.HasSuffix(targetType, "-mysql")
-	targetIsOracle := strings.HasSuffix(targetType, "-oracle")
+	targetIsMySQL := targetType == "mysql" || strings.HasSuffix(targetType, "-mysql")
+	targetIsOracle := targetType == "oracle" || strings.HasSuffix(targetType, "-oracle")
 
 	if cfg.DDL.IncludeIfNotExists && !targetIsOracle {
 		b.WriteString("IF NOT EXISTS ")
@@ -246,6 +246,7 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 		"XML":               "XMLTYPE",
 		"TIMESTAMP":         "TIMESTAMP",
 		"TIMESTAMPTZ":       "TIMESTAMP WITH TIME ZONE",
+		"DATETIME":          "DATE",
 		"VARCHAR":           "VARCHAR2",
 		"CHARACTER VARYING": "VARCHAR2",
 		"DECIMAL":           "NUMBER",
@@ -286,13 +287,28 @@ func buildCreateTableSQL(tbl *md.TableDef, schema string, cfg *config.Config) st
 
 	// PG target keeps source types mostly as-is
 	pgMap := map[string]string{
-		"VARCHAR2": "VARCHAR",
-		"NUMBER":   "NUMERIC",
-		"BOOLEAN":  "BOOLEAN",
-		"CLOB":     "TEXT",
-		"BLOB":     "BYTEA",
-		"JSON":     "JSONB",
-		"XML":      "XML",
+		"VARCHAR2":  "VARCHAR",
+		"NUMBER":    "NUMERIC",
+		"BOOLEAN":   "BOOLEAN",
+		"CLOB":      "TEXT",
+		"BLOB":      "BYTEA",
+		"JSON":      "JSONB",
+		"XML":       "XML",
+		"DATETIME":  "TIMESTAMP",
+		"INT":       "INTEGER",
+		"TINYINT":   "SMALLINT",
+		"SMALLINT":  "SMALLINT",
+		"BIGINT":    "BIGINT",
+		"FLOAT":     "REAL",
+		"DOUBLE":    "DOUBLE PRECISION",
+		"TINYTEXT":  "TEXT",
+		"MEDIUMTEXT": "TEXT",
+		"LONGTEXT":  "TEXT",
+		"LONGBLOB":  "BYTEA",
+		"MEDIUMBLOB": "BYTEA",
+		"TINYBLOB":  "BYTEA",
+		"ENUM":      "VARCHAR",
+		"SET":       "TEXT",
 	}
 
 	pks := tbl.GetPrimaryKeys()
