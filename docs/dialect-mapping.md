@@ -19,7 +19,7 @@ go-owl-migrate supports a dialect system built from composable interfaces. Each 
 | **GoldenDB (MySQL)** | `goldendb`, `goldendb-mysql` | MySQL | Same as MySQL |
 | **GoldenDB (Oracle)** | `goldendb-oracle` | Oracle | Same as Oracle |
 | **OceanBase (MySQL)** | `oceanbase`, `oceanbase-mysql` | MySQL | TRUNCATE is transactional, no FULLTEXT indexes, no MyISAM engine, supports SEQUENCE |
-| **OceanBase (Oracle)** | `oceanbase-oracle` | Oracle | TRUNCATE is transactional, no BFILE support, partition syntax differences, no Bitmap indexes |
+| **OceanBase (Oracle)** | `oceanbase-oracle` | Oracle | TRUNCATE is transactional, no BFILE support, partition syntax differences, no Bitmap indexes. Driver is auto-selected: `oracle://` DSN → go-ora TNS; otherwise → obconnector-go MySQL wire (`preset=oboracle`). Compat mode is probed at connect and must match `compat_mode` config. |
 | **PanWeiDB (PG)** | `panweidb` | PostgreSQL | Uses PG driver, same DML syntax |
 | **PanWeiDB (MySQL B)** | `panweidb-mysql` | MySQL | Dolphin plugin, backtick quoting, ENGINE= ignored, uses PG driver/port |
 | **PanWeiDB (Oracle A)** | `panweidb-oracle` | Oracle | Oracle DDL/DML syntax, TRUNCATE transactional, uses PG driver/port |
@@ -40,15 +40,22 @@ Serverless, in-process databases:
 
 When extracting metadata from a live database (`metadata.type: database`), the pipeline queries:
 
-1. **Tables** — via `information_schema.tables` (PG/MySQL) or `all_tables` (Oracle)
-2. **Columns** — via `information_schema.columns` or `all_tab_columns`
+1. **Tables** — via `information_schema.tables` (PG/MySQL) or `all_tables` (Oracle); table comments via `obj_description`/`all_tab_comments`; temporary-table / partitioned-parent flags where available
+2. **Columns** — via `information_schema.columns` or `all_tab_columns`; identity start/increment via `pg_get_serial_sequence`/`all_tab_identity_cols`
 3. **Primary Keys** — via `information_schema.table_constraints` or `all_constraints`
 4. **Indexes** — via `information_schema.statistics` / `pg_index` or `all_indexes`
 5. **Foreign Keys** — via `information_schema.key_column_usage` or `all_cons_columns`
 6. **Views** — via `information_schema.views` or `all_views`
-7. **Sequences** — via `pg_sequences` or `all_sequences`
+7. **Sequences** — via `pg_sequences` or `all_sequences` (START WITH = `last_number`, avoids post-migration PK collisions)
 8. **Triggers** — via `information_schema.triggers` / `pg_trigger` or `all_triggers`
-9. **Synonyms** — via `all_synonyms` (Oracle/OceanBase-Oracle only); PG/MySQL return empty
+9. **Functions/Procedures** — via `pg_get_functiondef` (PG10+ `prokind` fallback) or `DBMS_METADATA.GET_DDL` (Oracle, `all_source` fallback)
+10. **Packages/Bodies** — via `DBMS_METADATA` (Oracle only)
+11. **Materialized Views** — via `pg_matviews` (PG) or `all_mviews` (Oracle)
+12. **Partitions** — via `pg_get_partkeydef` (PG) / `all_part_tables` (Oracle) / `information_schema.partitions` (MySQL); reconstructs `PARTITION BY` text
+13. **Synonyms** — via `all_synonyms` (Oracle/OceanBase-Oracle only); PG/MySQL return empty
+
+> The 13-step list is exhaustive; MySQL covers steps 1–8 plus partitions, PG 1–11 plus partitions,
+> Oracle 1–13. Steps 9/10/11 are Oracle-only queries where the PG/MySQL side is empty.
 
 ### Querying a Dialect
 
@@ -260,6 +267,7 @@ In target type strings:
 ```yaml
 ddl:
   target_dialect: postgres                # Target dialect for DDL
+  source_dialect: oracle                  # Source dialect (CSV/xlsx 元数据时用于跨方言类型转换)
   include_if_not_exists: true             # Add IF NOT EXISTS (not available for Oracle)
   include_comments: true                  # Column/table comments as COMMENT ON
   include_drop: false                     # Generate DROP statements

@@ -60,6 +60,7 @@ source:
   type: postgres                            # postgres | mysql | oracle | goldendb | oceanbase | panweidb | opengaussdb
   dsn: "host=127.0.0.1 port=5432 dbname=mydb user=u password=p sslmode=disable"
   schema: public
+  compat_mode: ""                           # OceanBase 租户兼容模式: "mysql" | "oracle" (留空=连接后自动探测)
   connect_timeout: "30s"                    # Connection/ping timeout (e.g. 10s, 1m)
   query_timeout: ""                         # Overall operation timeout (e.g. 30m, 1h; empty = no limit)
   pool:                                     # Connection pool tuning (optional)
@@ -71,11 +72,13 @@ source:
 target:
   type: mysql
   dsn: "root:pass@tcp(127.0.0.1:3306)/mydb"
+  compat_mode: ""                           # OceanBase 租户兼容模式 (同 source)
   pool:                                     # Same pool options available for target
     max_open_conns: 10
 
 ddl:
   target_dialect: mysql                     # Target DDL dialect (required)
+  source_dialect: ""                        # Source dialect for cross-dialect type conversion (CSV/xlsx 元数据时必填)
   output_dir: ./output/ddl/                 # Output directory for DDL files
   include_if_not_exists: true               # Add IF NOT EXISTS
   include_comments: true                    # Include column/table comments
@@ -96,8 +99,7 @@ ddl:
   add_rowid_column: false                   # Add a ROWID column (Oracle targets)
   empty_string_to_null: false               # Convert '' to NULL (Oracle compatibility)
   boolean_mapping: {}                       # Custom boolean value mapping
-  no_quote_identifiers: false                # Output bare identifiers without quoting (compatibility)
-  no_quote_identifiers: false              # Output bare identifiers without quoting (compatibility)
+  no_quote_identifiers: false               # Output bare identifiers without quoting (compatibility)
   partition:
     migrate: false                          # Include partition DDL
 
@@ -155,6 +157,7 @@ import:
     commit_interval: 1000                   # rows per transaction
     error_policy: skip_row                  # stop | skip_row | log_only
     max_errors_before_stop: 0               # 0 = unlimited
+    use_copy: false                         # PG 族目标启用 COPY 快速通道 (失败自动回退批量 INSERT)
   parallel:
     enabled: true
     max_workers: 4
@@ -230,6 +233,12 @@ oracle://user:password@host:port/service_name
 
 Use the same DSN format as the underlying dialect (MySQL or PostgreSQL). Set `source.type` to `goldendb`, `goldendb-mysql`, `oceanbase-mysql`, `oceanbase-oracle`, `panweidb`, `opengaussdb`, etc.
 
+**OceanBase 特别说明**：Oracle 租户的驱动路径由 DSN 前缀决定——
+`oracle://...` 走 go-ora 的 TNS 协议；其余（如 `obmysql://...` 或 MySQL 风格 DSN）
+走 `obconnector-go` 的 MySQL 线协议。`source.compat_mode` / `target.compat_mode`
+声明租户兼容模式（`mysql` 或 `oracle`），留空时连接后自动探测
+（`SHOW VARIABLES LIKE 'ob_compatibility_mode'`），配置与实际不符会直接报错。
+
 ## Table Filtering
 
 The `ddl.table_filter` and `export.tables` sections support multi-level filtering:
@@ -291,7 +300,9 @@ The config loader validates:
 1. `metadata.type` must be `csv`, `xlsx`, or `database`
 2. When `metadata.type` is `database`, `source.type` and `source.dsn` are required
 3. `ddl.target_dialect` must be a valid dialect name
-4. `import.batch.error_policy` must be `stop`, `skip_row`, or `log_only`
+4. `ddl.source_dialect` (if set) must be a valid dialect name
+5. `import.batch.error_policy` must be `stop`, `skip_row`, or `log_only`
+6. `source.compat_mode` / `target.compat_mode` (if set) must be `mysql` or `oracle`
 
 ### Valid Dialects
 

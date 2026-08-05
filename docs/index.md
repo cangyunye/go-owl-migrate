@@ -15,28 +15,17 @@ Offline-first database migration tool for Oracle, PostgreSQL, MySQL, and derivat
 | [Developer Guide](development.md) | Project structure, testing, extending dialects |
 | [Database Metadata Queries](database-metadata/index.md) | Full metadata query SQL reference per database type (Oracle, PostgreSQL, MySQL, DuckDB, SQLite3) |
 
-## Quick Summary
+## Quick Start
+
+See the [README](../README.md#quick-start) for the quick-start commands, or
+walk through the guided interview in [Getting Started](getting-started.md). The minimal
+one-liner:
 
 ```bash
-# 0. Generate a config from CLI parameters (no manual YAML editing)
 owl-migrate init --source-type oracle --source-dsn "oracle://user:pass@host:1521/service" \
   --source-schema SCOTT --target-type postgres \
   --target-dsn "postgres://user:pass@localhost:5432/migrate" --target-schema public
-
-# 1. Validate metadata
-owl-migrate validate -c ./migrate.yaml
-
-# 2. Generate DDL for target database
-owl-migrate export ddl -c ./migrate.yaml
-
-# 3. Generate SELECT statements for data export
-owl-migrate gen-select -c ./migrate.yaml
-
-# 4. Run end-to-end migration (export + import)
 owl-migrate migrate -c ./migrate.yaml
-
-# 5. Or use offline mode: export to CSV, then generate INSERT SQL
-owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 ```
 
 ## Supported Databases

@@ -10,8 +10,11 @@ Database migration tool for cross-database schema & data migration: Oracle, Post
 - **Live extraction**: Extract schema metadata directly from PostgreSQL, MySQL, Oracle, SQLite3, and DuckDB
 - **Cross-dialect DDL generation**: NUMBER↔DECIMAL↔INTEGER, VARCHAR2↔VARCHAR, BOOLEAN↔TINYINT(1), CLOB↔TEXT↔LONGTEXT, etc.
 - **Compound dialects**: GoldenDB (MySQL/Oracle mode), OceanBase (MySQL/Oracle mode), PanWeiDB, OpenGaussDB
+- **OceanBase dual-driver**: Oracle tenants over go-ora/TNS or obconnector-go MySQL wire; compat mode auto-probed and enforced
 - **Embedded dialects**: SQLite3, DuckDB — in-process databases, no external server needed
-- **Data migration**: Export source data to CSV with cursor-based pagination, import with batched transactions
+- **Data migration**: Export source data to CSV with cursor/offset pagination, import with batched transactions
+- **PostgreSQL COPY fast path**: `import.batch.use_copy` enables `COPY` bulk loads (auto-fallback to batched INSERT)
+- **Automatic target table creation**: cross-dialect type conversion through the logical-type IR (`ddl.source_dialect` for CSV metadata)
 - **Checkpoint/Resume**: Per-table state persists to disk — interrupted migrations pick up where they left off
 - **Continue on error**: Per-table error isolation — one failing table doesn't abort the whole migration
 - **SQL output mode**: Generate INSERT SQL files instead of writing directly to the target database
@@ -83,6 +86,10 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 
 ## Documentation
 
+Full index with a browsable website (GitHub-flavored Markdown, all languages): **[docs/index.md](docs/index.md)** — the docs-site build is served from `docs-site/index.html` (see [deployment](#deployment)).
+
+Key documents:
+
 | Document | Description |
 |---|---|
 | [Getting Started](docs/getting-started.md) | Installation, quick start, workflows |
@@ -91,7 +98,26 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 | [CSV Metadata Format](docs/csv-format.md) | CSV file format for offline schema definition |
 | [Migration Pipeline](docs/migration-pipeline.md) | Export/import, checkpoint/resume, encoding, error handling |
 | [Dialect & Type Mapping](docs/dialect-mapping.md) | Dialect system, type mapping, feature flags |
+| [Database Metadata](docs/database-metadata/index.md) | Live metadata extraction SQL per database |
 | [Developer Guide](docs/development.md) | Project structure, testing, adding dialects |
+
+## Deployment (docs-site)
+
+The documentation website is a static single-page app: `docs-site/index.html` renders
+`docs/**/*.md` (soft-linked as `docs-site/docs → ../docs`). Serve it in two ways:
+
+```bash
+# ① Static server (any of):
+python3 -m http.server 8080            # from the project root → /docs-site/
+npx serve docs-site
+
+# ② Embedded in the tool:
+go run ./cmd/migrate/main.go serve     # serves /docs/ from docs-site/
+```
+
+Rebuild/refresh: edit Markdown under `docs/`, then re-sync the symlink
+(`ln -sfn ../docs docs-site/docs`) and keep the `DOCS` index in
+`docs-site/index.html` in sync with the actual files.
 
 ## License
 
