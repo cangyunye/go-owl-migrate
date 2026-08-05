@@ -12,6 +12,7 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 )
@@ -87,7 +88,7 @@ Examples:
 			pingCancel()
 			fmt.Printf("Connected to %s, schema: %s\n", cfg.Source.Type, targetSchema)
 
-			sm, err := extractor.Extract(db, cfg.Source.Type, targetSchema)
+			sm, err := extractor.Extract(db, dbconn.MetadataSourceType(config.DBConfig{Type: cfg.Source.Type, DSN: cfg.Source.DSN}), targetSchema)
 			if err != nil {
 				return fmt.Errorf("extract metadata: %w", err)
 			}

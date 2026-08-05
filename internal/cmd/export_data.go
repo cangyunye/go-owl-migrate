@@ -192,6 +192,7 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 			CSVNullOverrides:     cfg.Export.CSV.NullOverrides,
 			CSVEmptyStringToNull: cfg.Export.CSV.EmptyStringToNull,
 			DBType:               cfg.Source.Type,
+			PlaceholderFamily:    placeholderFamilyFor(cfg.Source),
 			Logger:               logger,
 		})
 

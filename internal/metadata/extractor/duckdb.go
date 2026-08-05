@@ -293,6 +293,22 @@ func (DuckDBMetadataQuerier) QuerySynonyms(_ *sql.DB, _ string) ([]*md.SynonymDe
 	return nil, nil // DuckDB does not support synonyms
 }
 
+func (DuckDBMetadataQuerier) QueryFunctions(_ *sql.DB, _ string) ([]*md.FunctionDef, error) {
+	return nil, nil
+}
+
+func (DuckDBMetadataQuerier) QueryMViews(_ *sql.DB, _ string) ([]*md.MViewDef, error) {
+	return nil, nil
+}
+
+func (DuckDBMetadataQuerier) QueryPackages(_ *sql.DB, _ string) ([]*md.PackageDef, error) {
+	return nil, nil
+}
+
+func (DuckDBMetadataQuerier) QueryPackageBodies(_ *sql.DB, _ string) ([]*md.PackageBodyDef, error) {
+	return nil, nil
+}
+
 // splitCSL splits a comma-separated list, trimming whitespace.
 func splitCSL(s string) []string {
 	if s == "" {

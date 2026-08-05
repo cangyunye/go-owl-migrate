@@ -13,6 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
@@ -33,7 +34,11 @@ type Config struct {
 	PageSize             int
 	MaxWorkers           int
 	DBType               string // oracle/postgres/mysql
-	Logger               *zap.Logger
+	// PlaceholderFamily overrides dialect-derived bind placeholders:
+	// "qmark" (?), "colon" (:N) or "dollar" ($N). Used for OceanBase Oracle
+	// tenants reached over the MySQL wire protocol.
+	PlaceholderFamily string
+	Logger            *zap.Logger
 }
 
 // Exporter reads data from a database and writes to files.
@@ -41,6 +46,9 @@ type Exporter struct {
 	db     *sql.DB
 	cfg    Config
 	logger *zap.Logger
+
+	oracleDetectOnce sync.Once
+	oracleLegacy     bool
 }
 
 // New creates a new Exporter.
@@ -137,6 +145,10 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 		zap.Int("page_size", e.cfg.PageSize),
 	)
 
+	if e.isOracle() {
+		e.detectOraclePagination(ctx)
+	}
+
 	// Get column info from DB
 	columns, err := e.getColumns(ctx, tbl)
 	if err != nil {
@@ -145,6 +157,11 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 	}
 
 	pkCols := primaryKeys[key]
+	if len(pkCols) == 0 {
+		e.logger.Warn("table has no primary key; using OFFSET pagination which may miss or duplicate rows if the table is written concurrently",
+			zap.String("table", key),
+		)
+	}
 	// Build output file
 	filename := fmt.Sprintf("%s.%s.csv", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName))
 	filepath := filepath.Join(e.cfg.OutputDir, filename)
@@ -179,7 +196,11 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 		default:
 		}
 
-		rows, newLast, err := e.fetchBatch(ctx, tbl, columns, pkCols, lastVals)
+		offset := 0
+		if len(pkCols) == 0 {
+			offset = int(totalRows)
+		}
+		rows, newLast, err := e.fetchBatch(ctx, tbl, columns, pkCols, lastVals, offset)
 		if err != nil {
 			result.Error = fmt.Errorf("fetch batch %d: %w", batches, err)
 			return result
@@ -374,13 +395,31 @@ func (e *Exporter) isPostgres() bool {
 }
 
 func (e *Exporter) limitClause() string {
+	return e.pageLimitClause(0)
+}
+
+func (e *Exporter) pageLimitClause(offset int) string {
 	if e.isOracle() {
-		return fmt.Sprintf("FETCH NEXT %d ROWS ONLY", e.cfg.PageSize)
+		if offset <= 0 {
+			return fmt.Sprintf("FETCH NEXT %d ROWS ONLY", e.cfg.PageSize)
+		}
+		return fmt.Sprintf("OFFSET %d ROWS FETCH NEXT %d ROWS ONLY", offset, e.cfg.PageSize)
 	}
-	return fmt.Sprintf("LIMIT %d", e.cfg.PageSize)
+	if offset <= 0 {
+		return fmt.Sprintf("LIMIT %d", e.cfg.PageSize)
+	}
+	return fmt.Sprintf("LIMIT %d OFFSET %d", e.cfg.PageSize, offset)
 }
 
 func (e *Exporter) placeholder(idx int) string {
+	switch e.cfg.PlaceholderFamily {
+	case "qmark":
+		return "?"
+	case "colon":
+		return fmt.Sprintf(":%d", idx+1)
+	case "dollar":
+		return fmt.Sprintf("$%d", idx+1)
+	}
 	if e.isOracle() {
 		return fmt.Sprintf(":%d", idx+1)
 	}
@@ -390,7 +429,7 @@ func (e *Exporter) placeholder(idx int) string {
 	return "?"
 }
 
-func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []ColumnInfo, pkCols []string, lastVals []any) ([][]any, []any, error) {
+func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []ColumnInfo, pkCols []string, lastVals []any, offset int) ([][]any, []any, error) {
 	colNames := make([]string, len(columns))
 	colByName := make(map[string]string, len(columns))
 	for i, c := range columns {
@@ -412,7 +451,7 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 		quotedPKs[i] = e.quoteIdent(resolvePK(pk))
 	}
 
-	query := e.buildBatchQuery(tbl, colNames, quotedPKs, pkCols, len(lastVals) > 0)
+	query := e.buildBatchQuery(tbl, colNames, quotedPKs, pkCols, len(lastVals) > 0, offset)
 
 	rows, err := e.db.QueryContext(ctx, query, lastVals...)
 	if err != nil {
@@ -455,13 +494,26 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 	return results, newLast, nil
 }
 
-func (e *Exporter) buildBatchQuery(tbl *md.TableDef, colNames, quotedPKs, pkCols []string, useCursor bool) string {
+func (e *Exporter) detectOraclePagination(ctx context.Context) {
+	e.oracleDetectOnce.Do(func() {
+		e.oracleLegacy = !dbconn.OracleSupportsRowLimiting(ctx, e.db)
+		if e.oracleLegacy {
+			e.logger.Info("Oracle server lacks OFFSET/FETCH support; falling back to ROWNUM pagination")
+		}
+	})
+}
+
+func (e *Exporter) buildBatchQuery(tbl *md.TableDef, colNames, quotedPKs, pkCols []string, useCursor bool, offset int) string {
 	selectList := strings.Join(colNames, ", ")
 	from := fmt.Sprintf("%s.%s", e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName))
 	limit := e.limitClause()
 
+	if e.isOracle() && e.oracleLegacy {
+		return e.buildOracleLegacyQuery(selectList, from, colNames, quotedPKs, pkCols, useCursor, offset)
+	}
+
 	if len(pkCols) == 0 {
-		return fmt.Sprintf("SELECT %s FROM %s %s", selectList, from, limit)
+		return fmt.Sprintf("SELECT %s FROM %s %s", selectList, from, e.pageLimitClause(offset))
 	}
 
 	orderBy := strings.Join(quotedPKs, ", ")
@@ -480,6 +532,39 @@ func (e *Exporter) buildBatchQuery(tbl *md.TableDef, colNames, quotedPKs, pkCols
 		cursor = fmt.Sprintf("(%s) > (%s)", orderBy, strings.Join(placeholders, ", "))
 	}
 	return fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s %s", selectList, from, cursor, orderBy, limit)
+}
+
+// buildOracleLegacyQuery renders Oracle 11g-compatible pagination using ROWNUM
+// wrappers instead of the 12c OFFSET/FETCH syntax.
+func (e *Exporter) buildOracleLegacyQuery(selectList, from string, colNames, quotedPKs, pkCols []string, useCursor bool, offset int) string {
+	n := e.cfg.PageSize
+
+	if len(pkCols) == 0 {
+		inner := fmt.Sprintf("SELECT %s FROM %s", selectList, from)
+		if offset <= 0 {
+			return fmt.Sprintf("SELECT %s FROM (SELECT owl_pg__.*, ROWNUM AS owl_rn__ FROM (%s) owl_pg__ WHERE ROWNUM <= %d) WHERE owl_rn__ > 0",
+				selectList, inner, n)
+		}
+		return fmt.Sprintf("SELECT %s FROM (SELECT owl_pg__.*, ROWNUM AS owl_rn__ FROM (%s) owl_pg__ WHERE ROWNUM <= %d) WHERE owl_rn__ > %d",
+			selectList, inner, offset+n, offset)
+	}
+
+	orderBy := strings.Join(quotedPKs, ", ")
+	inner := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s", selectList, from, orderBy)
+	if useCursor {
+		var cursor string
+		if len(pkCols) == 1 {
+			cursor = fmt.Sprintf("%s > %s", quotedPKs[0], e.placeholder(0))
+		} else {
+			placeholders := make([]string, len(pkCols))
+			for i := range pkCols {
+				placeholders[i] = e.placeholder(i)
+			}
+			cursor = fmt.Sprintf("(%s) > (%s)", orderBy, strings.Join(placeholders, ", "))
+		}
+		inner = fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s", selectList, from, cursor, orderBy)
+	}
+	return fmt.Sprintf("SELECT %s FROM (%s) WHERE ROWNUM <= %d", selectList, inner, n)
 }
 
 func (e *Exporter) rowToCSV(row []any, columns []ColumnInfo) string {

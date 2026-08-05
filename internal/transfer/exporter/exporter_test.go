@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	expPGDSN      = "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
-	expMySQLDSN   = "root:root123456@tcp(127.0.0.1:3306)/default_db"
+	expPGDSN     = "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
+	expMySQLDSN  = "root:root123456@tcp(127.0.0.1:3306)/default_db"
 	expOracleDSN = "oracle://scott:tiger@127.0.0.1:1521/XEPDB1"
 )
 
@@ -265,6 +265,50 @@ func TestExport_PG_RowCount(t *testing.T) {
 	}
 }
 
+// Regression test: PK-less tables used to loop forever re-fetching the first
+// page; they must now paginate with OFFSET and terminate.
+func TestExport_PG_NoPK_OffsetPagination(t *testing.T) {
+	db := connectExpDB(t, "postgres", expPGDSN)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `DROP TABLE IF EXISTS public.e2e_nopk`); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE public.e2e_nopk (a integer, b text)`); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	defer db.ExecContext(ctx, `DROP TABLE public.e2e_nopk`)
+
+	stmt, err := db.PrepareContext(ctx, `INSERT INTO public.e2e_nopk (a, b) VALUES ($1, $2)`)
+	if err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	for i := 0; i < 25; i++ {
+		if _, err := stmt.ExecContext(ctx, i, fmt.Sprintf("row-%d", i)); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+	stmt.Close()
+
+	dir := t.TempDir()
+	tbl := &md.TableDef{TableSchema: "public", TableName: "e2e_nopk"}
+	exp := New(db, Config{OutputDir: dir, PageSize: 10, CSVHeader: true, DBType: "postgres"})
+	results, err := exp.ExportTables(ctx, []*md.TableDef{tbl}, nil)
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	r := results[0]
+	if r.Error != nil {
+		t.Fatalf("export error: %v", r.Error)
+	}
+	if r.Rows != 25 {
+		t.Errorf("rows = %d, want 25", r.Rows)
+	}
+	if r.Batches != 3 {
+		t.Errorf("batches = %d, want 3", r.Batches)
+	}
+}
+
 func TestExport_PG_QuoteIdent(t *testing.T) {
 	db := connectExpDB(t, "postgres", expPGDSN)
 	ctx := context.Background()
@@ -300,4 +344,3 @@ func TestExport_PG_QuoteIdent(t *testing.T) {
 		}
 	}
 }
-

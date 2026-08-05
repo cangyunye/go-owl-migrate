@@ -46,3 +46,33 @@ func TestGetQuerySQL(t *testing.T) {
 		t.Errorf("GetQuerySQL(postgres, bogus) = %q, want empty", sql)
 	}
 }
+
+func TestOracleBindPlaceholderRewrite(t *testing.T) {
+	src := "WHERE owner = UPPER(:1) OR table_owner = UPPER(:1)"
+
+	native := OracleMetadataQuerier{}
+	if got := native.bind(src); got != src {
+		t.Errorf("native bind should keep :N, got %q", got)
+	}
+
+	wire := OracleMetadataQuerier{Placeholder: "?"}
+	got := wire.bind(src)
+	want := "WHERE owner = UPPER(?) OR table_owner = UPPER(?)"
+	if got != want {
+		t.Errorf("wire bind = %q, want %q", got, want)
+	}
+}
+
+func TestOceanBaseOracleWireQuerierRegistered(t *testing.T) {
+	q, err := Get("oceanbase-oracle-wire")
+	if err != nil {
+		t.Fatalf("Get(oceanbase-oracle-wire): %v", err)
+	}
+	if q.Type() != "oceanbase-oracle-wire" {
+		t.Errorf("querier type = %q", q.Type())
+	}
+	// TNS-style oceanbase-oracle still routes to the native ":N" querier.
+	if _, err := Get(normalizeDBType("oceanbase-oracle")); err != nil {
+		t.Fatalf("normalized oceanbase-oracle lookup: %v", err)
+	}
+}

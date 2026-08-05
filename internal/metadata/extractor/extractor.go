@@ -23,6 +23,10 @@ type MetadataQuerier interface {
 	QuerySequences(db *sql.DB, schema string) ([]*md.SequenceDef, error)
 	QueryTriggers(db *sql.DB, schema string) ([]*md.TriggerDef, error)
 	QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error)
+	QueryFunctions(db *sql.DB, schema string) ([]*md.FunctionDef, error)
+	QueryMViews(db *sql.DB, schema string) ([]*md.MViewDef, error)
+	QueryPackages(db *sql.DB, schema string) ([]*md.PackageDef, error)
+	QueryPackageBodies(db *sql.DB, schema string) ([]*md.PackageBodyDef, error)
 }
 
 var (
@@ -34,6 +38,7 @@ func init() {
 	Register(&PGMetadataQuerier{})
 	Register(&MySQLMetadataQuerier{})
 	Register(&OracleMetadataQuerier{})
+	Register(OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?"}})
 }
 
 // Register adds a querier to the global registry.
@@ -79,7 +84,12 @@ func normalizeDBType(t string) string {
 // Returns a fully populated SchemaModel with table definitions, columns,
 // primary keys, indexes, foreign keys, views, sequences, and triggers.
 func Extract(db *sql.DB, dbType, schema string) (*md.SchemaModel, error) {
-	querier, err := Get(normalizeDBType(dbType))
+	// Exact registration wins (e.g. "oceanbase-oracle-wire" keeps its own
+	// placeholder style); otherwise fall back to the base querier mapping.
+	querier, err := Get(dbType)
+	if err != nil {
+		querier, err = Get(normalizeDBType(dbType))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +186,40 @@ func Extract(db *sql.DB, dbType, schema string) (*md.SchemaModel, error) {
 	}
 	for _, syn := range synonyms {
 		sm.AddSynonym(syn)
+	}
+
+	// 10. Functions / procedures (optional)
+	functions, err := querier.QueryFunctions(db, schema)
+	if err != nil {
+		return nil, fmt.Errorf("query functions: %w", err)
+	}
+	for _, fn := range functions {
+		sm.AddFunction(fn)
+	}
+
+	// 11. Materialized views (optional)
+	mviews, err := querier.QueryMViews(db, schema)
+	if err != nil {
+		return nil, fmt.Errorf("query materialized views: %w", err)
+	}
+	for _, mv := range mviews {
+		sm.AddMView(mv)
+	}
+
+	// 12. Packages (optional, Oracle-style dialects)
+	packages, err := querier.QueryPackages(db, schema)
+	if err != nil {
+		return nil, fmt.Errorf("query packages: %w", err)
+	}
+	for _, pkg := range packages {
+		sm.AddPackage(pkg)
+	}
+	packageBodies, err := querier.QueryPackageBodies(db, schema)
+	if err != nil {
+		return nil, fmt.Errorf("query package bodies: %w", err)
+	}
+	for _, pkg := range packageBodies {
+		sm.AddPackageBody(pkg)
 	}
 
 	return sm, nil

@@ -61,7 +61,8 @@ func genSelectCmd() *cobra.Command {
 			quoteFn = func(s string) string { return s }
 		}
 		oracleRowNum := strings.Contains(cfg.DDL.TargetDialect, "oracle")
-		gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn, cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum)
+		gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn, cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum).
+			WithPagination(d.BuildPaginationClause)
 
 		files, err := gen.Generate(sm)
 		if err != nil {

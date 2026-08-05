@@ -1,6 +1,10 @@
 package generator
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
+)
 
 // IsNumeric returns true if s represents a numeric value (integer or float).
 func IsNumeric(s string) bool {
@@ -40,7 +44,7 @@ func FormatSQLValue(v, nullMarker, dialect string) string {
 		return v
 	}
 	escaped := strings.ReplaceAll(v, "'", "''")
-	if dialect == "oracle" && escaped == "" {
+	if isOracleFamily(dialect) && escaped == "" {
 		return "NULL"
 	}
 	return "'" + escaped + "'"
@@ -51,10 +55,26 @@ func GetQuoter(dialect string, noQuote bool) func(string) string {
 	if noQuote {
 		return func(s string) string { return s }
 	}
-	switch dialect {
-	case "mysql":
-		return func(s string) string { return "`" + s + "`" }
-	default:
-		return func(s string) string { return `"` + s + `"` }
+	if isMySQLFamily(dialect) {
+		return func(s string) string { return "`" + strings.ReplaceAll(s, "`", "``") + "`" }
 	}
+	return func(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }
+}
+
+// isMySQLFamily reports whether the dialect uses backtick quoting.
+func isMySQLFamily(dialect string) bool {
+	t := strings.ToLower(strings.TrimSpace(dialect))
+	if t == "mysql" || t == "mariadb" || t == "goldendb" || strings.HasSuffix(t, "-mysql") {
+		return true
+	}
+	if d, err := registry.Get(t); err == nil {
+		return strings.Contains(strings.ToLower(d.Name()), "mysql")
+	}
+	return false
+}
+
+// isOracleFamily reports whether the dialect treats empty string as NULL.
+func isOracleFamily(dialect string) bool {
+	t := strings.ToLower(strings.TrimSpace(dialect))
+	return t == "oracle" || strings.HasSuffix(t, "-oracle")
 }

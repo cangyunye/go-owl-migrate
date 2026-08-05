@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 	"github.com/cangyunye/go-owl-migrate/internal/paths"
@@ -84,7 +85,7 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sm, err := extractor.Extract(db, src.Type, targetSchema)
+	sm, err := extractor.Extract(db, dbconn.MetadataSourceType(src), targetSchema)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "extract metadata: "+err.Error())
 		return

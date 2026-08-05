@@ -2,6 +2,9 @@ package extractor
 
 import (
 	"database/sql"
+	"fmt"
+	"regexp"
+	"strings"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
@@ -10,30 +13,41 @@ import (
 // These constants expose the SQL used by each query method.
 // They are referenced by the show-query command and by the method implementations.
 
-const queryOracleTables = `SELECT table_name, tablespace_name, num_rows
-FROM all_tables
-WHERE owner = UPPER(:1)
-ORDER BY table_name`
+const queryOracleTables = `SELECT t.table_name, t.tablespace_name, t.num_rows,
+	NVL(c.comments, '') AS comments, t.temporary
+FROM all_tables t
+LEFT JOIN all_tab_comments c
+	ON c.owner = t.owner AND c.table_name = t.table_name AND c.table_type = 'TABLE'
+WHERE t.owner = UPPER(:1)
+ORDER BY t.table_name`
 
 const queryOracleColumns = `SELECT
-	table_name,
-	column_name,
-	column_id AS ordinal_position,
-	data_type,
-	COALESCE(data_length, 0) AS data_length,
-	COALESCE(data_precision, 0) AS data_precision,
-	COALESCE(data_scale, 0) AS data_scale,
-	nullable,
-	data_default,
-	NVL(comments, '') AS comments,
-	COALESCE(char_used, '') AS char_used,
-	COALESCE(character_set_name, '') AS charset,
-	COALESCE(collation, '') AS collation,
-	identity_column
+	c.table_name,
+	c.column_name,
+	c.column_id AS ordinal_position,
+	c.data_type,
+	COALESCE(c.data_length, 0) AS data_length,
+	COALESCE(c.data_precision, 0) AS data_precision,
+	COALESCE(c.data_scale, 0) AS data_scale,
+	c.nullable,
+	c.data_default,
+	cc.comments AS comments,
+	COALESCE(c.char_used, '') AS char_used,
+	COALESCE(c.character_set_name, '') AS charset,
+	COALESCE(c.collation, '') AS collation,
+	c.identity_column,
+	ic.generation_type AS identity_generation,
+	seq.last_number AS identity_start,
+	seq.increment_by AS identity_increment
 FROM all_tab_columns c
-LEFT JOIN all_col_comments USING (owner, table_name, column_name)
-WHERE owner = UPPER(:1)
-ORDER BY table_name, column_id`
+LEFT JOIN all_col_comments cc
+	ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
+LEFT JOIN all_tab_identity_cols ic
+	ON ic.owner = c.owner AND ic.table_name = c.table_name AND ic.column_name = c.column_name
+LEFT JOIN all_sequences seq
+	ON seq.sequence_owner = ic.owner AND seq.sequence_name = ic.sequence_name
+WHERE c.owner = UPPER(:1)
+ORDER BY c.table_name, c.column_id`
 
 const queryOraclePrimaryKeys = `SELECT
 	cc.table_name,
@@ -135,16 +149,39 @@ WHERE owner = UPPER(:1)
 ORDER BY synonym_name`
 
 // OracleMetadataQuerier implements MetadataQuerier for Oracle using ALL_* dictionary views.
-type OracleMetadataQuerier struct{}
+// Placeholder selects the bind style: "" keeps Oracle ":N" binds; "?" rewrites
+// them for drivers speaking the MySQL wire protocol (OceanBase Oracle tenants).
+type OracleMetadataQuerier struct {
+	Placeholder string
+}
 
 func (OracleMetadataQuerier) Type() string { return "oracle" }
 
-func (OracleMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef, error) {
-	rows, err := db.Query(`
-		SELECT table_name, tablespace_name, num_rows
-		FROM all_tables
-		WHERE owner = UPPER(:1)
-		ORDER BY table_name`, schema)
+var oracleBindRe = regexp.MustCompile(`:\d+`)
+
+func (q OracleMetadataQuerier) bind(sqlText string) string {
+	if q.Placeholder != "?" {
+		return sqlText
+	}
+	return oracleBindRe.ReplaceAllString(sqlText, "?")
+}
+
+// OceanBaseOracleWireQuerier extracts Oracle-compatible metadata from an
+// OceanBase Oracle tenant reached over the MySQL wire protocol, which uses
+// "?" placeholders instead of ":N".
+type OceanBaseOracleWireQuerier struct{ OracleMetadataQuerier }
+
+func (OceanBaseOracleWireQuerier) Type() string { return "oceanbase-oracle-wire" }
+
+func (q OracleMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef, error) {
+	rows, err := db.Query(q.bind(`
+		SELECT t.table_name, t.tablespace_name, t.num_rows,
+			NVL(c.comments, '') AS comments, t.temporary
+		FROM all_tables t
+		LEFT JOIN all_tab_comments c
+			ON c.owner = t.owner AND c.table_name = t.table_name AND c.table_type = 'TABLE'
+		WHERE t.owner = UPPER(:1)
+		ORDER BY t.table_name`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -152,9 +189,10 @@ func (OracleMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.Table
 
 	var tables []*md.TableDef
 	for rows.Next() {
-		var tableName, tablespace string
+		var tableName, tablespace, temporary string
 		var numRows sql.NullInt64
-		if err := rows.Scan(&tableName, &tablespace, &numRows); err != nil {
+		var comment sql.NullString
+		if err := rows.Scan(&tableName, &tablespace, &numRows, &comment, &temporary); err != nil {
 			return nil, err
 		}
 		tbl, err := md.NewTableDef(schema, tableName)
@@ -164,35 +202,139 @@ func (OracleMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.Table
 		tbl.Owner = schema
 		tbl.TableType = "TABLE"
 		tbl.Tablespace = tablespace
+		tbl.TableComment = comment.String
+		tbl.Temporary = temporary
 		if numRows.Valid {
 			tbl.RowCount = int(numRows.Int64)
 		}
 		tables = append(tables, tbl)
 	}
-	return tables, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	enrichOraclePartitions(db, schema, tables, q)
+	return tables, nil
 }
 
-func (OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDef, error) {
-	rows, err := db.Query(`
+// enrichOraclePartitions reconstructs PARTITION BY definitions (best-effort:
+// INTERVAL clauses and subpartitions are not rebuilt).
+func enrichOraclePartitions(db *sql.DB, schema string, tables []*md.TableDef, q OracleMetadataQuerier) {
+	byName := make(map[string]*md.TableDef, len(tables))
+	for _, t := range tables {
+		byName[t.TableName] = t
+	}
+
+	rows, err := db.Query(q.bind(`
+		SELECT pt.table_name, pt.partitioning_type, pt.partition_count,
+			LISTAGG(kc.column_name, ', ') WITHIN GROUP (ORDER BY kc.column_position) AS key_cols
+		FROM all_part_tables pt
+		LEFT JOIN all_part_key_columns kc
+			ON kc.owner = pt.owner AND kc.name = pt.table_name AND kc.object_type = 'TABLE'
+		WHERE pt.owner = UPPER(:1)
+		GROUP BY pt.table_name, pt.partitioning_type, pt.partition_count`), schema)
+	if err != nil {
+		return
+	}
+	type partMeta struct {
+		pType   string
+		count   int
+		keyCols string
+	}
+	metas := make(map[string]partMeta)
+	for rows.Next() {
+		var tableName, pType string
+		var count int
+		var keyCols sql.NullString
+		if err := rows.Scan(&tableName, &pType, &count, &keyCols); err != nil {
+			rows.Close()
+			return
+		}
+		metas[tableName] = partMeta{pType: strings.ToUpper(pType), count: count, keyCols: keyCols.String}
+	}
+	rows.Close()
+
+	for tableName, meta := range metas {
+		tbl, ok := byName[tableName]
+		if !ok {
+			continue
+		}
+		tbl.Partitioned = "YES"
+		tbl.PartitionInfo = buildOraclePartitionClause(db, schema, q, tableName, meta.pType, meta.count, meta.keyCols)
+	}
+}
+
+func buildOraclePartitionClause(db *sql.DB, schema string, q OracleMetadataQuerier, table, pType string, count int, keyCols string) string {
+	switch pType {
+	case "HASH", "SYSTEM":
+		if keyCols == "" {
+			keyCols = "/* key column unknown */"
+		}
+		return fmt.Sprintf("PARTITION BY %s(%s) PARTITIONS %d", pType, keyCols, count)
+	case "RANGE", "LIST":
+		verb := "VALUES LESS THAN"
+		if pType == "LIST" {
+			verb = "VALUES"
+		}
+		rows, err := db.Query(q.bind(`
+			SELECT partition_name, high_value
+			FROM all_tab_partitions
+			WHERE table_owner = UPPER(:1) AND table_name = :2
+			ORDER BY partition_position`), schema, table)
+		if err != nil {
+			return fmt.Sprintf("PARTITION BY %s(%s) PARTITIONS %d", pType, keyCols, count)
+		}
+		defer rows.Close()
+		var b strings.Builder
+		fmt.Fprintf(&b, "PARTITION BY %s(%s) (\n", pType, keyCols)
+		first := true
+		for rows.Next() {
+			var partName string
+			var highValue sql.NullString
+			if err := rows.Scan(&partName, &highValue); err != nil {
+				return fmt.Sprintf("PARTITION BY %s(%s) PARTITIONS %d", pType, keyCols, count)
+			}
+			if !first {
+				b.WriteString(",\n")
+			}
+			first = false
+			fmt.Fprintf(&b, "  PARTITION %s %s (%s)", partName, verb, highValue.String)
+		}
+		b.WriteString("\n)")
+		return b.String()
+	default:
+		return ""
+	}
+}
+
+func (q OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
-			table_name,
-			column_name,
-			column_id AS ordinal_position,
-			data_type,
-			COALESCE(data_length, 0) AS data_length,
-			COALESCE(data_precision, 0) AS data_precision,
-			COALESCE(data_scale, 0) AS data_scale,
-			nullable,
-			data_default,
-			NVL(comments, '') AS comments,
-			COALESCE(char_used, '') AS char_used,
-			COALESCE(character_set_name, '') AS charset,
-			COALESCE(collation, '') AS collation,
-			identity_column
+			c.table_name,
+			c.column_name,
+			c.column_id AS ordinal_position,
+			c.data_type,
+			COALESCE(c.data_length, 0) AS data_length,
+			COALESCE(c.data_precision, 0) AS data_precision,
+			COALESCE(c.data_scale, 0) AS data_scale,
+			c.nullable,
+			c.data_default,
+			cc.comments AS comments,
+			COALESCE(c.char_used, '') AS char_used,
+			COALESCE(c.character_set_name, '') AS charset,
+			COALESCE(c.collation, '') AS collation,
+			c.identity_column,
+			ic.generation_type AS identity_generation,
+			seq.last_number AS identity_start,
+			seq.increment_by AS identity_increment
 		FROM all_tab_columns c
-		LEFT JOIN all_col_comments USING (owner, table_name, column_name)
-		WHERE owner = UPPER(:1)
-		ORDER BY table_name, column_id`, schema)
+		LEFT JOIN all_col_comments cc
+			ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
+		LEFT JOIN all_tab_identity_cols ic
+			ON ic.owner = c.owner AND ic.table_name = c.table_name AND ic.column_name = c.column_name
+		LEFT JOIN all_sequences seq
+			ON seq.sequence_owner = ic.owner AND seq.sequence_name = ic.sequence_name
+		WHERE c.owner = UPPER(:1)
+		ORDER BY c.table_name, c.column_id`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -203,9 +345,12 @@ func (OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Colu
 		var tableName, colName, dataType, nullable, identityCol string
 		var ordinal, dataLen, dataPrec, dataScale int
 		var defaultVal, comments, charUsed, charset, collation sql.NullString
+		var identGen sql.NullString
+		var identStart, identIncr sql.NullInt64
 		if err := rows.Scan(&tableName, &colName, &ordinal, &dataType,
 			&dataLen, &dataPrec, &dataScale, &nullable, &defaultVal, &comments,
-			&charUsed, &charset, &collation, &identityCol); err != nil {
+			&charUsed, &charset, &collation, &identityCol,
+			&identGen, &identStart, &identIncr); err != nil {
 			return nil, err
 		}
 
@@ -231,7 +376,17 @@ func (OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Colu
 
 		if identityCol == "YES" {
 			col.IsIdentity = "YES"
-			col.IdentityGeneration = "ALWAYS"
+			if identGen.Valid && identGen.String != "" {
+				col.IdentityGeneration = strings.ToUpper(identGen.String)
+			} else {
+				col.IdentityGeneration = "ALWAYS"
+			}
+			if identStart.Valid {
+				col.IdentityStart = int(identStart.Int64)
+			}
+			if identIncr.Valid {
+				col.IdentityIncrement = int(identIncr.Int64)
+			}
 		}
 
 		columns = append(columns, col)
@@ -239,8 +394,8 @@ func (OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Colu
 	return columns, rows.Err()
 }
 
-func (OracleMetadataQuerier) QueryPrimaryKeys(db *sql.DB, schema string) ([]*md.PrimaryKeyDef, error) {
-	rows, err := db.Query(`
+func (q OracleMetadataQuerier) QueryPrimaryKeys(db *sql.DB, schema string) ([]*md.PrimaryKeyDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
 			cc.table_name,
 			cc.constraint_name,
@@ -253,7 +408,7 @@ func (OracleMetadataQuerier) QueryPrimaryKeys(db *sql.DB, schema string) ([]*md.
 			AND cc.table_name = c.table_name
 		WHERE c.constraint_type = 'P'
 		  AND cc.owner = UPPER(:1)
-		ORDER BY cc.table_name, cc.constraint_name, cc.position`, schema)
+		ORDER BY cc.table_name, cc.constraint_name, cc.position`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -277,8 +432,8 @@ func (OracleMetadataQuerier) QueryPrimaryKeys(db *sql.DB, schema string) ([]*md.
 	return pks, rows.Err()
 }
 
-func (OracleMetadataQuerier) QueryIndexes(db *sql.DB, schema string) ([]*md.IndexDef, error) {
-	rows, err := db.Query(`
+func (q OracleMetadataQuerier) QueryIndexes(db *sql.DB, schema string) ([]*md.IndexDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
 			i.table_name,
 			i.index_name,
@@ -292,7 +447,7 @@ func (OracleMetadataQuerier) QueryIndexes(db *sql.DB, schema string) ([]*md.Inde
 			AND i.index_name = ic.index_name
 			AND i.table_name = ic.table_name
 		WHERE i.owner = UPPER(:1)
-		ORDER BY i.table_name, i.index_name, ic.column_position`, schema)
+		ORDER BY i.table_name, i.index_name, ic.column_position`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -318,8 +473,8 @@ func (OracleMetadataQuerier) QueryIndexes(db *sql.DB, schema string) ([]*md.Inde
 	return indexes, rows.Err()
 }
 
-func (OracleMetadataQuerier) QueryForeignKeys(db *sql.DB, schema string) ([]*md.ForeignKeyDef, error) {
-	rows, err := db.Query(`
+func (q OracleMetadataQuerier) QueryForeignKeys(db *sql.DB, schema string) ([]*md.ForeignKeyDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
 			cc.table_name,
 			cc.constraint_name,
@@ -336,7 +491,7 @@ func (OracleMetadataQuerier) QueryForeignKeys(db *sql.DB, schema string) ([]*md.
 			AND cc.table_name = c.table_name
 		WHERE c.constraint_type = 'R'
 		  AND cc.owner = UPPER(:1)
-		ORDER BY cc.table_name, cc.constraint_name, cc.position`, schema)
+		ORDER BY cc.table_name, cc.constraint_name, cc.position`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -364,8 +519,8 @@ func (OracleMetadataQuerier) QueryForeignKeys(db *sql.DB, schema string) ([]*md.
 	return fks, rows.Err()
 }
 
-func (OracleMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDef, error) {
-	rows, err := db.Query(`
+func (q OracleMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
 			v.view_name,
 			NVL(v.text, '') AS view_definition,
@@ -377,7 +532,7 @@ func (OracleMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDe
 		LEFT JOIN all_tab_comments t
 			ON v.owner = t.owner AND v.view_name = t.table_name
 		WHERE v.owner = UPPER(:1)
-		ORDER BY v.view_name`, schema)
+		ORDER BY v.view_name`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -404,8 +559,8 @@ func (OracleMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDe
 	return views, rows.Err()
 }
 
-func (OracleMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.SequenceDef, error) {
-	rows, err := db.Query(`
+func (q OracleMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.SequenceDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
 			sequence_name,
 			COALESCE(increment_by, 1) AS increment_by,
@@ -417,7 +572,7 @@ func (OracleMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.Se
 			COALESCE(order_flag, 'NO') AS order_flag
 		FROM all_sequences
 		WHERE sequence_owner = UPPER(:1)
-		ORDER BY sequence_name`, schema)
+		ORDER BY sequence_name`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -430,10 +585,17 @@ func (OracleMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.Se
 		if err := rows.Scan(&seqName, &increment, &minVal, &maxVal, &cycleFlag, &cache, &lastVal, &orderFlag); err != nil {
 			return nil, err
 		}
+		// Oracle exposes no original START WITH once a sequence has been
+		// consumed; last_number is the next value to dispense. Starting the
+		// migrated sequence there avoids colliding with already-generated keys.
+		start := lastVal
+		if start <= 0 {
+			start = minVal
+		}
 		seqs = append(seqs, &md.SequenceDef{
 			SequenceSchema: schema,
 			SequenceName:   seqName,
-			StartValue:     1,
+			StartValue:     start,
 			IncrementBy:    increment,
 			MinValue:       minVal,
 			MaxValue:       maxVal,
@@ -446,8 +608,8 @@ func (OracleMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.Se
 	return seqs, rows.Err()
 }
 
-func (OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.TriggerDef, error) {
-	rows, err := db.Query(`
+func (q OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.TriggerDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
 			trigger_name,
 			table_owner,
@@ -461,7 +623,7 @@ func (OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Tri
 			COALESCE(description, '') AS description
 		FROM all_triggers
 		WHERE owner = UPPER(:1)
-		ORDER BY trigger_name`, schema)
+		ORDER BY trigger_name`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -493,8 +655,8 @@ func (OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Tri
 	return triggers, rows.Err()
 }
 
-func (OracleMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error) {
-	rows, err := db.Query(`
+func (q OracleMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error) {
+	rows, err := db.Query(q.bind(`
 		SELECT
 			synonym_name,
 			owner,
@@ -504,7 +666,7 @@ func (OracleMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.Syn
 		FROM all_synonyms
 		WHERE owner = UPPER(:1)
 		   OR table_owner = UPPER(:1)
-		ORDER BY synonym_name`, schema)
+		ORDER BY synonym_name`), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -525,4 +687,205 @@ func (OracleMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.Syn
 		})
 	}
 	return synonyms, rows.Err()
+}
+
+func (q OracleMetadataQuerier) QueryFunctions(db *sql.DB, schema string) ([]*md.FunctionDef, error) {
+	rows, err := db.Query(q.bind(`
+		SELECT object_name, object_type, status
+		FROM all_objects
+		WHERE owner = UPPER(:1)
+		  AND object_type IN ('FUNCTION', 'PROCEDURE')
+		  AND generated = 'N'
+		ORDER BY object_name`), schema)
+	if err != nil {
+		return nil, err
+	}
+	type obj struct{ name, typ, status string }
+	var objs []obj
+	for rows.Next() {
+		var o obj
+		if err := rows.Scan(&o.name, &o.typ, &o.status); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		objs = append(objs, o)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+
+	var funcs []*md.FunctionDef
+	for _, o := range objs {
+		fn := &md.FunctionDef{
+			FunctionSchema: schema,
+			FunctionName:   o.name,
+			FunctionType:   o.typ,
+			Language:       "PLSQL",
+			Status:         o.status,
+		}
+		ddl, derr := oracleObjectDDL(db, q, o.typ, o.name, schema)
+		if derr == nil && strings.TrimSpace(ddl) != "" {
+			fn.FunctionBody = strings.TrimSpace(ddl)
+		} else {
+			src, serr := oracleSourceText(db, q, schema, o.name, o.typ)
+			if serr != nil {
+				return nil, serr
+			}
+			fn.FunctionBody = src
+		}
+		if o.typ == "FUNCTION" {
+			fn.ReturnType = oracleFunctionReturnType(db, q, schema, o.name)
+		}
+		funcs = append(funcs, fn)
+	}
+	return funcs, nil
+}
+
+func (q OracleMetadataQuerier) QueryMViews(db *sql.DB, schema string) ([]*md.MViewDef, error) {
+	rows, err := db.Query(q.bind(`
+		SELECT mv.mview_name, mv.query, mv.refresh_method, mv.refresh_mode, mv.build_mode,
+			NVL(c.comments, '') AS comments
+		FROM all_mviews mv
+		LEFT JOIN all_tab_comments c
+			ON c.owner = mv.owner AND c.table_name = mv.mview_name
+		WHERE mv.owner = UPPER(:1)
+		ORDER BY mv.mview_name`), schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var mviews []*md.MViewDef
+	for rows.Next() {
+		var name, method, mode, buildMode string
+		var query, comment sql.NullString
+		if err := rows.Scan(&name, &query, &method, &mode, &buildMode, &comment); err != nil {
+			return nil, err
+		}
+		mviews = append(mviews, &md.MViewDef{
+			MViewSchema:   schema,
+			MViewName:     name,
+			MViewQuery:    query.String,
+			RefreshMethod: method,
+			RefreshMode:   mode,
+			BuildMode:     buildMode,
+			MViewComment:  comment.String,
+		})
+	}
+	return mviews, rows.Err()
+}
+
+func (q OracleMetadataQuerier) QueryPackages(db *sql.DB, schema string) ([]*md.PackageDef, error) {
+	names, err := oracleObjectNames(db, q, schema, "PACKAGE")
+	if err != nil {
+		return nil, err
+	}
+	var pkgs []*md.PackageDef
+	for _, name := range names {
+		spec, derr := oracleObjectDDL(db, q, "PACKAGE", name, schema)
+		if derr != nil {
+			spec, derr = oracleSourceText(db, q, schema, name, "PACKAGE")
+			if derr != nil {
+				return nil, derr
+			}
+		}
+		pkgs = append(pkgs, &md.PackageDef{
+			PackageSchema: schema,
+			PackageName:   name,
+			PackageSpec:   strings.TrimSpace(spec),
+			Status:        "ENABLED",
+		})
+	}
+	return pkgs, nil
+}
+
+func (q OracleMetadataQuerier) QueryPackageBodies(db *sql.DB, schema string) ([]*md.PackageBodyDef, error) {
+	names, err := oracleObjectNames(db, q, schema, "PACKAGE BODY")
+	if err != nil {
+		return nil, err
+	}
+	var bodies []*md.PackageBodyDef
+	for _, name := range names {
+		body, derr := oracleObjectDDL(db, q, "PACKAGE_BODY", name, schema)
+		if derr != nil {
+			body, derr = oracleSourceText(db, q, schema, name, "PACKAGE BODY")
+			if derr != nil {
+				return nil, derr
+			}
+		}
+		bodies = append(bodies, &md.PackageBodyDef{
+			PackageSchema: schema,
+			PackageName:   name,
+			PackageBody:   strings.TrimSpace(body),
+			Status:        "ENABLED",
+		})
+	}
+	return bodies, nil
+}
+
+func oracleObjectNames(db *sql.DB, q OracleMetadataQuerier, schema, objectType string) ([]string, error) {
+	rows, err := db.Query(q.bind(`
+		SELECT object_name
+		FROM all_objects
+		WHERE owner = UPPER(:1) AND object_type = :2 AND generated = 'N'
+		ORDER BY object_name`), schema, objectType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
+// oracleObjectDDL fetches full DDL via DBMS_METADATA (comments included).
+func oracleObjectDDL(db *sql.DB, q OracleMetadataQuerier, objectType, name, schema string) (string, error) {
+	var ddl string
+	err := db.QueryRow(q.bind(`SELECT DBMS_METADATA.GET_DDL(:1, :2, :3) FROM DUAL`),
+		objectType, name, strings.ToUpper(schema)).Scan(&ddl)
+	if err != nil {
+		return "", err
+	}
+	return ddl, nil
+}
+
+// oracleSourceText aggregates all_source lines for one object.
+func oracleSourceText(db *sql.DB, q OracleMetadataQuerier, schema, name, objectType string) (string, error) {
+	rows, err := db.Query(q.bind(`
+		SELECT text
+		FROM all_source
+		WHERE owner = UPPER(:1) AND name = :2 AND UPPER(type) = UPPER(:3)
+		ORDER BY line`), schema, name, objectType)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var b strings.Builder
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			return "", err
+		}
+		b.WriteString(line)
+	}
+	return b.String(), rows.Err()
+}
+
+func oracleFunctionReturnType(db *sql.DB, q OracleMetadataQuerier, schema, name string) string {
+	var dataType string
+	err := db.QueryRow(q.bind(`
+		SELECT data_type
+		FROM all_arguments
+		WHERE owner = UPPER(:1) AND object_name = :2 AND position = 0 AND data_level = 0`),
+		schema, name).Scan(&dataType)
+	if err != nil {
+		return ""
+	}
+	return dataType
 }

@@ -218,13 +218,16 @@ SELECT cols FROM schema.table ORDER BY pk_cols FETCH NEXT 5000 ROWS ONLY
 -- 游标分页（后续）：
 SELECT cols FROM schema.table WHERE pk > :1 ORDER BY pk_cols FETCH NEXT 5000 ROWS ONLY
 
--- 无主键回退：
-SELECT cols FROM schema.table FETCH NEXT 5000 ROWS ONLY
+-- 无主键回退（OFFSET 分页）：
+SELECT cols FROM schema.table OFFSET m ROWS FETCH NEXT n ROWS ONLY
 ```
 
 - 占位符: `:N`（`:1`, `:2`, ...）
 - 标识符引号: `"identifier"`
-- LIMIT 语法: `FETCH NEXT n ROWS ONLY`（Oracle 12c+）
+- LIMIT 语法: `FETCH NEXT n ROWS ONLY`（Oracle 12c+）。启动时自动探测服务器版本：
+  11g 等不支持 OFFSET/FETCH 的服务器自动改用 ROWNUM 包装分页。
+- 连接 DSN 自动注入 `PREFETCH_ROWS=25` 与 `LOB FETCH=POST`（用户显式配置优先），
+  控制大 LOB 表导出内存占用。
 
 importer (`internal/transfer/importer/importer.go`) 中 Oracle 使用的 SQL 模式：
 

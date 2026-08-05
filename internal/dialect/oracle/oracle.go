@@ -63,19 +63,27 @@ func (OracleTypeMapper) ToLogicalType(rawType string, length, precision, scale i
 func (OracleTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 	switch lt.Base {
 	case dialect.LBVarchar:
-		if lt.Length > 4000 {
+		// Unbounded (length 0) or oversized strings map to CLOB.
+		if lt.Length <= 0 || lt.Length > 4000 {
 			return "CLOB"
 		}
 		return fmt.Sprintf("VARCHAR2(%d)", lt.Length)
 	case dialect.LBChar:
+		if lt.Length <= 0 || lt.Length > 2000 {
+			return "CLOB"
+		}
 		return fmt.Sprintf("CHAR(%d)", lt.Length)
 	case dialect.LBSmallInt:
-		return fmt.Sprintf("NUMBER(%d,0)", lt.Precision)
+		return fmt.Sprintf("NUMBER(%d,0)", defaultIntPrecision(lt.Precision, 5))
 	case dialect.LBInt:
-		return fmt.Sprintf("NUMBER(%d,0)", lt.Precision)
+		return fmt.Sprintf("NUMBER(%d,0)", defaultIntPrecision(lt.Precision, 10))
 	case dialect.LBBigInt:
-		return fmt.Sprintf("NUMBER(%d,0)", lt.Precision)
+		return fmt.Sprintf("NUMBER(%d,0)", defaultIntPrecision(lt.Precision, 19))
 	case dialect.LBNumeric:
+		// Oracle caps precision at 38; keep unsized NUMBER beyond it.
+		if lt.Precision > 38 {
+			return "NUMBER"
+		}
 		if lt.Scale > 0 {
 			return fmt.Sprintf("NUMBER(%d,%d)", lt.Precision, lt.Scale)
 		}
@@ -109,6 +117,13 @@ func (OracleTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 	}
 }
 
+func defaultIntPrecision(p, fallback int) int {
+	if p > 0 {
+		return p
+	}
+	return fallback
+}
+
 // ── Quoter ──
 
 type OracleQuoter struct{}
@@ -132,16 +147,23 @@ type OracleDDLBuilder struct{}
 
 func (OracleDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) (string, error) {
 	var b strings.Builder
+	schema := t.TableSchema
+	if m, ok := opts.SchemaMapping[schema]; ok {
+		schema = m
+	}
 
 	quote := func(name string) string {
 		if opts.NoQuoteIdentifiers {
 			return name
 		}
+		if opts.PreserveIdentifierCase {
+			return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+		}
 		return fmt.Sprintf(`"%s"`, strings.ToUpper(name))
 	}
 
 	b.WriteString("CREATE TABLE ")
-	b.WriteString(fmt.Sprintf("%s.%s", quote(t.TableSchema), quote(t.TableName)))
+	b.WriteString(fmt.Sprintf("%s.%s", quote(schema), quote(t.TableName)))
 	b.WriteString(" (\n")
 	cols := t.GetColumns()
 	for i, col := range cols {
@@ -252,6 +274,9 @@ func (OracleDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.Buil
 		quote(schema), quote(trg.TableName), forEach, trg.TriggerBody), nil
 }
 func (OracleDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error) {
+	if dialect.LooksLikeFullDDL(fn.FunctionBody) {
+		return fn.FunctionBody, nil
+	}
 	if fn.FunctionType == "PROCEDURE" {
 		return fmt.Sprintf("CREATE OR REPLACE PROCEDURE %s %s", fn.FunctionName, fn.FunctionBody), nil
 	}
@@ -278,6 +303,9 @@ func (OracleDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.Bu
 		cycle, seq.CacheSize), nil
 }
 func (OracleDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error) {
+	if dialect.LooksLikeFullDDL(mv.MViewQuery) {
+		return mv.MViewQuery, nil
+	}
 	schema := mv.MViewSchema
 	if m, ok := opts.SchemaMapping[schema]; ok {
 		schema = m
@@ -315,9 +343,15 @@ func (OracleDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.Buil
 	return sql, nil
 }
 func (OracleDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error) {
+	if dialect.LooksLikeFullDDL(pkg.PackageSpec) {
+		return pkg.PackageSpec, nil
+	}
 	return fmt.Sprintf("CREATE OR REPLACE PACKAGE %s AS\n%s\nEND %s;", pkg.PackageName, pkg.PackageSpec, pkg.PackageName), nil
 }
 func (OracleDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) {
+	if dialect.LooksLikeFullDDL(pkg.PackageBody) {
+		return pkg.PackageBody, nil
+	}
 	return fmt.Sprintf("CREATE OR REPLACE PACKAGE BODY %s AS\n%s\nEND %s;", pkg.PackageName, pkg.PackageBody, pkg.PackageName), nil
 }
 

@@ -140,6 +140,9 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 		if opts.NoQuoteIdentifiers {
 			return name
 		}
+		if opts.PreserveIdentifierCase {
+			return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+		}
 		return fmt.Sprintf(`"%s"`, strings.ToLower(name))
 	}
 
@@ -273,6 +276,9 @@ func (PGDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.BuildOpt
 		quote(schema), quote(trg.TableName), forEach, trg.TriggerBody), nil
 }
 func (PGDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error) {
+	if dialect.LooksLikeFullDDL(fn.FunctionBody) {
+		return fn.FunctionBody, nil
+	}
 	lang := fn.Language
 	if lang == "" {
 		lang = "plpgsql"

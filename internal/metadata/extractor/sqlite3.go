@@ -279,6 +279,22 @@ func (SQLite3MetadataQuerier) QuerySynonyms(_ *sql.DB, _ string) ([]*md.SynonymD
 	return nil, nil // SQLite3 does not support synonyms
 }
 
+func (SQLite3MetadataQuerier) QueryFunctions(_ *sql.DB, _ string) ([]*md.FunctionDef, error) {
+	return nil, nil
+}
+
+func (SQLite3MetadataQuerier) QueryMViews(_ *sql.DB, _ string) ([]*md.MViewDef, error) {
+	return nil, nil
+}
+
+func (SQLite3MetadataQuerier) QueryPackages(_ *sql.DB, _ string) ([]*md.PackageDef, error) {
+	return nil, nil
+}
+
+func (SQLite3MetadataQuerier) QueryPackageBodies(_ *sql.DB, _ string) ([]*md.PackageBodyDef, error) {
+	return nil, nil
+}
+
 // parseTriggerInfo extracts trigger type (BEFORE/AFTER/INSTEAD OF) and event
 // (INSERT/UPDATE/DELETE) from a CREATE TRIGGER statement.
 func parseTriggerInfo(triggerSQL string) (string, string) {

@@ -18,6 +18,7 @@ type SelectGenerator struct {
 	includeRowNumber bool
 	addExportColumns bool
 	oracleRowNum     bool
+	paginationFn     func(pageSize, offset int) string
 }
 
 // NewSelectGenerator creates a SELECT statement generator.
@@ -31,6 +32,13 @@ func NewSelectGenerator(batchMethod string, pageSize int, outputDir string, quot
 		addExportColumns: addExportColumns,
 		oracleRowNum:     oracleRowNum,
 	}
+}
+
+// WithPagination sets a dialect-specific pagination clause builder used for
+// offset-based SELECT generation.
+func (sg *SelectGenerator) WithPagination(fn func(pageSize, offset int) string) *SelectGenerator {
+	sg.paginationFn = fn
+	return sg
 }
 
 // Generate generates SELECT statements for all tables in the model.
@@ -61,8 +69,11 @@ func (sg *SelectGenerator) generateForTable(tbl *md.TableDef) (string, error) {
 	b.WriteString(fmt.Sprintf("-- Batch size: %d | Method: %s\n", sg.pageSize, sg.batchMethod))
 
 	if sg.pageSize > 0 {
-		b.WriteString(fmt.Sprintf("-- Replace $PAGE_SIZE with %d\n", sg.pageSize))
-		b.WriteString("-- Replace $OFFSET with (batch_number * page_size)\n")
+		if sg.batchMethod == "cursor" && len(pks) > 0 {
+			b.WriteString("-- Substitute $LAST_<COL> with the last row's key values from the previous batch\n")
+		} else {
+			b.WriteString(fmt.Sprintf("-- Advance pages by increasing OFFSET in steps of %d\n", sg.pageSize))
+		}
 	}
 
 	// Build column list
@@ -108,15 +119,38 @@ func (sg *SelectGenerator) generateForTable(tbl *md.TableDef) (string, error) {
 
 func (sg *SelectGenerator) buildPagination(tbl *md.TableDef, pks []*md.PrimaryKeyDef) string {
 	if sg.batchMethod == "cursor" && len(pks) > 0 {
-		clauses := make([]string, len(pks))
+		quoted := make([]string, len(pks))
+		placeholders := make([]string, len(pks))
 		for i, pk := range pks {
-			clauses[i] = fmt.Sprintf("%s > $LAST_%s",
-				sg.quoteIdent(pk.ColumnName), strings.ToUpper(pk.ColumnName))
+			quoted[i] = sg.quoteIdent(pk.ColumnName)
+			placeholders[i] = fmt.Sprintf("$LAST_%s", strings.ToUpper(pk.ColumnName))
 		}
-		return fmt.Sprintf("\nWHERE (%s)", strings.Join(clauses, ", "))
+		var where string
+		if len(pks) == 1 {
+			where = fmt.Sprintf("%s > %s", quoted[0], placeholders[0])
+		} else {
+			where = fmt.Sprintf("(%s) > (%s)", strings.Join(quoted, ", "), strings.Join(placeholders, ", "))
+		}
+		return fmt.Sprintf("\nWHERE %s\nORDER BY %s", where, strings.Join(quoted, ", "))
 	}
-	// Offset-based
-	return fmt.Sprintf("\n-- LIMIT $PAGE_SIZE OFFSET $OFFSET")
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	if len(pks) > 0 {
+		quoted := make([]string, len(pks))
+		for i, pk := range pks {
+			quoted[i] = sg.quoteIdent(pk.ColumnName)
+		}
+		sb.WriteString("ORDER BY ")
+		sb.WriteString(strings.Join(quoted, ", "))
+		sb.WriteString("\n")
+	}
+	if sg.paginationFn != nil {
+		sb.WriteString(sg.paginationFn(sg.pageSize, 0))
+	} else {
+		sb.WriteString(fmt.Sprintf("LIMIT %d OFFSET 0", sg.pageSize))
+	}
+	return sb.String()
 }
 
 func (sg *SelectGenerator) quoteIdent(name string) string {

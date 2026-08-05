@@ -123,9 +123,9 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	var req struct {
-		BatchMethod      string `json:"batch_method"`
-		PageSize         int    `json:"page_size"`
-		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
+		BatchMethod        string `json:"batch_method"`
+		PageSize           int    `json:"page_size"`
+		NoQuoteIdentifiers *bool  `json:"no_quote_identifiers"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)
 
@@ -160,7 +160,8 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 
 	oracleRowNum := strings.Contains(cfg.DDL.TargetDialect, "oracle")
 	gen := generator.NewSelectGenerator(method, pageSize, outDir, quoteFn,
-		cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum)
+		cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum).
+		WithPagination(d.BuildPaginationClause)
 
 	files, err := gen.Generate(sm)
 	if err != nil {
@@ -182,8 +183,8 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	var req struct {
-		BatchSize        int   `json:"batch_size"`
-		Truncate         bool  `json:"truncate"`
+		BatchSize          int   `json:"batch_size"`
+		Truncate           bool  `json:"truncate"`
 		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
 	}
 	json.NewDecoder(r.Body).Decode(&req)

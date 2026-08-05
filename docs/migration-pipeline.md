@@ -26,8 +26,8 @@ The `migrate` command runs an end-to-end pipeline: extract → export → create
 | PK Available | Strategy | Description |
 |---|---|---|
 | Yes (single-column) | Keyset / Cursor | `WHERE pk > $1 ORDER BY pk LIMIT N` — efficient for large tables |
-| Yes (composite) | Composite cursor | `WHERE pk1 > $1 AND pk2 > $2 ... ORDER BY pk1, pk2` |
-| No | Limit-only | `SELECT ... LIMIT N` — returns same page repeatedly if data changes |
+| Yes (composite) | Composite cursor | Row-value comparison `WHERE (pk1, pk2) > ($1, $2) ORDER BY pk1, pk2` |
+| No | OFFSET pagination | `SELECT ... LIMIT N OFFSET m` — scans pages by offset; may miss or duplicate rows if the table is written concurrently (logged as a warning) |
 
 ### CSV Output Format
 
@@ -132,6 +132,21 @@ import:
 
 When encoding conversion fails for a value, the original bytes are used as fallback (log warning only).
 
+### Batch Insert Strategy
+
+Rows are inserted with dialect-appropriate batching (`internal/transfer/importer/importer.go`):
+
+| Target | Strategy |
+|---|---|
+| MySQL / GoldenDB-MySQL / PostgreSQL / PanWeiDB / OpenGaussDB | Multi-row `INSERT … VALUES (…),(…)` statements |
+| OceanBase Oracle tenant over MySQL wire (`compat_mode` qmark) | Multi-row INSERT with `?` placeholders |
+| Oracle (TNS) / GoldenDB-Oracle | Reused prepared single-row statement |
+
+- Statement batch size = `min(commit_interval, 65535 / column_count)` (wire-protocol parameter limit)
+- Every batch runs inside a `SAVEPOINT`; when a batch fails the savepoint is rolled back and the batch is retried **row by row**, so only the genuinely bad rows are skipped (rows inserted earlier in the same transaction are preserved)
+- PostgreSQL placeholder-limit errors trigger automatic batch bisection
+- `import.batch.use_copy: true` enables the PostgreSQL `COPY` fast path (all-or-nothing; falls back to batched INSERT on any error)
+
 ### Error Handling
 
 Three error policies control per-row behavior within a table import:
@@ -146,40 +161,29 @@ import:
 | Policy | Behavior |
 |---|---|
 | `stop` | Abort the current table import immediately on the first error. The table is rolled back to the last commit. |
-| `skip_row` | Skip the failing row, increment the skip counter, and continue. If `max_errors_before_stop > 0`, switches to abort after that many errors. |
-| `log_only` | Log the error at WARN level and continue inserting the row (may fail again). |
+| `skip_row` | Skip the failing row, increment the skip counter, and continue. If `max_errors_before_stop > 0`, switches to abort after that many errors. Rows before the failing row in the same batch are preserved via savepoint row-by-row retry. |
+| `log_only` | Log the error at WARN level and continue (the failing row stays uninserted). |
 
 **Table-level error isolation**: When one table's export or import encounters errors, the `migrate` command continues with remaining tables by default. Use `--continue-on-error` to return exit code 0 even when some tables fail.
 
 ### Target Table Creation
 
-When the target table does not exist, the importer creates it automatically using a cross-dialect type mapping:
+When the target table does not exist, the importer creates it via the dialect
+system (`internal/cmd/tableddl.go` → `buildCreateTableViaDialect`):
 
-```go
-// Oracle target types
-NUMBER(10)    = INT
-VARCHAR2(N)   = VARCHAR/CHAR
-CLOB          = TEXT
-BLOB          = BLOB
-TIMESTAMP     = TIMESTAMP
+1. **Cross-dialect conversion** — when the source dialect is known
+   (`source.type` for live sources, `ddl.source_dialect` for CSV/xlsx metadata),
+   column types are converted through the `LogicalType` IR
+   (source `ToLogicalType` → target `FromLogicalType`).
+2. **`type_overrides` take precedence** over the logical mapping (highest
+   priority, `%l/%p/%s` placeholders supported).
+3. **Same/unknown source dialect** — source types are emitted with
+   length/precision qualifiers (e.g. `VARCHAR2` + length → `VARCHAR2(10)`).
+4. Existence checks and quoting are dialect-aware (Oracle uses `all_tables` +
+   `:N` binds, MySQL `information_schema` + `?`, PG `information_schema` + `$N`,
+   sqlite3/duckdb their own catalogs).
 
-// MySQL target types
-INTEGER       = INT
-VARCHAR(N)    = VARCHAR/VARCHAR2
-DECIMAL       = NUMBER/NUMERIC
-LONGTEXT      = TEXT/CLOB
-LONGBLOB      = BLOB/BYTEA
-TINYINT(1)    = BOOLEAN
-
-// PostgreSQL target types
-VARCHAR       = VARCHAR2
-NUMERIC       = NUMBER
-TEXT          = CLOB
-BYTEA         = BLOB
-BOOLEAN       = BOOLEAN
-```
-
-See [Import/DDL type mapping source](../internal/cmd/import.go) for the full map.
+See `internal/cmd/tableddl.go` for the implementation.
 
 ### Parallel Import
 

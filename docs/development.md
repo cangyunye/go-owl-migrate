@@ -183,7 +183,8 @@ Key integration test: `TestExportTables_ContinueOnError` — verifies that when 
 2. Register in `internal/registry/registry.go`
 3. Add to `ValidDialects` in `internal/config/config.go`
 4. Update `openDB()` in `internal/cmd/metadata.go`
-5. Update `buildCreateTableSQL()` in `internal/cmd/import.go`
+5. Target table creation reuses the dialect's `BuildCreateTable` automatically
+   (`internal/cmd/tableddl.go`); no per-dialect code change is needed there.
 6. Write tests in `internal/dialect/<name>/` package covering:
    - Type mapping consistency with parent dialect (for compound dialects)
    - DDL generation for each object type

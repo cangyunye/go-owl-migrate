@@ -2,6 +2,7 @@ package extractor
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
@@ -9,13 +10,18 @@ import (
 
 // ── Metadata Query SQL ──
 
-const queryMySQLTables = `SELECT table_name, engine, table_comment, row_format, table_collation,
-	COALESCE(create_options, ''),
-	COALESCE(IF(row_format = 'TEMPORARY', 'YES', 'NO'), 'NO') AS temporary
+const queryMySQLTables = `SELECT table_name, engine, table_comment, row_format, table_collation
 FROM information_schema.tables
 WHERE table_schema = ?
 	AND table_type = 'BASE TABLE'
 ORDER BY table_name`
+
+// Partitions are reconstructed from information_schema.partitions.
+const queryMySQLPartitions = `SELECT table_name, partition_name, partition_method,
+	COALESCE(partition_expression, ''), COALESCE(partition_description, '')
+FROM information_schema.partitions
+WHERE table_schema = ? AND partition_name IS NOT NULL
+ORDER BY table_name, partition_ordinal_position`
 
 const queryMySQLColumns = `SELECT
 	table_name,
@@ -99,7 +105,7 @@ const queryMySQLTriggers = `SELECT
 	action_statement AS trigger_body,
 	action_condition AS when_clause,
 	'',
-	'PLSQL' AS language
+	'SQL' AS language
 FROM information_schema.triggers
 WHERE trigger_schema = ?
 ORDER BY trigger_name`
@@ -111,9 +117,7 @@ func (MySQLMetadataQuerier) Type() string { return "mysql" }
 
 func (MySQLMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef, error) {
 	rows, err := db.Query(`
-		SELECT table_name, engine, table_comment, row_format, table_collation,
-		       COALESCE(create_options, ''),
-		       COALESCE(IF(row_format = 'TEMPORARY', 'YES', 'NO'), 'NO') AS temporary
+		SELECT table_name, engine, table_comment, row_format, table_collation
 		FROM information_schema.tables
 		WHERE table_schema = ?
 		  AND table_type = 'BASE TABLE'
@@ -125,18 +129,12 @@ func (MySQLMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableD
 
 	var tables []*md.TableDef
 	for rows.Next() {
-		var tableName, engine, tableComment, rowFormat, collation, createOptions, temporary string
-		if err := rows.Scan(&tableName, &engine, &tableComment, &rowFormat, &collation, &createOptions, &temporary); err != nil {
+		var tableName, engine, tableComment, rowFormat, collation string
+		if err := rows.Scan(&tableName, &engine, &tableComment, &rowFormat, &collation); err != nil {
 			return nil, err
 		}
-
-		// Extract partition info from create_options
-		partitionInfo := ""
-		partitioned := "NO"
-		if strings.Contains(strings.ToUpper(createOptions), "PARTITION") {
-			partitioned = "YES"
-			partitionInfo = createOptions
-		}
+		// Temporary tables never appear in information_schema.tables.
+		temporary := "NO"
 
 		tbl, err := md.NewTableDef(schema, tableName)
 		if err != nil {
@@ -146,8 +144,7 @@ func (MySQLMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableD
 		tbl.TableComment = tableComment
 		tbl.RowFormat = rowFormat
 		tbl.Collation = collation
-		tbl.Partitioned = partitioned
-		tbl.PartitionInfo = partitionInfo
+		tbl.Partitioned = "NO"
 		tbl.Tablespace = ""
 		tbl.Temporary = temporary
 		tbl.Owner = schema
@@ -160,7 +157,96 @@ func (MySQLMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableD
 
 		tables = append(tables, tbl)
 	}
-	return tables, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	enrichMySQLPartitions(db, schema, tables)
+	return tables, nil
+}
+
+type mysqlPartition struct {
+	name   string
+	method string
+	expr   string
+	desc   string
+}
+
+// enrichMySQLPartitions reconstructs PARTITION BY definitions from
+// information_schema.partitions (best-effort; subpartitions are not rebuilt).
+func enrichMySQLPartitions(db *sql.DB, schema string, tables []*md.TableDef) {
+	byName := make(map[string]*md.TableDef, len(tables))
+	for _, t := range tables {
+		byName[t.TableName] = t
+	}
+	rows, err := db.Query(`
+		SELECT table_name, partition_name, partition_method,
+		       COALESCE(partition_expression, ''), COALESCE(partition_description, '')
+		FROM information_schema.partitions
+		WHERE table_schema = ? AND partition_name IS NOT NULL
+		ORDER BY table_name, partition_ordinal_position`, schema)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	grouped := make(map[string][]mysqlPartition)
+	for rows.Next() {
+		var tableName string
+		var name, method, expr, descr sql.NullString
+		if err := rows.Scan(&tableName, &name, &method, &expr, &descr); err != nil {
+			return
+		}
+		grouped[tableName] = append(grouped[tableName], mysqlPartition{
+			name: name.String, method: strings.ToUpper(method.String),
+			expr: expr.String, desc: descr.String,
+		})
+	}
+
+	for tableName, parts := range grouped {
+		tbl, ok := byName[tableName]
+		if !ok || len(parts) == 0 {
+			continue
+		}
+		if info := buildMySQLPartitionClause(parts); info != "" {
+			tbl.Partitioned = "YES"
+			tbl.PartitionInfo = info
+		}
+	}
+}
+
+func buildMySQLPartitionClause(parts []mysqlPartition) string {
+	method := parts[0].method
+	expr := parts[0].expr
+	switch method {
+	case "HASH", "KEY", "LINEAR HASH", "LINEAR KEY":
+		return fmt.Sprintf("PARTITION BY %s(%s) PARTITIONS %d", method, expr, len(parts))
+	case "RANGE", "RANGE COLUMNS":
+		verb := "VALUES LESS THAN"
+		return buildMySQLValuesPartitionList(method, expr, parts, verb)
+	case "LIST", "LIST COLUMNS":
+		verb := "VALUES IN"
+		return buildMySQLValuesPartitionList(method, expr, parts, verb)
+	default:
+		return ""
+	}
+}
+
+func buildMySQLValuesPartitionList(method, expr string, parts []mysqlPartition, verb string) string {
+	var b strings.Builder
+	if strings.HasSuffix(method, "COLUMNS") {
+		fmt.Fprintf(&b, "PARTITION BY %s(%s) (\n", method, expr)
+	} else {
+		fmt.Fprintf(&b, "PARTITION BY %s(%s) (\n", method, expr)
+	}
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteString(",\n")
+		}
+		fmt.Fprintf(&b, "  PARTITION %s %s (%s)", p.name, verb, p.desc)
+	}
+	b.WriteString("\n)")
+	return b.String()
 }
 
 func (MySQLMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDef, error) {
@@ -408,7 +494,7 @@ func (MySQLMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trig
 			action_statement AS trigger_body,
 			action_condition AS when_clause,
 			'',
-			'PLSQL' AS language
+			'SQL' AS language
 		FROM information_schema.triggers
 		WHERE trigger_schema = ?
 		ORDER BY trigger_name`, schema)
@@ -441,6 +527,49 @@ func (MySQLMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trig
 		})
 	}
 	return triggers, rows.Err()
+}
+
+func (MySQLMetadataQuerier) QueryFunctions(db *sql.DB, schema string) ([]*md.FunctionDef, error) {
+	rows, err := db.Query(`
+		SELECT routine_name, routine_type, COALESCE(dtd_identifier, ''),
+		       COALESCE(routine_definition, ''), COALESCE(external_language, 'SQL')
+		FROM information_schema.routines
+		WHERE routine_schema = ?
+		ORDER BY routine_name`, schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var funcs []*md.FunctionDef
+	for rows.Next() {
+		var name, typ, returnType, body, language string
+		if err := rows.Scan(&name, &typ, &returnType, &body, &language); err != nil {
+			return nil, err
+		}
+		funcs = append(funcs, &md.FunctionDef{
+			FunctionSchema: schema,
+			FunctionName:   name,
+			FunctionType:   strings.ToUpper(typ),
+			ReturnType:     returnType,
+			FunctionBody:   body,
+			Language:       language,
+			Status:         "ENABLED",
+		})
+	}
+	return funcs, rows.Err()
+}
+
+func (MySQLMetadataQuerier) QueryMViews(_ *sql.DB, _ string) ([]*md.MViewDef, error) {
+	return nil, nil // MySQL has no materialized views
+}
+
+func (MySQLMetadataQuerier) QueryPackages(_ *sql.DB, _ string) ([]*md.PackageDef, error) {
+	return nil, nil // MySQL has no packages
+}
+
+func (MySQLMetadataQuerier) QueryPackageBodies(_ *sql.DB, _ string) ([]*md.PackageBodyDef, error) {
+	return nil, nil
 }
 
 func (MySQLMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error) {

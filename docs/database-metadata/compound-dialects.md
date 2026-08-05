@@ -36,15 +36,43 @@ func normalizeDBType(t string) string {
 
 | 映射类型 | 提取器 | 说明 |
 |---|---|---|
-| `oceanbase` | MySQL | 默认使用 MySQL 兼容模式 |
+| `oceanbase` | MySQL | 默认使用 MySQL 兼容模式（连接时自动探测租户模式） |
 | `oceanbase-mysql` | MySQL | 显式指定 MySQL 模式 |
-| `oceanbase-oracle` | Oracle | 显式指定 Oracle 兼容模式 |
+| `oceanbase-oracle` | Oracle | Oracle 兼容模式，驱动按 DSN 自动选择（见下） |
 
 - **需要注意**: OceanBase Oracle 模式的元数据视图与 Oracle 标准 `all_*` 视图类似但不完全相同
 - OceanBase MySQL 模式的 `information_schema.statistics` 可能与 MySQL 有差异
 - DDL 生成通过 `internal/dialect/oceanbase/oceanbase.go` 额外处理:
   - OceanBase MySQL 模式的 `CREATE SEQUENCE`（MySQL 原生不支持）
   - OceanBase Oracle 模式禁用 BITMAP 索引（输出注释提醒）
+
+### 租户模式探测（compat_mode）
+
+`internal/dbconn/oceanbase.go` 在连接 `oceanbase`/`oceanbase-mysql` 后自动执行
+`SHOW VARIABLES LIKE 'ob_compatibility_mode'` 探测租户兼容模式：
+
+- 探测到 Oracle 模式但类型配置为 MySQL 系 → 报错并指引改用 `oceanbase-oracle`
+- 配置项 `compat_mode: mysql|oracle` 可显式声明（见 `config.DBConfig.CompatMode`），
+  `compat_mode: oracle` 必须搭配 `type: oceanbase-oracle`
+
+### Oracle 租户的双连接路径
+
+`oceanbase-oracle` 的连接方式由 DSN 协议决定（`dbconn.resolveOceanBaseOracleDriver`）：
+
+| DSN 形式 | 驱动 | 场景 | 占位符 |
+|---|---|---|---|
+| `oracle://user:pw@host:port/service` | go-ora（TNS） | OBProxy Oracle 监听端口 | `:N` |
+| 其他（如 `oboracle://`、`mysql://`） | helingjun/obconnector-go | OceanBase MySQL 线协议直连（2881 等） | `?` |
+
+MySQL 线协议路径下：
+- DSN 自动改写为 `oboracle://` 并注入 `preset=oboracle`
+- 元数据提取使用 `oceanbase-oracle-wire` 提取器（Oracle SQL + `?` 占位符，
+  `internal/dbconn.MetadataSourceType` 自动路由）
+- 数据导入/导出通过 `PlaceholderFamily: "qmark"` 覆盖方言占位符
+
+> 教训（来自 GoNavi 实践）：直连 OBServer/OBProxy 的 MySQL 协议端口时，
+> 裸 go-ora（TNS）无法连通；Oracle 租户必须走 obconnector-go 的
+> `CLIENT_SUPPORT_ORACLE_MODE` 握手能力，否则报 OB Error 1235。
 
 ## PanWeiDB
 

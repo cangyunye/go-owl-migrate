@@ -98,6 +98,10 @@ type BuildOptions struct {
 	IdentityToSerial   bool
 	SkipPartitions     bool
 	NoQuoteIdentifiers bool
+	// PreserveIdentifierCase quotes identifiers without case folding. Required
+	// by the runtime import path, whose quoting keeps the metadata's exact
+	// casing (PG folds to lower-case and Oracle to upper-case otherwise).
+	PreserveIdentifierCase bool
 }
 
 // DDLBuilder generates DDL statements.
@@ -169,6 +173,14 @@ func RenderDefault(colType, defVal string, opts BuildOptions, numericBoolean boo
 func isBooleanTypeName(t string) bool {
 	u := strings.ToUpper(strings.TrimSpace(t))
 	return strings.Contains(u, "BOOL") || u == "NUMBER(1)" || u == "TINYINT(1)"
+}
+
+// LooksLikeFullDDL reports whether s is already a complete CREATE statement
+// (e.g., DBMS_METADATA.GET_DDL or pg_get_functiondef output) rather than a
+// body fragment that needs wrapping in a CREATE template.
+func LooksLikeFullDDL(s string) bool {
+	u := strings.ToUpper(strings.TrimSpace(s))
+	return strings.HasPrefix(u, "CREATE ")
 }
 
 // PartitionClause returns the partition clause to append to a CREATE TABLE

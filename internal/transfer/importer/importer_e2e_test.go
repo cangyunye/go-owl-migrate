@@ -115,18 +115,18 @@ func TestImporter_SkipRow_RollbackAndContinue(t *testing.T) {
 	if r.Err != nil {
 		t.Fatalf("unexpected error: %v", r.Err)
 	}
-	// Rows 1,2 are rolled back when row 3 (dup PK) fails;
-	// rows 4,5 succeed in the new transaction.
-	if r.Actual != 2 {
-		t.Errorf("inserted = %d, want 2 (rows after rollback)", r.Actual)
+	// The failed batch is salvaged row by row via savepoints: only the
+	// duplicate PK row is lost, all others are preserved.
+	if r.Actual != 4 {
+		t.Errorf("inserted = %d, want 4 (only the bad row skipped)", r.Actual)
 	}
 	if r.Skipped != 1 {
 		t.Errorf("skipped = %d, want 1 (duplicate PK)", r.Skipped)
 	}
 
 	got := countRows(t, db, schema, "emp")
-	if got != 2 {
-		t.Errorf("table has %d rows, want 2", got)
+	if got != 4 {
+		t.Errorf("table has %d rows, want 4", got)
 	}
 }
 
@@ -337,4 +337,97 @@ func TestImporter_TruncateBefore(t *testing.T) {
 	if got != 2 {
 		t.Errorf("table has %d rows after truncate+import, want 2", got)
 	}
+}
+
+func TestImporter_PG_CopyFastPath(t *testing.T) {
+	db := connectPG(t)
+	schema := setupSchema(t, db)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		`CREATE TABLE %s.copyt (id integer PRIMARY KEY, name text)`, schema)); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	dir := t.TempDir()
+	writeCSV(t, dir, schema, "copyt", []string{
+		"id,name",
+		"1,alpha",
+		"2,beta",
+		"3,gamma",
+	})
+
+	tbl := &md.TableDef{TableSchema: schema, TableName: "copyt"}
+	imp := New(db, Config{
+		SourceDir:      dir,
+		CommitInterval: 100,
+		ErrorPolicy:    "stop",
+		UseCopy:        true,
+		TargetDBType:   "postgres",
+		Logger:         nopImpLogger(t),
+	})
+
+	results, err := imp.ImportTables(ctx, []*md.TableDef{tbl}, nil)
+	if err != nil {
+		t.Fatalf("ImportTables: %v", err)
+	}
+	if results[0].Err != nil {
+		t.Fatalf("import error: %v", results[0].Err)
+	}
+	if results[0].Actual != 3 {
+		t.Errorf("actual = %d, want 3", results[0].Actual)
+	}
+	if got := countRows(t, db, schema, "copyt"); got != 3 {
+		t.Errorf("table has %d rows, want 3", got)
+	}
+}
+
+func TestImporter_PG_CopyFallbackOnBadRow(t *testing.T) {
+	db := connectPG(t)
+	schema := setupSchema(t, db)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		`CREATE TABLE %s.copybad (id integer PRIMARY KEY, val integer NOT NULL)`, schema)); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	dir := t.TempDir()
+	// Row "1,notanint" makes COPY fail; the importer must fall back to the
+	// batched engine and salvage the valid rows.
+	writeCSV(t, dir, schema, "copybad", []string{
+		"id,val",
+		"1,notanint",
+		"2,20",
+		"3,30",
+	})
+
+	tbl := &md.TableDef{TableSchema: schema, TableName: "copybad"}
+	imp := New(db, Config{
+		SourceDir:      dir,
+		CommitInterval: 100,
+		ErrorPolicy:    "skip_row",
+		UseCopy:        true,
+		TargetDBType:   "postgres",
+		Logger:         nopImpLogger(t),
+	})
+
+	results, err := imp.ImportTables(ctx, []*md.TableDef{tbl}, nil)
+	if err != nil {
+		t.Fatalf("ImportTables: %v", err)
+	}
+	if results[0].Err != nil {
+		t.Fatalf("import error: %v", results[0].Err)
+	}
+	if results[0].Actual != 2 || results[0].Skipped != 1 {
+		t.Errorf("actual=%d skipped=%d, want 2/1", results[0].Actual, results[0].Skipped)
+	}
+	if got := countRows(t, db, schema, "copybad"); got != 2 {
+		t.Errorf("table has %d rows, want 2", got)
+	}
+}
+
+func nopImpLogger(t *testing.T) *zap.Logger {
+	t.Helper()
+	return zap.NewNop()
 }

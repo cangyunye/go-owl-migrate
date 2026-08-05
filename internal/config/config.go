@@ -79,7 +79,7 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 
 // IsZero returns true if the DBConfig has no meaningful values set.
 func (d DBConfig) isZero() bool {
-	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.ConnectTimeout == "" && d.QueryTimeout == "" && d.Pool.isZero()
+	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.ConnectTimeout == "" && d.QueryTimeout == "" && d.CompatMode == "" && d.Pool.isZero()
 }
 
 // IsZero returns true if the PoolConfig has no meaningful values set.
@@ -89,7 +89,7 @@ func (p PoolConfig) isZero() bool {
 
 // IsZero returns true if the DDLConfig has no meaningful values set.
 func (d DDLConfig) isZero() bool {
-	return d.TargetDialect == "" && !d.IncludeComments && !d.IncludeIfNotExists && !d.NoQuoteIdentifiers && len(d.SchemaMapping) == 0
+	return d.TargetDialect == "" && d.SourceDialect == "" && !d.IncludeComments && !d.IncludeIfNotExists && !d.NoQuoteIdentifiers && len(d.SchemaMapping) == 0
 }
 
 // IsZero returns true if the SelectGenConfig has no meaningful values set.
@@ -119,7 +119,9 @@ func (i ImportCSVConfig) isZero() bool {
 func (t ImportTargetConfig) isZero() bool {
 	return !t.TruncateBefore && !t.DisableConstraints && !t.DisableTriggers && !t.DropIndexes
 }
-func (b ImportBatchConfig) isZero() bool { return b.CommitInterval == 0 && b.ErrorPolicy == "" }
+func (b ImportBatchConfig) isZero() bool {
+	return b.CommitInterval == 0 && b.ErrorPolicy == "" && !b.UseCopy
+}
 func (d DataTransforms) isZero() bool {
 	return d.DatetimeFormat == "" && !d.TrimStrings && len(d.NullIf) == 0
 }
@@ -214,6 +216,11 @@ type DBConfig struct {
 	ConnectTimeout string     `yaml:"connect_timeout,omitempty"`
 	QueryTimeout   string     `yaml:"query_timeout,omitempty"`
 	Pool           PoolConfig `yaml:"pool,omitempty"`
+
+	// CompatMode applies to OceanBase: declares the tenant compatibility mode
+	// ("mysql" or "oracle"). When empty it is auto-detected from the live
+	// connection and a mismatch raises an error.
+	CompatMode string `yaml:"compat_mode,omitempty"`
 }
 
 // PoolConfig holds connection pool tuning parameters.
@@ -228,6 +235,7 @@ type PoolConfig struct {
 type DDLConfig struct {
 	OutputDir          string            `yaml:"output_dir,omitempty"`
 	TargetDialect      string            `yaml:"target_dialect"`
+	SourceDialect      string            `yaml:"source_dialect,omitempty"`
 	IncludeComments    bool              `yaml:"include_comments,omitempty"`
 	IncludeIfNotExists bool              `yaml:"include_if_not_exists,omitempty"`
 	IncludeDrop        bool              `yaml:"include_drop,omitempty"`
@@ -340,6 +348,9 @@ type ImportBatchConfig struct {
 	CommitInterval      int    `yaml:"commit_interval"`
 	ErrorPolicy         string `yaml:"error_policy,omitempty"`
 	MaxErrorsBeforeStop int    `yaml:"max_errors_before_stop,omitempty"`
+	// UseCopy enables the PostgreSQL COPY fast path for PG-family targets.
+	// Falls back to batched INSERT automatically when COPY cannot be used.
+	UseCopy bool `yaml:"use_copy,omitempty"`
 }
 
 // DataTransforms holds data transformation rules.
@@ -448,8 +459,21 @@ func (c *Config) validate() error {
 	if !ValidDialects[c.DDL.TargetDialect] {
 		return fmt.Errorf("unknown ddl.target_dialect %q: must be one of %v", c.DDL.TargetDialect, mapKeys(ValidDialects))
 	}
+	if c.DDL.SourceDialect != "" && !ValidDialects[c.DDL.SourceDialect] {
+		return fmt.Errorf("unknown ddl.source_dialect %q: must be one of %v", c.DDL.SourceDialect, mapKeys(ValidDialects))
+	}
 	if c.Import.Batch.ErrorPolicy != "" && !ValidErrorPolicies[c.Import.Batch.ErrorPolicy] {
 		return fmt.Errorf("invalid import.batch.error_policy %q: must be one of %v", c.Import.Batch.ErrorPolicy, mapKeys(ValidErrorPolicies))
+	}
+	for _, dbc := range []struct {
+		name string
+		cfg  DBConfig
+	}{{"source", c.Source}, {"target", c.Target}} {
+		switch strings.ToLower(dbc.cfg.CompatMode) {
+		case "", "mysql", "oracle":
+		default:
+			return fmt.Errorf("invalid %s.compat_mode %q: must be mysql or oracle", dbc.name, dbc.cfg.CompatMode)
+		}
 	}
 	return nil
 }

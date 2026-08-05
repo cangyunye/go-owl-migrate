@@ -211,6 +211,7 @@ Use --resume to skip tables completed in a previous run.`,
 			CSVHeader:         cfg.Export.CSV.Header,
 			CSVLineTerminator: cfg.Export.CSV.LineTerminator,
 			DBType:            cfg.Source.Type,
+			PlaceholderFamily: placeholderFamilyFor(cfg.Source),
 			Logger:            expLogger,
 		})
 
@@ -375,6 +376,7 @@ Use --resume to skip tables completed in a previous run.`,
 					CommitInterval:           cfg.Import.Batch.CommitInterval,
 					ErrorPolicy:              cfg.Import.Batch.ErrorPolicy,
 					MaxErrors:                cfg.Import.Batch.MaxErrorsBeforeStop,
+					UseCopy:                  cfg.Import.Batch.UseCopy,
 					MaxWorkers:               cfg.Import.Parallel.MaxWorkers,
 					RespectForeignKeys:       cfg.Import.Parallel.RespectForeignKeys,
 					DateTimeFormat:           cfg.Import.DataTransforms.DatetimeFormat,
@@ -383,6 +385,7 @@ Use --resume to skip tables completed in a previous run.`,
 					TrimStrings:              cfg.Import.DataTransforms.TrimStrings,
 					SourceEncoding:           cfg.Import.DataTransforms.SourceEncoding,
 					TargetDBType:             cfg.Target.Type,
+					PlaceholderFamily:        placeholderFamilyFor(cfg.Target),
 					Logger:                   impLogger,
 					NoQuoteIdentifiers:       cfg.DDL.NoQuoteIdentifiers,
 				})
@@ -646,8 +649,8 @@ func (r *MigrationReport) Print() {
 }
 
 func ensureTablesForMigrate(ctx context.Context, db *sql.DB, sm *md.SchemaModel, cfg *config.Config) error {
-	// Track which schemas we've already created
 	createdSchemas := make(map[string]bool)
+	targetFamily := targetTypeFamily(cfg.Target.Type)
 
 	for _, tbl := range sm.GetTables() {
 		schema := tbl.TableSchema
@@ -655,24 +658,14 @@ func ensureTablesForMigrate(ctx context.Context, db *sql.DB, sm *md.SchemaModel,
 			schema = m
 		}
 
-		// Create schema if needed (PostgreSQL)
-		if !createdSchemas[schema] {
-			schemaSQL := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schema)
-			db.ExecContext(ctx, schemaSQL) // ignore error (MySQL doesn't have schemas)
+		if targetFamily == "postgres" && !createdSchemas[schema] {
+			schemaSQL := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %q", schema)
+			db.ExecContext(ctx, schemaSQL)
 			createdSchemas[schema] = true
 		}
 
-		createSQL := buildCreateTableSQL(tbl, schema, cfg)
-		if createSQL != "" {
-			if _, err := db.ExecContext(ctx, createSQL); err != nil {
-				// Table may already exist — try with IF NOT EXISTS
-				if strings.Contains(err.Error(), "already exists") {
-					fmt.Printf("  Table %s.%s already exists, skipping\n", schema, tbl.TableName)
-					continue
-				}
-				return fmt.Errorf("create table %s.%s: %w (SQL: %s)", schema, tbl.TableName, err, createSQL)
-			}
-			fmt.Printf("  Created %s.%s\n", schema, tbl.TableName)
+		if err := ensureOneTable(ctx, db, tbl, cfg); err != nil {
+			return err
 		}
 	}
 	return nil

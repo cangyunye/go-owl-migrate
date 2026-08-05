@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lib/pq"
 	"go.uber.org/zap"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
@@ -40,16 +41,22 @@ type Config struct {
 	CommitInterval               int
 	ErrorPolicy                  string // skip_row/stop/log_only
 	MaxErrors                    int
-	MaxWorkers                   int
-	RespectForeignKeys           bool
-	DateTimeFormat               string // e.g. "yyyyMMddHHmmss"
-	DateTimeFormatFallback       []string
-	DateTimeTruncateToTarget     bool
-	TrimStrings                  bool
-	TargetDBType                 string // "postgres", "mysql", "oracle" — affects quoting and placeholders
-	SourceEncoding               string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
-	Logger                       *zap.Logger
-	NoQuoteIdentifiers           bool
+	// UseCopy enables the PostgreSQL COPY fast path for PG-family targets.
+	UseCopy                  bool
+	MaxWorkers               int
+	RespectForeignKeys       bool
+	DateTimeFormat           string // e.g. "yyyyMMddHHmmss"
+	DateTimeFormatFallback   []string
+	DateTimeTruncateToTarget bool
+	TrimStrings              bool
+	TargetDBType             string // "postgres", "mysql", "oracle" — affects quoting and placeholders
+	// PlaceholderFamily overrides dialect-derived bind placeholders:
+	// "qmark" (?), "colon" (:N) or "dollar" ($N). Used for OceanBase Oracle
+	// tenants reached over the MySQL wire protocol.
+	PlaceholderFamily  string
+	SourceEncoding     string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
+	Logger             *zap.Logger
+	NoQuoteIdentifiers bool
 }
 
 // Importer reads CSV files and inserts data into a target database.
@@ -119,6 +126,36 @@ func (imp *Importer) isMySQL() bool {
 	return t == "mysql" || t == "goldendb" || strings.HasSuffix(t, "-mysql")
 }
 
+// buildPlaceholders renders bind placeholders for n columns, honoring the
+// optional PlaceholderFamily override.
+func (imp *Importer) buildPlaceholders(n int) []string {
+	p := make([]string, n)
+	family := imp.cfg.PlaceholderFamily
+	switch {
+	case family == "qmark":
+		for i := range p {
+			p[i] = "?"
+		}
+	case family == "colon" || (family == "" && imp.isOracle()):
+		for i := range p {
+			p[i] = fmt.Sprintf(":%d", i+1)
+		}
+	case family == "dollar":
+		for i := range p {
+			p[i] = fmt.Sprintf("$%d", i+1)
+		}
+	case imp.isMySQL():
+		for i := range p {
+			p[i] = "?"
+		}
+	default:
+		for i := range p {
+			p[i] = fmt.Sprintf("$%d", i+1)
+		}
+	}
+	return p
+}
+
 // isOracle returns true if the target database is Oracle or an Oracle-compatible dialect.
 func (imp *Importer) isOracle() bool {
 	t := strings.ToLower(imp.cfg.TargetDBType)
@@ -127,6 +164,214 @@ func (imp *Importer) isOracle() bool {
 		return false
 	}
 	return t == "oracle" || strings.HasSuffix(t, "-oracle")
+}
+
+// maxBindParams is the bind-parameter ceiling of the MySQL and PostgreSQL wire
+// protocols; multi-row batches must stay below it.
+const maxBindParams = 65535
+
+// useMultiRowInsert reports whether multi-row INSERT ... VALUES statements are
+// usable for the target: the MySQL/PG wire protocols support them, including
+// OceanBase Oracle tenants reached over the MySQL wire ("?" placeholders).
+// Native Oracle (":N" binds) falls back to a reused prepared statement.
+func (imp *Importer) useMultiRowInsert() bool {
+	return imp.cfg.PlaceholderFamily == "qmark" || !imp.isOracle()
+}
+
+// useCopyFastPath reports whether the PostgreSQL COPY path is enabled and
+// applicable to the target.
+func (imp *Importer) useCopyFastPath() bool {
+	return imp.cfg.UseCopy && !imp.isMySQL() && !imp.isOracle() && imp.cfg.PlaceholderFamily == ""
+}
+
+// importViaCopy loads all rows with a single COPY statement. It returns an
+// error (leaving the table unchanged) when COPY fails, so the caller can fall
+// back to the row-level engine.
+func (imp *Importer) importViaCopy(ctx context.Context, conn dbConn, schema, table string, header []string, valsRows [][]any, rowIndexes []int, result *ImportResult) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin copy tx: %w", err)
+	}
+	stmt, err := tx.Prepare(pq.CopyInSchema(schema, table, header...))
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("prepare copy: %w", err)
+	}
+	for i, vals := range valsRows {
+		row := make([]any, len(vals))
+		for j, v := range vals {
+			// COPY text mode requires bytea as \x-hex, not raw bytes.
+			if b, ok := v.([]byte); ok {
+				row[j] = `\x` + hex.EncodeToString(b)
+				continue
+			}
+			row[j] = v
+		}
+		if _, err := stmt.ExecContext(ctx, row...); err != nil {
+			stmt.Close()
+			tx.Rollback()
+			return fmt.Errorf("copy row %d: %w", rowIndexes[i], err)
+		}
+	}
+	if _, err := stmt.ExecContext(ctx); err != nil {
+		stmt.Close()
+		tx.Rollback()
+		return fmt.Errorf("copy flush: %w", err)
+	}
+	if err := stmt.Close(); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("close copy stmt: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit copy: %w", err)
+	}
+	result.Actual = int64(len(valsRows))
+	return nil
+}
+
+// statementBatchRows sizes one multi-row INSERT statement: bounded by the
+// commit interval and by the wire-protocol parameter limit.
+func (imp *Importer) statementBatchRows(numCols int, multiRow bool) int {
+	if !multiRow {
+		return 1
+	}
+	n := imp.cfg.CommitInterval
+	if n <= 0 {
+		n = 1000
+	}
+	if numCols > 0 {
+		if byArgs := maxBindParams / numCols; byArgs >= 1 && byArgs < n {
+			n = byArgs
+		}
+	}
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+// buildMultiRowInsert renders INSERT INTO ... VALUES (...),(...),... for the
+// given number of rows. Numbered placeholder families ($N, :N) continue their
+// sequence across rows; the ? family simply repeats.
+func (imp *Importer) buildMultiRowInsert(schema, table string, quotedCols []string, numRows, numCols int) string {
+	numbered := imp.numberedPlaceholders()
+	valueGroups := make([]string, numRows)
+	n := 0
+	for i := range valueGroups {
+		ph := make([]string, numCols)
+		for j := range ph {
+			n++
+			switch {
+			case numbered == "dollar":
+				ph[j] = fmt.Sprintf("$%d", n)
+			case numbered == "colon":
+				ph[j] = fmt.Sprintf(":%d", n)
+			default:
+				ph[j] = "?"
+			}
+		}
+		valueGroups[i] = "(" + strings.Join(ph, ", ") + ")"
+	}
+	return fmt.Sprintf("INSERT INTO %s.%s (%s) VALUES %s",
+		imp.quoteIdent(schema), imp.quoteIdent(table),
+		strings.Join(quotedCols, ", "),
+		strings.Join(valueGroups, ", "),
+	)
+}
+
+// numberedPlaceholders reports the numbered placeholder style of the target:
+// "dollar" for PG-family, "colon" for Oracle-family, "" for "?".
+func (imp *Importer) numberedPlaceholders() string {
+	switch imp.cfg.PlaceholderFamily {
+	case "dollar":
+		return "dollar"
+	case "colon":
+		return "colon"
+	case "qmark":
+		return ""
+	}
+	if imp.isOracle() {
+		return "colon"
+	}
+	if imp.isMySQL() {
+		return ""
+	}
+	return "dollar"
+}
+
+// salvageChunk re-inserts a failed batch one row at a time inside savepoints so
+// only the genuinely bad rows are skipped. It returns the number of inserted
+// rows and whether the caller must stop.
+func (imp *Importer) salvageChunk(ctx context.Context, tx *sql.Tx, insertSQL string, chunk [][]any, rowIndexes []int, handleError func(int, error) bool) (int64, bool) {
+	var ok int64
+	for j, vals := range chunk {
+		sp := fmt.Sprintf("owl_row_%d", j)
+		tx.ExecContext(ctx, "SAVEPOINT "+sp)
+		if _, err := tx.ExecContext(ctx, insertSQL, vals...); err != nil {
+			tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+sp)
+			if handleError(rowIndexes[j], err) {
+				return ok, true
+			}
+			continue
+		}
+		tx.ExecContext(ctx, "RELEASE SAVEPOINT "+sp)
+		ok++
+	}
+	return ok, false
+}
+
+// isPlaceholderLimitError detects wire-protocol parameter-limit failures so the
+// batch can be bisected instead of falling back row by row.
+func isPlaceholderLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "too many placeholders") ||
+		strings.Contains(msg, "parameters must be between") ||
+		strings.Contains(msg, "exceeds the maximum number") ||
+		strings.Contains(msg, "65535")
+}
+
+// maxErrorsReached reports whether the error ceiling has been hit.
+func (imp *Importer) maxErrorsReached(result *ImportResult) bool {
+	return imp.cfg.MaxErrors > 0 && result.Errors >= int64(imp.cfg.MaxErrors)
+}
+
+// convertRow maps one CSV record to typed SQL values, applying null semantics
+// and data transforms.
+func (imp *Importer) convertRow(tbl *md.TableDef, header []string, record []string) ([]any, error) {
+	vals := make([]any, len(record))
+	for j, v := range record {
+		isNull := imp.isNullValue(v)
+		if !isNull && imp.cfg.NumericZeroNotNull && j < len(header) && imp.isNumericColumn(tbl, header[j]) && isZeroNumeric(v) {
+			isNull = true
+		}
+		if isNull {
+			vals[j] = nil
+			continue
+		}
+		val := imp.transformValue(v)
+		if j < len(header) {
+			if imp.cfg.DateTimeTruncateToTarget {
+				if s, ok := val.(string); ok {
+					val = truncateDatetimeToTarget(s, tbl.GetColumn(header[j]))
+				}
+			}
+			if imp.needsNumericBoolean(tbl, header[j]) {
+				val = numericBooleanValue(val)
+			}
+			if imp.isBinaryColumn(tbl, header[j]) {
+				decoded, err := hex.DecodeString(v)
+				if err != nil {
+					return nil, fmt.Errorf("column %s: decode hex: %w", header[j], err)
+				}
+				val = decoded
+			}
+		}
+		vals[j] = val
+	}
+	return vals, nil
 }
 
 // ImportResult holds the result of importing one table.
@@ -388,21 +633,7 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	for i, h := range header {
 		quotedCols[i] = imp.quoteIdent(h)
 	}
-	// Generate placeholders: ? for MySQL, :1/:2 for Oracle, $1/$2 for PG
-	placeholders := make([]string, len(header))
-	if imp.isMySQL() {
-		for i := range placeholders {
-			placeholders[i] = "?"
-		}
-	} else if imp.isOracle() {
-		for i := range placeholders {
-			placeholders[i] = fmt.Sprintf(":%d", i+1)
-		}
-	} else {
-		for i := range placeholders {
-			placeholders[i] = fmt.Sprintf("$%d", i+1)
-		}
-	}
+	placeholders := imp.buildPlaceholders(len(header))
 
 	insertSQL := fmt.Sprintf("INSERT INTO %s.%s (%s) VALUES (%s)",
 		imp.quoteIdent(targetSchema), imp.quoteIdent(tbl.TableName),
@@ -453,10 +684,53 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		}()
 	}
 
+	// Convert all CSV values up front so the insert loop only deals with
+	// batching and execution.
+	valsRows := make([][]any, 0, len(allRows))
+	rowIndexes := make([]int, 0, len(allRows))
+	for i, row := range allRows {
+		vals, err := imp.convertRow(tbl, header, row)
+		if err != nil {
+			result.Errors++
+			if imp.cfg.ErrorPolicy == "stop" {
+				result.Err = fmt.Errorf("row %d: %w", i, err)
+				return result
+			}
+			result.Skipped++
+			imp.logger.Warn("Skipping row (value conversion)", zap.Int("row", i), zap.Error(err))
+			if imp.maxErrorsReached(&result) {
+				result.Err = fmt.Errorf("max errors (%d) reached", imp.cfg.MaxErrors)
+				return result
+			}
+			continue
+		}
+		valsRows = append(valsRows, vals)
+		rowIndexes = append(rowIndexes, i)
+	}
+
+	// PostgreSQL COPY fast path (optional). COPY is all-or-nothing, so on any
+	// failure we fall back to the batched INSERT engine which supports the
+	// row-level error policies.
+	if imp.useCopyFastPath() && len(valsRows) > 0 {
+		if err := imp.importViaCopy(ctx, conn, targetSchema, tbl.TableName, header, valsRows, rowIndexes, &result); err != nil {
+			imp.logger.Warn("COPY fast path failed; falling back to batched INSERT",
+				zap.String("table", key), zap.Error(err))
+		} else {
+			result.Duration = time.Since(start)
+			imp.logger.Info("Import completed (COPY)",
+				zap.String("table", key),
+				zap.Int64("expected", result.Expected),
+				zap.Int64("actual", result.Actual),
+				zap.Duration("elapsed", result.Duration),
+			)
+			return result
+		}
+	}
+
 	// Insert in batches with transaction control
 	var (
-		skipped     int64
-		errCount    int64
+		skipped     = &result.Skipped
+		errCount    = &result.Errors
 		inserted    int64
 		pendingInTx int64
 		tx          *sql.Tx
@@ -472,11 +746,14 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		if tx == nil {
 			return nil
 		}
-		return tx.Commit()
+		e := tx.Commit()
+		tx = nil
+		return e
 	}
 	rollbackTx := func() {
 		if tx != nil {
 			tx.Rollback()
+			tx = nil
 			inserted -= pendingInTx
 			pendingInTx = 0
 		}
@@ -487,116 +764,161 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		return result
 	}
 
-	for i, row := range allRows {
-		// Convert CSV values to SQL values with data transforms
-		vals := make([]any, len(row))
-		for j, v := range row {
-			isNull := imp.isNullValue(v)
-			if !isNull && imp.cfg.NumericZeroNotNull && j < len(header) && imp.isNumericColumn(tbl, header[j]) && isZeroNumeric(v) {
-				isNull = true
+	handleRowError := func(rowIndex int, execErr error) (stop bool) {
+		*errCount++
+		switch imp.cfg.ErrorPolicy {
+		case "stop":
+			rollbackTx()
+			result.Err = fmt.Errorf("row %d: %w", rowIndex, execErr)
+			return true
+		case "skip_row":
+			*skipped++
+			imp.logger.Warn("Skipping row", zap.Int("row", rowIndex), zap.Error(execErr))
+			return imp.maxErrorsReached(&result)
+		default: // log_only
+			imp.logger.Warn("Row error (continuing)", zap.Int("row", rowIndex), zap.Error(execErr))
+			return false
+		}
+	}
+
+	useMultiRow := imp.useMultiRowInsert()
+	chunkSize := imp.statementBatchRows(len(header), useMultiRow)
+	if chunkSize <= 0 {
+		chunkSize = 1
+	}
+
+	var stmt *sql.Stmt
+	if !useMultiRow {
+		var perr error
+		stmt, perr = tx.PrepareContext(ctx, insertSQL)
+		if perr != nil {
+			rollbackTx()
+			result.Err = fmt.Errorf("prepare insert: %w", perr)
+			return result
+		}
+	}
+
+	maxErrorsStop := false
+	for pos := 0; pos < len(valsRows); {
+		select {
+		case <-ctx.Done():
+			if stmt != nil {
+				stmt.Close()
 			}
-			if isNull {
-				vals[j] = nil
+			rollbackTx()
+			result.Err = ctx.Err()
+			return result
+		default:
+		}
+
+		if useMultiRow {
+			end := pos + chunkSize
+			if end > len(valsRows) {
+				end = len(valsRows)
+			}
+			chunk := valsRows[pos:end]
+			batchSQL := imp.buildMultiRowInsert(targetSchema, tbl.TableName, quotedCols, len(chunk), len(header))
+			args := make([]any, 0, len(chunk)*len(header))
+			for _, vals := range chunk {
+				args = append(args, vals...)
+			}
+
+			// The savepoint keeps earlier rows of this transaction intact when
+			// the batch fails (required on PostgreSQL, where any statement
+			// error aborts the whole transaction).
+			tx.ExecContext(ctx, "SAVEPOINT owl_batch")
+			_, execErr := tx.ExecContext(ctx, batchSQL, args...)
+			if execErr == nil {
+				tx.ExecContext(ctx, "RELEASE SAVEPOINT owl_batch")
+				inserted += int64(len(chunk))
+				pendingInTx += int64(len(chunk))
+				pos = end
 			} else {
-				val := imp.transformValue(v)
-				if j < len(header) {
-					if imp.cfg.DateTimeTruncateToTarget {
-						if s, ok := val.(string); ok {
-							val = truncateDatetimeToTarget(s, tbl.GetColumn(header[j]))
-						}
-					}
-					if imp.needsNumericBoolean(tbl, header[j]) {
-						val = numericBooleanValue(val)
-					}
-					if imp.isBinaryColumn(tbl, header[j]) {
-						decoded, err := hex.DecodeString(v)
-						if err != nil {
-							rollbackTx()
-							result.Err = fmt.Errorf("row %d column %s: decode hex: %w", i, header[j], err)
-							result.Actual = inserted
-							result.Skipped = skipped
-							result.Errors = errCount
-							return result
-						}
-						val = decoded
-					}
+				tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT owl_batch")
+				if isPlaceholderLimitError(execErr) && len(chunk) > 1 {
+					chunkSize = len(chunk) / 2
+					continue
 				}
-				vals[j] = val
-			}
-		}
-
-		var execErr error
-		if tx != nil {
-			_, execErr = tx.ExecContext(ctx, insertSQL, vals...)
-		} else {
-			_, execErr = conn.ExecContext(ctx, insertSQL, vals...)
-		}
-
-		if execErr != nil {
-			errCount++
-			switch imp.cfg.ErrorPolicy {
-			case "stop":
-				rollbackTx()
-				result.Err = fmt.Errorf("row %d: %w", i, execErr)
-				result.Actual = inserted
-				result.Skipped = skipped
-				result.Errors = errCount
-				return result
-			case "skip_row":
-				skipped++
-				imp.logger.Warn("Skipping row",
-					zap.Int("row", i),
-					zap.Error(execErr),
-				)
-				if imp.cfg.MaxErrors > 0 && errCount >= int64(imp.cfg.MaxErrors) {
+				if imp.cfg.ErrorPolicy == "stop" {
+					*errCount++
 					rollbackTx()
-					result.Err = fmt.Errorf("max errors (%d) reached", imp.cfg.MaxErrors)
+					result.Err = fmt.Errorf("row %d: %w", rowIndexes[pos], execErr)
 					result.Actual = inserted
-					result.Skipped = skipped
-					result.Errors = errCount
 					return result
 				}
-				// A failed INSERT aborts the transaction on PostgreSQL;
-				// rollback and start a fresh transaction to continue.
-				rollbackTx()
-				if err := beginTx(); err != nil {
-					result.Err = fmt.Errorf("begin tx after skip_row rollback: %w", err)
+				// Salvage the chunk row by row so only the genuinely bad rows
+				// are skipped.
+				ok, stop := imp.salvageChunk(ctx, tx, insertSQL, chunk, rowIndexes[pos:end], handleRowError)
+				inserted += ok
+				pendingInTx += ok
+				pos = end
+				if stop {
+					rollbackTx()
+					if result.Err == nil && imp.cfg.MaxErrors > 0 && *errCount >= int64(imp.cfg.MaxErrors) {
+						result.Err = fmt.Errorf("max errors (%d) reached", imp.cfg.MaxErrors)
+					}
 					result.Actual = inserted
-					result.Skipped = skipped
-					result.Errors = errCount
 					return result
 				}
-				continue
-			case "log_only":
-				imp.logger.Warn("Row error (continuing)",
-					zap.Int("row", i),
-					zap.Error(execErr),
-				)
 			}
 		} else {
-			inserted++
-			pendingInTx++
+			vals := valsRows[pos]
+			_, execErr := stmt.ExecContext(ctx, vals...)
+			if execErr != nil {
+				if handleRowError(rowIndexes[pos], execErr) {
+					maxErrorsStop = true
+					if result.Err == nil && imp.cfg.MaxErrors > 0 && *errCount >= int64(imp.cfg.MaxErrors) {
+						result.Err = fmt.Errorf("max errors (%d) reached", imp.cfg.MaxErrors)
+					}
+					break
+				}
+			} else {
+				inserted++
+				pendingInTx++
+			}
+			pos++
 		}
 
-		// Commit interval
 		if pendingInTx >= int64(imp.cfg.CommitInterval) {
+			if stmt != nil {
+				stmt.Close()
+				stmt = nil
+			}
 			if err := commitTx(); err != nil {
-				rollbackTx()
 				result.Err = fmt.Errorf("commit at row %d: %w", inserted, err)
 				result.Actual = inserted
 				return result
 			}
-			imp.logger.Debug("Committed",
-				zap.Int64("rows", inserted),
-				zap.String("table", key),
-			)
+			imp.logger.Debug("Committed", zap.Int64("rows", inserted), zap.String("table", key))
 			if err := beginTx(); err != nil {
 				result.Err = fmt.Errorf("begin tx after commit: %w", err)
+				result.Actual = inserted
 				return result
+			}
+			if !useMultiRow {
+				var perr error
+				stmt, perr = tx.PrepareContext(ctx, insertSQL)
+				if perr != nil {
+					rollbackTx()
+					result.Err = fmt.Errorf("re-prepare insert: %w", perr)
+					result.Actual = inserted
+					return result
+				}
 			}
 		}
 	}
+	if maxErrorsStop {
+		if stmt != nil {
+			stmt.Close()
+		}
+		result.Actual = inserted
+		result.Duration = time.Since(start)
+		return result
+	}
 
+	if stmt != nil {
+		stmt.Close()
+	}
 	// Final commit
 	if err := commitTx(); err != nil {
 		result.Err = fmt.Errorf("final commit: %w", err)
@@ -604,8 +926,6 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	}
 
 	result.Actual = inserted
-	result.Skipped = skipped
-	result.Errors = errCount
 	result.Duration = time.Since(start)
 
 	imp.logger.Info("Import completed",

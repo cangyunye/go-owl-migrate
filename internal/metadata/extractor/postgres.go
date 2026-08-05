@@ -3,6 +3,7 @@ package extractor
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
@@ -159,11 +160,15 @@ func (PGMetadataQuerier) Type() string { return "postgres" }
 
 func (PGMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef, error) {
 	rows, err := db.Query(`
-		SELECT table_name, table_type
-		FROM information_schema.tables
-		WHERE table_schema = $1
-		  AND table_type = 'BASE TABLE'
-		ORDER BY table_name`, schema)
+		SELECT t.table_name, t.table_type,
+			COALESCE(obj_description(c.oid, 'pg_class'), '') AS table_comment,
+			CASE WHEN c.relkind = 'p' THEN 'YES' ELSE 'NO' END AS partitioned
+		FROM information_schema.tables t
+		LEFT JOIN pg_class c
+			ON c.oid = (quote_ident(t.table_schema) || '.' || quote_ident(t.table_name))::regclass
+		WHERE t.table_schema = $1
+		  AND t.table_type = 'BASE TABLE'
+		ORDER BY t.table_name`, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +176,8 @@ func (PGMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef,
 
 	var tables []*md.TableDef
 	for rows.Next() {
-		var tableName, tableType string
-		if err := rows.Scan(&tableName, &tableType); err != nil {
+		var tableName, tableType, tableComment, partitioned string
+		if err := rows.Scan(&tableName, &tableType, &tableComment, &partitioned); err != nil {
 			return nil, err
 		}
 		tbl, err := md.NewTableDef(schema, tableName)
@@ -181,9 +186,15 @@ func (PGMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef,
 		}
 		tbl.Owner = schema
 		tbl.TableType = "TABLE"
+		tbl.TableComment = tableComment
+		tbl.Partitioned = partitioned
 		tables = append(tables, tbl)
 	}
-	return tables, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	enrichPGPartitions(db, schema, tables)
+	return tables, nil
 }
 
 func (PGMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDef, error) {
@@ -244,7 +255,179 @@ func (PGMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDe
 
 		columns = append(columns, col)
 	}
-	return columns, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	enrichPGIdentitySequences(db, schema, columns)
+	return columns, nil
+}
+
+// enrichPGPartitions attaches PARTITION BY definitions to partitioned parent
+// tables. Partition children remain listed as tables; exclude them via
+// table_filter when re-creating the hierarchy through the parent.
+func enrichPGPartitions(db *sql.DB, schema string, tables []*md.TableDef) {
+	for _, tbl := range tables {
+		if tbl.Partitioned != "YES" {
+			continue
+		}
+		var partKey string
+		err := db.QueryRow(
+			`SELECT pg_get_partkeydef((quote_ident($1) || '.' || quote_ident($2))::regclass::oid)`,
+			schema, tbl.TableName).Scan(&partKey)
+		if err != nil || partKey == "" {
+			continue
+		}
+		tbl.PartitionInfo = "PARTITION BY " + partKey
+	}
+}
+
+// enrichPGIdentitySequences fills IdentityStart/IdentityIncrement for identity
+// columns by resolving their owned sequence (best-effort).
+func enrichPGIdentitySequences(db *sql.DB, schema string, columns []*md.ColumnDef) {
+	for _, col := range columns {
+		if col.IsIdentity != "YES" {
+			continue
+		}
+		var seqName sql.NullString
+		err := db.QueryRow(
+			`SELECT pg_get_serial_sequence(quote_ident($1) || '.' || quote_ident($2), $3)`,
+			schema, col.TableName, col.ColumnName).Scan(&seqName)
+		if err != nil || !seqName.Valid || seqName.String == "" {
+			continue
+		}
+		seqSchema, seqRel := splitQualifiedName(seqName.String)
+		if seqSchema == "" {
+			seqSchema = schema
+		}
+		var startVal, incrVal sql.NullInt64
+		err = db.QueryRow(
+			`SELECT start_value, increment_by FROM pg_sequences WHERE schemaname = $1 AND sequencename = $2`,
+			seqSchema, seqRel).Scan(&startVal, &incrVal)
+		if err != nil {
+			continue
+		}
+		if startVal.Valid {
+			col.IdentityStart = int(startVal.Int64)
+		}
+		if incrVal.Valid {
+			col.IdentityIncrement = int(incrVal.Int64)
+		}
+	}
+}
+
+func (PGMetadataQuerier) QueryFunctions(db *sql.DB, schema string) ([]*md.FunctionDef, error) {
+	// prokind requires PostgreSQL 11+; fall back to an all-FUNCTION variant
+	// on older servers.
+	query := `
+		SELECT p.proname,
+			CASE p.prokind WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS kind,
+			pg_get_functiondef(p.oid) AS funcdef,
+			pg_get_function_result(p.oid) AS result_type,
+			COALESCE(l.lanname, '') AS language
+		FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace
+		LEFT JOIN pg_language l ON l.oid = p.prolang
+		WHERE n.nspname = $1
+		ORDER BY p.proname`
+	rows, err := db.Query(query, schema)
+	if err != nil && strings.Contains(err.Error(), "prokind") {
+		query = `
+			SELECT p.proname,
+				'FUNCTION' AS kind,
+				pg_get_functiondef(p.oid) AS funcdef,
+				pg_get_function_result(p.oid) AS result_type,
+				COALESCE(l.lanname, '') AS language
+			FROM pg_proc p
+			JOIN pg_namespace n ON n.oid = p.pronamespace
+			LEFT JOIN pg_language l ON l.oid = p.prolang
+			WHERE n.nspname = $1
+			ORDER BY p.proname`
+		rows, err = db.Query(query, schema)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var funcs []*md.FunctionDef
+	for rows.Next() {
+		var name, kind, def, resultType, language string
+		if err := rows.Scan(&name, &kind, &def, &resultType, &language); err != nil {
+			return nil, err
+		}
+		funcs = append(funcs, &md.FunctionDef{
+			FunctionSchema: schema,
+			FunctionName:   name,
+			FunctionType:   kind,
+			ReturnType:     resultType,
+			FunctionBody:   def,
+			Language:       language,
+			Status:         "ENABLED",
+		})
+	}
+	return funcs, rows.Err()
+}
+
+func (PGMetadataQuerier) QueryMViews(db *sql.DB, schema string) ([]*md.MViewDef, error) {
+	rows, err := db.Query(`
+		SELECT matviewname, definition
+		FROM pg_matviews
+		WHERE schemaname = $1
+		ORDER BY matviewname`, schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var mviews []*md.MViewDef
+	for rows.Next() {
+		var name, definition string
+		if err := rows.Scan(&name, &definition); err != nil {
+			return nil, err
+		}
+		mviews = append(mviews, &md.MViewDef{
+			MViewSchema: schema,
+			MViewName:   name,
+			MViewQuery:  strings.TrimSpace(definition),
+		})
+	}
+	return mviews, rows.Err()
+}
+
+func (PGMetadataQuerier) QueryPackages(_ *sql.DB, _ string) ([]*md.PackageDef, error) {
+	return nil, nil // PostgreSQL has no packages
+}
+
+func (PGMetadataQuerier) QueryPackageBodies(_ *sql.DB, _ string) ([]*md.PackageBodyDef, error) {
+	return nil, nil
+}
+
+// splitQualifiedName splits a possibly double-quoted "schema"."name" (or
+// schema.name) into its parts, stripping the quotes.
+func splitQualifiedName(s string) (schema, name string) {
+	var parts []string
+	var cur strings.Builder
+	inQuote := false
+	for _, r := range s {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+		case r == '.' && !inQuote:
+			parts = append(parts, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	parts = append(parts, cur.String())
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	if len(parts) == 1 {
+		return "", parts[0]
+	}
+	return "", s
 }
 
 func (PGMetadataQuerier) QueryPrimaryKeys(db *sql.DB, schema string) ([]*md.PrimaryKeyDef, error) {
