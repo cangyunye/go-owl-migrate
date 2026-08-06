@@ -175,18 +175,18 @@ func DSNExamples() map[string]string {
 	return map[string]string{
 		"oracle":           "oracle://user:pass@host:1521/service_name",
 		"goldendb-oracle":  "oracle://user:pass@host:1521/service_name",
-		"oceanbase-oracle": "oracle://user:pass@host:1521/service_name",
-		"panweidb-oracle":  "oracle://user:pass@host:1521/service_name",
+		"oceanbase-oracle": "oceanbase-oracle://user:pass@host:2881/db (or oracle://user:pass@host:2883/service via OBProxy TNS)",
+		"panweidb-oracle":  "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable",
 		"mysql":            "user:pass@tcp(host:3306)/dbname?charset=utf8mb4",
 		"goldendb":         "user:pass@tcp(host:3306)/dbname?charset=utf8mb4",
 		"goldendb-mysql":   "user:pass@tcp(host:3306)/dbname?charset=utf8mb4",
-		"oceanbase-mysql":  "user:pass@tcp(host:3306)/dbname?charset=utf8mb4",
-		"panweidb-mysql":   "user:pass@tcp(host:3306)/dbname?charset=utf8mb4",
+		"oceanbase-mysql":  "user:pass@tcp(host:2881)/dbname",
+		"panweidb-mysql":   "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable",
 		"postgres":         "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable",
 		"postgresql":       "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable",
 		"opengaussdb":      "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable",
 		"panweidb":         "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable",
-		"oceanbase":        "user:pass@tcp(host:2881)/dbname",
+		"oceanbase":        "user:pass@tcp(host:2881)/dbname (OceanBase MySQL mode; Oracle tenants: use type oceanbase-oracle)",
 		"sqlite3":          "/path/to/database.db",
 		"duckdb":           "/path/to/database.db",
 	}
@@ -464,8 +464,8 @@ func buildInsertCfg(v map[string]string) *config.Config {
 			out = "./output/data/"
 		}
 		cfg.Metadata = config.MetadataConfig{
-			Type:  "xlsx",
-			XLSX:  config.XLSXConfig{Path: v["xlsx_path"], DataOutputDir: out},
+			Type: "xlsx",
+			XLSX: config.XLSXConfig{Path: v["xlsx_path"], DataOutputDir: out},
 		}
 	default:
 		cfg.Metadata = config.MetadataConfig{Type: "csv"}

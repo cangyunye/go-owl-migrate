@@ -212,32 +212,33 @@ Requires:
 - `source.dsn` — connection string
 - `source.schema` — schema name to extract
 
-## Connection Strings
+## Connection Strings (DSN)
 
-### PostgreSQL
-```
-host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable
-```
+`source.type` / `target.type` / `ddl.target_dialect` 支持的方言及对应连接串格式如下，
+可直接复制替换占位符后使用：
 
-### MySQL
-```
-user:password@tcp(127.0.0.1:3306)/mydb
-```
+| `type` 取值 | 连接串示例（可直接抄写） |
+|---|---|
+| `oracle` | `oracle://user:pass@host:1521/service_name` |
+| `postgres` / `postgresql` | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable` |
+| `mysql` | `user:pass@tcp(host:3306)/dbname?charset=utf8mb4` |
+| `sqlite3` | `/path/to/database.db` |
+| `duckdb` | `/path/to/database.db` |
+| `goldendb` / `goldendb-mysql` | `user:pass@tcp(host:3306)/dbname?charset=utf8mb4`（MySQL 兼容模式） |
+| `goldendb-oracle` | `oracle://user:pass@host:1521/service_name`（Oracle 兼容模式） |
+| `oceanbase` / `oceanbase-mysql` | `user:pass@tcp(host:2881)/dbname`（MySQL 兼容模式；2881 直连 OBServer，2883 走 OBProxy） |
+| `oceanbase-oracle` | `oceanbase-oracle://user:pass@host:2881/db`（MySQL 线协议直连）或 `oracle://user:pass@host:2883/service_name`（OBProxy TNS） |
+| `panweidb` / `panweidb-mysql` / `panweidb-oracle` | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable`（始终走 PG 协议） |
+| `opengaussdb` | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable` |
 
-### Oracle (go-ora driver)
-```
-oracle://user:password@host:port/service_name
-```
+### 各方言要点
 
-### GoldenDB / OceanBase / PanWeiDB / OpenGaussDB
-
-Use the same DSN format as the underlying dialect (MySQL or PostgreSQL). Set `source.type` to `goldendb`, `goldendb-mysql`, `oceanbase-mysql`, `oceanbase-oracle`, `panweidb`, `opengaussdb`, etc.
-
-**OceanBase 特别说明**：Oracle 租户的驱动路径由 DSN 前缀决定——
-`oracle://...` 走 go-ora 的 TNS 协议；其余（如 `obmysql://...` 或 MySQL 风格 DSN）
-走 `obconnector-go` 的 MySQL 线协议。`source.compat_mode` / `target.compat_mode`
-声明租户兼容模式（`mysql` 或 `oracle`），留空时连接后自动探测
-（`SHOW VARIABLES LIKE 'ob_compatibility_mode'`），配置与实际不符会直接报错。
+- **Oracle 系**（`oracle`、`goldendb-oracle`）：go-ora 驱动，URL 格式 `oracle://user:pass@host:port/service_name`。
+- **MySQL 系**（`mysql`、`goldendb`、`goldendb-mysql`、`oceanbase`、`oceanbase-mysql`）：go-sql-driver/mysql 格式 `user:pass@tcp(host:port)/dbname`。
+- **PG 系**（`postgres`、`opengaussdb`、`panweidb` 全系）：`host=... port=... user=... password=... dbname=... sslmode=...` 键值对格式。**注意 PanWeiDB 即使声明 `panweidb-mysql` / `panweidb-oracle`，通信协议仍是 PostgreSQL**。
+- **OceanBase Oracle 租户**：驱动路径由 DSN 前缀决定——`oracle://...` 走 go-ora 的 TNS 协议（连 OBProxy Oracle 监听端口，通常 2883）；其余前缀（如 `oceanbase-oracle://`、`oboracle://` 或 MySQL 风格）走 `obconnector-go` 的 MySQL 线协议（直连 2881）。
+  `source.compat_mode` / `target.compat_mode` 声明租户兼容模式（`mysql` 或 `oracle`），留空时连接后自动探测
+  （`SHOW VARIABLES LIKE 'ob_compatibility_mode'`），配置与实际不符会直接报错；`type=oceanbase`（MySQL 模式）连到 Oracle 租户也会报错，需改用 `oceanbase-oracle`。
 
 ## Table Filtering
 

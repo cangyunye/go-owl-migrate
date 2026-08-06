@@ -52,16 +52,28 @@ Use --scenario to control which sections appear in the generated config:
 				return runInteractive(outputFile)
 			}
 
+			mt := strings.ToLower(metadataType)
+			sc := strings.ToLower(scenario)
+
 			// ── Non-interactive / semi-interactive mode ──
 			// If --scenario is set but not --target-type, enter interactive mode
-			// for the chosen scenario directly (skip the action prompt).
+			// for the chosen scenario directly (skip the action prompt) unless
+			// the scenario can default the target and all required source inputs
+			// are already provided.
 			if hasScenario && !hasTarget {
-				r := bufio.NewReader(os.Stdin)
-				return runScenarioInteractive(r, scenario, outputFile)
+				if !scenarioTargetDefaultable(sc, mt, sourceType, sourceDSN, sourceSchema) {
+					r := bufio.NewReader(os.Stdin)
+					return runScenarioInteractive(r, sc, outputFile)
+				}
 			}
 
-			// ── Fully non-interactive (--target-type set) ──
-			mt := strings.ToLower(metadataType)
+			// ── Fully non-interactive ──
+			// Target dialect defaults to the source database type, so export-ddl
+			// users can dump a schema in its own dialect without specifying
+			// --target-type.
+			if targetType == "" {
+				targetType = defaultTargetDialect(mt, sourceType)
+			}
 
 			if mt == "database" {
 				if sourceType == "" {
@@ -72,14 +84,10 @@ Use --scenario to control which sections appear in the generated config:
 						sourceType, sortedDialectKeys())
 				}
 			}
-			if targetType == "" {
-				return fmt.Errorf("--target-type is required")
-			}
 			if !config.ValidDialects[strings.ToLower(targetType)] {
 				return fmt.Errorf("unsupported --target-type %q: must be one of %v",
 					targetType, sortedDialectKeys())
 			}
-			mt = strings.ToLower(metadataType)
 			if !config.ValidMetadataTypes[mt] {
 				return fmt.Errorf("unsupported --metadata-type %q: must be one of %v",
 					metadataType, sortedMetadataKeys())
@@ -93,7 +101,6 @@ Use --scenario to control which sections appear in the generated config:
 				}
 			}
 
-			sc := strings.ToLower(scenario)
 			cfg := buildScenarioConfig(sc, sourceType, sourceDSN, sourceSchema, targetType, targetDSN, targetSchema, mt)
 			return writeConfig(cfg, outputFile)
 		},
@@ -154,21 +161,53 @@ func ask(r *bufio.Reader, prompt, def string) string {
 // dsnExample returns an example DSN for the given dialect to show as input hint.
 func dsnExample(dialect string) string {
 	switch strings.ToLower(dialect) {
-	case "oracle", "goldendb-oracle", "oceanbase-oracle", "panweidb-oracle":
+	case "oracle", "goldendb-oracle":
 		return "oracle://user:pass@host:1521/service_name"
-	case "mysql", "goldendb", "goldendb-mysql", "oceanbase-mysql", "panweidb-mysql":
+	case "oceanbase-oracle":
+		return "oceanbase-oracle://user:pass@host:2881/db (or oracle://user:pass@host:2883/service via OBProxy TNS)"
+	case "mysql", "goldendb", "goldendb-mysql":
 		return "user:pass@tcp(host:3306)/dbname?charset=utf8mb4"
-	case "postgres", "postgresql", "opengaussdb", "panweidb":
+	case "oceanbase", "oceanbase-mysql":
+		return "user:pass@tcp(host:2881)/dbname (OceanBase MySQL mode; Oracle tenants: use type oceanbase-oracle)"
+	case "postgres", "postgresql", "opengaussdb", "panweidb", "panweidb-mysql", "panweidb-oracle":
 		return "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable"
-	case "oceanbase":
-		return "user:pass@tcp(host:2881)/dbname  (or oracle:// for Oracle mode)"
-	case "sqlite3":
-		return "/path/to/database.db"
-	case "duckdb":
+	case "sqlite3", "duckdb":
 		return "/path/to/database.db"
 	default:
 		return ""
 	}
+}
+
+// defaultTargetDialect picks a target dialect when --target-type is omitted:
+// the source database type when metadata comes from a live database, otherwise
+// postgres (the most common DDL target).
+func defaultTargetDialect(metaType, srcType string) string {
+	if strings.ToLower(metaType) == "database" && strings.TrimSpace(srcType) != "" {
+		return srcType
+	}
+	return "postgres"
+}
+
+// scenarioTargetDefaultable reports whether the given scenario can run without
+// --target-type and without interactive prompts: only DDL/validate-style
+// scenarios where the target is a defaultable dialect, and only when all
+// required source inputs are present.
+func scenarioTargetDefaultable(scenario, metaType, srcType, srcDSN, srcSchema string) bool {
+	switch scenario {
+	case "export-ddl", "validate":
+	default:
+		return false
+	}
+	if strings.ToLower(metaType) != "database" {
+		return true // csv/xlsx metadata: paths have defaults, target defaults to postgres
+	}
+	if srcType == "" || srcDSN == "" {
+		return false
+	}
+	if srcSchema == "" && !isEmbedded(srcType) {
+		return false
+	}
+	return true
 }
 
 // askDSN prompts for a DSN, showing a dialect-specific example as hint.
@@ -315,7 +354,13 @@ func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
 		srcSchema = askSchema(r, "Source schema name", srcType, "")
 	}
 
-	tgtType := askChoice(r, "Target database dialect", sortedDialectKeys(), "postgres")
+	// Target dialect defaults to the source type for live databases so a
+	// plain structure dump keeps the source dialect; press Enter to accept.
+	tgtDefault := "postgres"
+	if mt == "database" && srcType != "" {
+		tgtDefault = srcType
+	}
+	tgtType := askChoice(r, "Target database dialect", sortedDialectKeys(), tgtDefault)
 
 	cfg := buildDDLConfig(mt, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
 	return writeConfig(cfg, outputPath)
