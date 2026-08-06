@@ -9,6 +9,7 @@
 | 数据库驱动 | lib/pq (PG 协议) |
 | 元数据提取器 | PostgreSQL (`normalizeDBType` → `postgres`) |
 | 端口 | 5432 (PG 协议) |
+| 连接串示例 | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=testdb sslmode=disable`（始终走 PG 协议；容器映射宿主机端口 5433） |
 
 ## 已覆盖的 Override
 

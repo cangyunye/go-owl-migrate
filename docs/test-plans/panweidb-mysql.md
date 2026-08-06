@@ -9,6 +9,7 @@
 | 数据库驱动 | lib/pq (PG 协议，非 MySQL 协议) |
 | 元数据提取器 | MySQL (`normalizeDBType` → `mysql`) |
 | 端口 | 5432 (PG 协议) |
+| 连接串示例 | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable`（B 模式，始终走 PG 协议而非 MySQL DSN；容器映射宿主机端口 5434） |
 
 ## 已覆盖的 Override
 

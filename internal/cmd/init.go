@@ -39,8 +39,8 @@ Run with flags for non-interactive mode (CI/automation):
 
 Use --scenario to control which sections appear in the generated config:
   migrate         — full end-to-end config (default)
-  export-ddl      — DDL generation only
-  export-insert   — INSERT SQL generation only
+  export-ddl      — DDL generation only (alias: gen-ddl)
+  export-insert   — INSERT SQL generation only (alias: gen-insert)
   export          — data export only
   import          — data import only
   export-metadata — metadata export only`,
@@ -114,7 +114,7 @@ Use --scenario to control which sections appear in the generated config:
 	cmd.Flags().StringVar(&targetSchema, "target-schema", "", "target database schema (defaults to source-schema if empty)")
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "./migrate.yaml", "output configuration file path")
 	cmd.Flags().StringVarP(&metadataType, "metadata-type", "m", "database", "metadata source: csv, xlsx, or database")
-	cmd.Flags().StringVarP(&scenario, "scenario", "S", "migrate", "config scenario: export-ddl, export-insert, gen-select, export, import, migrate, export-metadata, validate, full")
+	cmd.Flags().StringVarP(&scenario, "scenario", "S", "migrate", "config scenario: export-ddl (alias gen-ddl), export-insert (alias gen-insert), gen-select, export, import, migrate, export-metadata, validate, full")
 
 	return cmd
 }
@@ -125,9 +125,9 @@ Use --scenario to control which sections appear in the generated config:
 // skipping the "What do you want to do?" prompt.
 func runScenarioInteractive(r *bufio.Reader, scenario, outputPath string) error {
 	switch strings.ToLower(scenario) {
-	case "export-insert":
+	case "export-insert", "gen-insert":
 		return interactiveGenInsert(r, outputPath)
-	case "export-ddl", "validate":
+	case "export-ddl", "gen-ddl", "validate":
 		return interactiveGenDDL(r, outputPath)
 	case "gen-select":
 		return interactiveGenSelect(r, outputPath)
@@ -194,7 +194,7 @@ func defaultTargetDialect(metaType, srcType string) string {
 // required source inputs are present.
 func scenarioTargetDefaultable(scenario, metaType, srcType, srcDSN, srcSchema string) bool {
 	switch scenario {
-	case "export-ddl", "validate":
+	case "export-ddl", "gen-ddl", "validate":
 	default:
 		return false
 	}
@@ -577,7 +577,7 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 
 func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, metaType string) *config.Config {
 	switch scenario {
-	case "export-ddl", "validate":
+	case "export-ddl", "gen-ddl", "validate":
 		csvPath := ""
 		xlsxPath := ""
 		if metaType == "csv" {
@@ -589,7 +589,7 @@ func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, 
 		return buildDDLConfig(metaType, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
 	case "gen-select":
 		return buildSelectGenConfig(metaType, srcType, srcDSN, srcSchema, tgtType)
-	case "export-insert":
+	case "export-insert", "gen-insert":
 		cfg := &config.Config{
 			General: config.GeneralConfig{LogLevel: "info"},
 			DDL:     config.DDLConfig{TargetDialect: tgtType},

@@ -9,6 +9,7 @@
 | 数据库驱动 | go-sql-driver/mysql |
 | 元数据提取器 | MySQL (`normalizeDBType` → `mysql`) |
 | 端口 | 3306 (与 MySQL 一致) |
+| 连接串示例 | `root:pass@tcp(host:3306)/dbname?charset=utf8mb4`（MySQL 兼容模式；容器映射宿主机端口 3307） |
 
 ## 已覆盖的 Override
 

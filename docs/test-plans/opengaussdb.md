@@ -9,6 +9,7 @@
 | 数据库驱动 | lib/pq (PG 协议) |
 | 元数据提取器 | PostgreSQL (`normalizeDBType` → `postgres`) |
 | 端口 | 5432 (容器映射 5433) |
+| 连接串示例 | `host=127.0.0.1 port=5433 user=gaussdb password=OpenGauss@123 dbname=postgres sslmode=disable`（PG 协议；默认用户为 `gaussdb`） |
 
 ## 已覆盖的 Override
 

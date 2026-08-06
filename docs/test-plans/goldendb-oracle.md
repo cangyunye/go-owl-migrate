@@ -9,6 +9,7 @@
 | 数据库驱动 | go-ora |
 | 元数据提取器 | Oracle (`normalizeDBType` → `oracle`) |
 | 端口 | 1521 (与 Oracle 一致) |
+| 连接串示例 | `oracle://user:pass@host:1521/service_name`（Oracle 兼容模式，go-ora TNS） |
 
 ## 已覆盖的 Override
 

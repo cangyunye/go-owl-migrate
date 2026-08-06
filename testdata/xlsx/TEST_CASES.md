@@ -85,7 +85,7 @@ cat /tmp/owl-xlsx-test/migrate.yaml
 go run ./cmd/migrate/main.go init \
   -t postgres \
   -m xlsx \
-  --scenario gen-insert \
+  --scenario export-insert \
   -o /tmp/owl-xlsx-test/migrate-cli.yaml
 
 # 编辑 xlsx 路径为实际路径
@@ -186,7 +186,7 @@ cat /tmp/owl-xlsx-test/ddl/scott.emp.sql
 go run ./cmd/migrate/main.go init \
   -t oracle \
   -m xlsx \
-  --scenario gen-ddl \
+  --scenario export-ddl \
   -o /tmp/owl-xlsx-test/ddl-cfg.yaml
 
 sed -i '' 's|./metadata/schema.xlsx|./testdata/xlsx/scott.xlsx|' /tmp/owl-xlsx-test/ddl-cfg.yaml
@@ -218,7 +218,7 @@ mkdir -p /tmp/owl-xlsx-test
 # 2. 命令行模式生成 gen-insert 配置
 echo "=== Test 1: gen-insert config (xlsx) ==="
 go run ./cmd/migrate/main.go init \
-  -t postgres -m xlsx --scenario gen-insert \
+  -t postgres -m xlsx --scenario export-insert \
   -o /tmp/owl-xlsx-test/migrate.yaml
 sed -i '' 's|./metadata/schema.xlsx|./testdata/xlsx/scott.xlsx|' /tmp/owl-xlsx-test/migrate.yaml
 sed -i '' 's|./output/data/|/tmp/owl-xlsx-test/data/|g' /tmp/owl-xlsx-test/migrate.yaml
@@ -241,7 +241,7 @@ echo ""
 # 4. gen-ddl 端到端
 echo "=== Test 3: gen-ddl E2E ==="
 go run ./cmd/migrate/main.go init \
-  -t postgres -m xlsx --scenario gen-ddl \
+  -t postgres -m xlsx --scenario export-ddl \
   -o /tmp/owl-xlsx-test/ddl-cfg.yaml
 sed -i '' 's|./metadata/schema.xlsx|./testdata/xlsx/scott.xlsx|' /tmp/owl-xlsx-test/ddl-cfg.yaml
 

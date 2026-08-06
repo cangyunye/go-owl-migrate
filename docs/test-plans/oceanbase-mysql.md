@@ -9,6 +9,7 @@
 | 数据库驱动 | go-sql-driver/mysql |
 | 元数据提取器 | MySQL (`normalizeDBType` → `mysql`) |
 | 端口 | 2881 (OceanBase MySQL 默认) |
+| 连接串示例 | `root:pass@tcp(host:2881)/dbname`（2881 直连 OBServer，2883 走 OBProxy） |
 
 ## 已覆盖的 Override
 
