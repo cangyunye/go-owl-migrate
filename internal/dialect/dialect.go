@@ -125,6 +125,22 @@ type DMLHelper interface {
 	FormatValue(val any, colType LogicalType) string
 }
 
+// CDCOptions controls changelog/trigger generation for a CDC source table.
+type CDCOptions struct {
+	SchemaMapping   map[string]string
+	ChangelogTable  string   // default: "<prefix><table>" handled by builder
+	ChangelogPrefix string   // default "owl_chg_"
+	ShardKey        []string // reserved for future sharding; empty = no shard column
+	ShardCount      int      // reserved; 0/1 = no sharding
+}
+
+// CDCBuilder generates the DDL for a changelog table and the sync trigger(s)
+// that capture INSERT/UPDATE/DELETE (and TRUNCATE where supported) into it.
+type CDCBuilder interface {
+	BuildChangelogTable(t *md.TableDef, opts CDCOptions) (string, error)
+	BuildSyncTrigger(t *md.TableDef, opts CDCOptions) (string, error)
+}
+
 // Dialect composes all dialect capabilities.
 type Dialect struct {
 	TypeMapper
@@ -132,6 +148,7 @@ type Dialect struct {
 	Features
 	DDLBuilder
 	DMLHelper
+	CDCBuilder
 }
 
 // ApplyTypeOverride returns the configured override for a raw column type, if

@@ -68,4 +68,5 @@ func init() {
 	rootCmd.AddCommand(showQueryCmd())
 	rootCmd.AddCommand(exportMetadataCmd())
 	rootCmd.AddCommand(serveCmd())
+	rootCmd.AddCommand(onlineCmd())
 }

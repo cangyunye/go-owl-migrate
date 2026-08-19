@@ -27,6 +27,7 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 		SelectGen  *SelectGenConfig `yaml:"select_gen,omitempty"`
 		Export     *ExportConfig    `yaml:"export,omitempty"`
 		Import     *ImportConfig    `yaml:"import,omitempty"`
+		Online     *OnlineConfig    `yaml:"online,omitempty"`
 		Extensions map[string]any   `yaml:"extensions,omitempty"`
 	}{
 		General: c.General,
@@ -71,6 +72,10 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 		v := c.Import
 		m.Import = &v
 	}
+	if emit(!c.Online.isZero()) {
+		v := c.Online
+		m.Online = &v
+	}
 	if len(c.Extensions) > 0 {
 		m.Extensions = c.Extensions
 	}
@@ -79,8 +84,11 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 
 // IsZero returns true if the DBConfig has no meaningful values set.
 func (d DBConfig) isZero() bool {
-	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.ConnectTimeout == "" && d.QueryTimeout == "" && d.CompatMode == "" && d.Pool.isZero()
+	return d.Type == "" && d.DSN == "" && d.Schema == "" && d.ConnectTimeout == "" && d.QueryTimeout == "" && d.CompatMode == "" && d.Adapter == "" && d.Pool.isZero()
 }
+
+// AdapterIsZero reports whether the adapter plugin reference is unset.
+func (d DBConfig) AdapterIsZero() bool { return d.Adapter == "" }
 
 // IsZero returns true if the PoolConfig has no meaningful values set.
 func (p PoolConfig) isZero() bool {
@@ -170,6 +178,7 @@ type Config struct {
 	SelectGen  SelectGenConfig `yaml:"select_gen"`
 	Export     ExportConfig    `yaml:"export"`
 	Import     ImportConfig    `yaml:"import"`
+	Online     OnlineConfig    `yaml:"online"`
 	Extensions map[string]any  `yaml:"extensions"`
 
 	// ForceAllSections when true causes MarshalYAML to emit ALL sections
@@ -216,6 +225,11 @@ type DBConfig struct {
 	ConnectTimeout string     `yaml:"connect_timeout,omitempty"`
 	QueryTimeout   string     `yaml:"query_timeout,omitempty"`
 	Pool           PoolConfig `yaml:"pool,omitempty"`
+
+	// Adapter references an external target adapter plugin YAML (mode
+	// native/client/file-batch) used by online incremental migration when the
+	// target has no built-in Go driver.
+	Adapter string `yaml:"adapter,omitempty"`
 
 	// CompatMode applies to OceanBase: declares the tenant compatibility mode
 	// ("mysql" or "oracle"). When empty it is auto-detected from the live
@@ -382,6 +396,58 @@ type TableListConfig struct {
 	Exclude TableExcludeConfig `yaml:"exclude,omitempty"`
 }
 
+// OnlineConfig holds configuration for the online incremental migration
+// (owl-migrate online) feature: trigger CDC capture and ordered replay.
+type OnlineConfig struct {
+	CDC     OnlineCDCConfig     `yaml:"cdc"`
+	Sync    OnlineSyncConfig    `yaml:"sync"`
+	Files   OnlineFilesConfig   `yaml:"files"`
+	Archive OnlineArchiveConfig `yaml:"archive"`
+	State   OnlineStateConfig   `yaml:"state"`
+}
+
+// OnlineCDCConfig configures changelog/trigger generation (online init).
+type OnlineCDCConfig struct {
+	ChangelogPrefix string   `yaml:"changelog_prefix"`
+	Tables          []string `yaml:"tables"`
+	Apply           bool     `yaml:"apply"`
+	ScriptDir       string   `yaml:"script_dir"`
+	RequireKey      bool     `yaml:"require_key"`
+}
+
+// OnlineSyncConfig configures the changelog poller/replayer (online sync).
+type OnlineSyncConfig struct {
+	PollInterval string `yaml:"poll_interval"`
+	BatchSize    int    `yaml:"batch_size"`
+	OnError      string `yaml:"on_error"`
+	ErrorTable   string `yaml:"error_table"`
+}
+
+// OnlineFilesConfig configures the file-batch fallback directories.
+type OnlineFilesConfig struct {
+	Pending string `yaml:"pending"`
+	Done    string `yaml:"done"`
+	Failed  string `yaml:"failed"`
+}
+
+// OnlineArchiveConfig configures done/ archiving (online archive).
+type OnlineArchiveConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Format  string `yaml:"format"`
+	Dir     string `yaml:"dir"`
+}
+
+// OnlineStateConfig configures checkpoint storage.
+type OnlineStateConfig struct {
+	DB string `yaml:"db"`
+}
+
+// isOnlineZero reports whether the OnlineConfig carries no meaningful values.
+func (o OnlineConfig) isZero() bool {
+	return !o.CDC.Apply && !o.CDC.RequireKey && o.Sync.PollInterval == "" && o.Sync.OnError == "" &&
+		!o.Archive.Enabled && o.State.DB == "" && len(o.CDC.Tables) == 0
+}
+
 // Load reads and validates a YAML config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -433,6 +499,46 @@ func (c *Config) applyDefaults() {
 	if !c.Metadata.CSV.HasHeader {
 		c.Metadata.CSV.HasHeader = true
 	}
+	// online defaults
+	if c.Online.CDC.ChangelogPrefix == "" {
+		c.Online.CDC.ChangelogPrefix = "owl_chg_"
+	}
+	if c.Online.CDC.ScriptDir == "" {
+		c.Online.CDC.ScriptDir = "./output/online/"
+	}
+	if c.Online.Sync.PollInterval == "" {
+		c.Online.Sync.PollInterval = "1s"
+	}
+	if c.Online.Sync.BatchSize == 0 {
+		c.Online.Sync.BatchSize = 500
+	}
+	if c.Online.Sync.OnError == "" {
+		c.Online.Sync.OnError = "skip"
+	}
+	if c.Online.Sync.ErrorTable == "" {
+		c.Online.Sync.ErrorTable = "owl_sync_error"
+	}
+	if c.Online.Archive.Format == "" {
+		c.Online.Archive.Format = "tar.gz"
+	}
+	if !c.Online.Archive.Enabled {
+		c.Online.Archive.Enabled = true
+	}
+	if c.Online.Archive.Dir == "" {
+		c.Online.Archive.Dir = "./online/archive/"
+	}
+	if c.Online.Files.Pending == "" {
+		c.Online.Files.Pending = "./online/pending/"
+	}
+	if c.Online.Files.Done == "" {
+		c.Online.Files.Done = "./online/done/"
+	}
+	if c.Online.Files.Failed == "" {
+		c.Online.Files.Failed = "./online/failed/"
+	}
+	if c.Online.State.DB == "" {
+		c.Online.State.DB = "./output/online/online.db"
+	}
 }
 
 func (c *Config) validate() error {
@@ -474,6 +580,11 @@ func (c *Config) validate() error {
 		default:
 			return fmt.Errorf("invalid %s.compat_mode %q: must be mysql or oracle", dbc.name, dbc.cfg.CompatMode)
 		}
+	}
+	switch c.Online.Sync.OnError {
+	case "", "skip", "stop", "retry":
+	default:
+		return fmt.Errorf("invalid online.sync.on_error %q: must be skip/stop/retry", c.Online.Sync.OnError)
 	}
 	return nil
 }

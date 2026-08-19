@@ -350,5 +350,6 @@ func New() dialect.Dialect {
 		Features:         PGFeatures{},
 		DDLBuilder:       PGDDLBuilder{},
 		DMLHelper:        PGDMLHelper{},
+		CDCBuilder:       PGCDCBuilder{},
 	}
 }

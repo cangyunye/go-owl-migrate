@@ -378,5 +378,6 @@ func New() dialect.Dialect {
 		Features:         OracleFeatures{},
 		DDLBuilder:       OracleDDLBuilder{},
 		DMLHelper:        OracleDMLHelper{},
+		CDCBuilder:       OracleCDCBuilder{},
 	}
 }

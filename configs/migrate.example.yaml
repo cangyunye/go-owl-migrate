@@ -77,3 +77,27 @@ import:  # 数据导入配置（仅 import 命令使用）
     datetime_format: "yyyyMMddHHmmss"
     trim_strings: true
     null_if: ["NULL", "null", "\\N"]
+
+# ── 在线增量迁移（owl-migrate online: init/sync/status/init-runner/archive）──
+online:
+  cdc:
+    changelog_prefix: owl_chg_      # 变更表名 = owl_chg_<表名>
+    tables: []                       # 为空 = 全部表
+    apply: false                     # true = 直连源库执行; false = 输出脚本给 DBA 审阅
+    script_dir: ./output/online/     # apply=false 时的脚本输出目录
+    require_key: false               # true = 无主键/唯一键的表在 init 阶段直接拒绝
+  sync:
+    poll_interval: 1s                # 轮询变更表间隔
+    batch_size: 500                  # 单批最大行数
+    on_error: skip                   # skip/stop/retry, 默认 skip
+    error_table: owl_sync_error      # 目标侧错误记录表
+  files:                             # 仅 file-batch 目标适配器使用
+    pending: ./online/pending/
+    done:    ./online/done/
+    failed:  ./online/failed/
+  archive:
+    enabled: true
+    format: tar.gz                   # done/ 批处理后压缩成 tar.gz
+    dir: ./online/archive/
+  state:
+    db: ./output/online/online.db   # 默认 JSON 写入 ./output/online/state.json（-tags sqlite3 用 SQLite）

@@ -1,0 +1,69 @@
+# Example target adapter for online incremental migration (file-batch mode).
+# Reference: docs/online-migration.md §3.2
+#
+# A target adapter describes how to reach and write to a target database that
+# has no built-in Go driver. Three modes exist:
+#   native      — process-internal Go driver replay (uses target.dsn)
+#   client      — replay via an official CLI client (seconds~minutes)
+#   file-batch  — spill SQL batch files executed externally (stable fallback)
+#
+# Reference this from migrate.yaml:
+#   target:
+#     type: somepg
+#     adapter: ./configs/adapters/pg-file-batch.example.yaml
+adapter:
+  name: pg-file-batch            # arbitrary identifier
+  mode: file-batch              # native | client | file-batch
+
+  quote: "\""                   # target identifier quote char
+  placeholder: "$%d"             # bind placeholder style (unused in file-batch)
+  identifier_case: lower         # lower | upper | keep
+
+  driver: postgres               # (native mode only) reuse a built-in driver
+
+  client:                        # client / file-batch mode: how to invoke the client
+    command: psql                # e.g. sqlplus, psql, mysql, some cli
+    args_template: "-h {host} -U {user} -f {file}"   # {file} = batch file path
+    transaction:
+      begin: "BEGIN;"            # unsupported begin → "" (e.g. Oracle relies on implicit)
+      commit: "COMMIT;"          # required: every file must end in a COMMIT
+      wrap: true                 # wrap each file's contents in begin/commit
+
+  # native-mode metadata discovery (optional; file-batch uses manual column_map)
+  # metadata:
+  #   list_tables:  "SELECT table_name FROM information_schema.tables WHERE table_schema=?"
+  #   list_columns: "SELECT column_name, data_type FROM information_schema.columns WHERE table_name=? ORDER BY ordinal_position"
+
+  # LogicalBase -> target type (full default set shown; omitting type_map uses this)
+  # %l / %p / %s substitute length / precision / scale
+  type_map:
+    VARCHAR:    "varchar(%l)"
+    CHAR:       "char(%l)"
+    INT:        "integer"
+    BIGINT:     "bigint"
+    SMALLINT:   "smallint"
+    NUMERIC:    "numeric(%p,%s)"
+    FLOAT:      "real"
+    DOUBLE:     "double precision"
+    DATE:       "date"
+    TIME:       "time"
+    DATETIME:   "timestamp"
+    TIMESTAMP:  "timestamp"
+    TIMESTAMPTZ: "timestamptz"
+    INTERVAL:   "interval"
+    INTERVALYM: "interval year to month"
+    INTERVALDS: "interval day to second"
+    BOOLEAN:    "boolean"
+    CLOB:       "text"
+    BLOB:       "bytea"
+    JSON:       "jsonb"
+    XML:        "xml"
+    ENUM:       "text"
+    BINARY:     "bytea"
+    VARBINARY:  "bytea"
+    ROWID:      "text"
+  fallback_type: "text"
+
+  # source JSON column -> target column (manual mapping; file-batch required)
+  # column_map:
+  #   EMP: { EMPNO: "emp_no", ENAME: "emp_name" }

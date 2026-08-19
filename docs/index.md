@@ -14,6 +14,7 @@ Offline-first database migration tool for Oracle, PostgreSQL, MySQL, and derivat
 | [Dialect & Type Mapping](dialect-mapping.md) | Supported dialects, type mapping system, database-specific behavior |
 | [Developer Guide](development.md) | Project structure, testing, extending dialects |
 | [Database Metadata Queries](database-metadata/index.md) | Full metadata query SQL reference per database type (Oracle, PostgreSQL, MySQL, DuckDB, SQLite3) |
+| [Online Incremental Migration](online-migration.md) | Design for `owl-migrate online` (trigger CDC, replay, file-batch fallback) — status: draft |
 
 ## Quick Start
 
