@@ -154,6 +154,13 @@ var ValidDialects = map[string]bool{
 	"opengaussdb":      true,
 }
 
+// dialectAliases maps target.type spellings accepted by the connection layer
+// to canonical dialect names, used when ddl.target_dialect inherits target.type.
+var dialectAliases = map[string]string{
+	"postgresql": "postgres",
+	"mariadb":    "mysql",
+}
+
 // ValidMetadataTypes lists supported metadata source types.
 var ValidMetadataTypes = map[string]bool{
 	"csv":      true,
@@ -490,6 +497,13 @@ func (c *Config) applyDefaults() {
 	if c.DDL.TableFilter.Include == nil {
 		c.DDL.TableFilter.Include = []string{"*"}
 	}
+	if c.DDL.TargetDialect == "" && c.Target.Type != "" {
+		t := strings.ToLower(strings.TrimSpace(c.Target.Type))
+		if alias, ok := dialectAliases[t]; ok {
+			t = alias
+		}
+		c.DDL.TargetDialect = t
+	}
 	if c.Export.Batch.PageSize == 0 {
 		c.Export.Batch.PageSize = 5000
 	}
@@ -560,7 +574,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("metadata.xlsx.path is required when metadata.type is 'xlsx'")
 	}
 	if c.DDL.TargetDialect == "" {
-		return fmt.Errorf("ddl.target_dialect is required")
+		return fmt.Errorf("ddl.target_dialect is required (or set target.type to inherit its dialect)")
 	}
 	if !ValidDialects[c.DDL.TargetDialect] {
 		return fmt.Errorf("unknown ddl.target_dialect %q: must be one of %v", c.DDL.TargetDialect, mapKeys(ValidDialects))

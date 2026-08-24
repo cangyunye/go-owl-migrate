@@ -77,7 +77,8 @@ target:
     max_open_conns: 10
 
 ddl:
-  target_dialect: mysql                     # Target DDL dialect (required)
+  target_dialect: mysql                     # Target DDL dialect（可省略：缺省时继承 target.type，
+                                            # postgresql/mariadb 等别名自动归一）
   source_dialect: ""                        # Source dialect for cross-dialect type conversion (CSV/xlsx 元数据时必填)
   output_dir: ./output/ddl/                 # Output directory for DDL files
   include_if_not_exists: true               # Add IF NOT EXISTS
@@ -326,7 +327,9 @@ The config loader validates:
 
 1. `metadata.type` must be `csv`, `xlsx`, or `database`
 2. When `metadata.type` is `database`, `source.type` and `source.dsn` are required
-3. `ddl.target_dialect` must be a valid dialect name
+3. `ddl.target_dialect` must be a valid dialect name; when omitted it is
+   inherited from `target.type`（`postgresql`/`mariadb` 等别名自动归一），
+   二者都缺时才报 `ddl.target_dialect is required`
 4. `ddl.source_dialect` (if set) must be a valid dialect name
 5. `import.batch.error_policy` must be `stop`, `skip_row`, or `log_only`
 6. `source.compat_mode` / `target.compat_mode` (if set) must be `mysql` or `oracle`

@@ -2,8 +2,50 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
+
+func TestTargetDialect_InheritsFromTargetType(t *testing.T) {
+	tests := []struct {
+		name          string
+		targetType    string
+		targetDialect string
+		want          string
+		wantErr       string
+	}{
+		{"inherits target.type", "postgres", "", "postgres", ""},
+		{"alias and case normalized", "PostgreSQL", "", "postgres", ""},
+		{"mariadb alias", "mariadb", "", "mysql", ""},
+		{"explicit target_dialect wins", "mysql", "oracle", "oracle", ""},
+		{"both empty", "", "", "", "ddl.target_dialect is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{}
+			cfg.Metadata.Type = "csv"
+			cfg.Metadata.CSV.Path = "./m/"
+			cfg.Target.Type = tt.targetType
+			cfg.DDL.TargetDialect = tt.targetDialect
+
+			cfg.applyDefaults()
+			err := cfg.validate()
+
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("validate() = %v, want error containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("validate(): unexpected error: %v", err)
+			}
+			if cfg.DDL.TargetDialect != tt.want {
+				t.Errorf("DDL.TargetDialect = %q, want %q", cfg.DDL.TargetDialect, tt.want)
+			}
+		})
+	}
+}
 
 func TestTableFilter_Match(t *testing.T) {
 	tests := []struct {
