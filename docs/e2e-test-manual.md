@@ -1,10 +1,17 @@
 # go-owl-migrate E2E 测试用例手册
 
-> **数据库容器状态（已启动）：**
-> - **Oracle** (XEPDB1) — 已启动 2 天，SCOTT 用户下有 EMP(14行)、DEPT(4行) 等表
-> - **PostgreSQL** (postgres_db) — 已启动 2 天，public 下有 EMP(14行)、DEPT(4行) 表（用引号创建）
-> - **MySQL** (default_db) — 已启动 36 小时，**空数据库**（无表）
-> - **OpenGauss** — 重启中，暂时不可用
+> **前置：准备数据库环境**
+>
+> ```bash
+> cd testdata/db && docker compose up -d   # 首次启动自动初始化 SCOTT/EMP/DEPT 测试数据
+> ```
+>
+> 凭证、端口、DSN 速查见 [testdata/db/README.md](../testdata/db/README.md)。
+> 初始化后的预期状态：
+> - **Oracle** (XEPDB1) — SCOTT 用户下有 EMP(14行)、DEPT(4行) 及视图/序列/触发器等对象
+> - **PostgreSQL** (postgres_db) — public 下有 "EMP"(14行)、"DEPT"(4行)、"BONUS"(3行)（大写带引号）
+> - **MySQL** (default_db) — DEPT(4行)、EMP(14行)
+> - **OpenGauss** — 仅 Linux 可用（`--profile opengauss` 启动），空库，测试表需按 README 手动导入
 
 ---
 

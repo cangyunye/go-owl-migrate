@@ -1,5 +1,6 @@
 -- SCOTT 种子脚本（用于 gvenzl/oracle-free，PDB=XEPDB1）
--- 运行方式（以 SYS 身份连到 XEPDB1）：
+-- docker compose 首次启动时由 init-scott.sh 自动执行（见 ../docker-compose.yaml）；
+-- 手动执行方式（以 SYS 身份连到 XEPDB1）：
 --   docker exec -i oracle sqlplus -s sys/Oracle123!@//localhost:1521/XEPDB1 as sysdba < testdata/db/oracle/scott_seed.sql
 --
 -- 内容：创建 SCOTT 用户 + DEPT/EMP 表与数据 + 视图/序列/同义词/触发器/函数/包

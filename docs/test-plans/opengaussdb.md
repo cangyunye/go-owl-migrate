@@ -63,15 +63,18 @@ opengauss:
 
 ## 验证步骤
 
+> 仅 Linux 可执行：opengauss 在 compose 中属于 `opengauss` profile（macOS 下官方镜像不可用）。
+
 ```bash
-# 1. 启动容器
-docker compose -f testdata/db/docker-compose.yaml up -d opengauss
+# 1. 启动容器（--profile 启用，或显式指定服务名）
+docker compose -f testdata/db/docker-compose.yaml --profile opengauss up -d opengauss
 
 # 2. 等待就绪
 sleep 30
 docker exec opengauss gsql -U gaussdb -d postgres -c "SELECT 1"
 
-# 3. 创建测试数据
+# 3. 创建测试数据（先建表，再建附属对象）
+docker exec -i opengauss gsql -U gaussdb -d postgres < testdata/db/postgres/seed_tables.sql
 docker exec -i opengauss gsql -U gaussdb -d postgres < testdata/db/postgres/setup.sql
 
 # 4. 生成 DDL

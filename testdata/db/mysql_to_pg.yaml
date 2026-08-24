@@ -51,7 +51,7 @@ import:
   parallel:
     enabled: true
     max_workers: 2
-    respect_foreign_keys: false
+    respect_foreign_keys: true  # 目标表带外键时必须：父表先插入（自动串行）
   data_transforms:
     datetime_format: "yyyyMMddHHmmss"
     trim_strings: true

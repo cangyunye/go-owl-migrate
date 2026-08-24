@@ -58,7 +58,11 @@ export:
     include: ["*"]
 
 import:  # 数据导入配置（仅 import 命令使用）
-  source_dir: ./output/data/  # CSV 目录（仅 import 使用；migrate 走 --temp-dir，gen-insert 走 -d/--data）
+  # CSV 数据目录 —— 注意三个命令的入口不同：
+  #   import        → 读本配置项 import.source_dir
+  #   migrate       → 不读本项，内部用 --temp-dir 中转（默认 ./output/temp/）
+  #   export insert → 不读本项，用命令行 -d/--data 指定
+  source_dir: ./output/data/
   format: csv
   csv:
     delimiter: ","

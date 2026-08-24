@@ -161,7 +161,7 @@ import:
   parallel:
     enabled: true
     max_workers: 4
-    respect_foreign_keys: false
+    respect_foreign_keys: false             # true = 按外键依赖排序（父表先插入，自动串行）
   data_transforms:
     datetime_format: "yyyyMMddHHmmss"       # auto-convert compact datetime
     datetime_format_fallback: []            # Additional date format patterns
@@ -229,7 +229,7 @@ Requires:
 | `oceanbase` / `oceanbase-mysql` | `user:pass@tcp(host:2881)/dbname`（MySQL 兼容模式；2881 直连 OBServer，2883 走 OBProxy） |
 | `oceanbase-oracle` | `oceanbase-oracle://user:pass@host:2881/db`（MySQL 线协议直连）或 `oracle://user:pass@host:2883/service_name`（OBProxy TNS） |
 | `panweidb` / `panweidb-mysql` / `panweidb-oracle` | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable`（始终走 PG 协议） |
-| `opengaussdb` | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable` |
+| `opengaussdb` | `host=127.0.0.1 port=5432 user=gaussdb password=pass dbname=postgres sslmode=disable`（默认用户 `gaussdb`；testdata/db 测试环境端口映射为 **5433**） |
 
 ### 各方言要点
 
@@ -271,6 +271,17 @@ import:
 | `skip_row` | Skip the row, log warning, continue (respects `max_errors_before_stop`) |
 | `log_only` | Log and continue inserting (may re-fail) |
 
+## 外键处理（truncate_before / respect_foreign_keys）
+
+导入前清空与插入顺序均基于**目标库中实际存在的外键**（实时探查），不依赖元数据里是否定义了外键：
+
+- `target.truncate_before: true`：
+  - **PG 族**（postgres / opengaussdb / panweidb）：本批所有表用一条 `TRUNCATE TABLE a, b, ...` 清空，批内外键互引自动成立；
+  - **MySQL / Oracle** 及单表回退场景：逐表 TRUNCATE，被外键阻断时自动回退 `DELETE FROM`（只清本批表，不影响批外数据）。
+- `parallel.respect_foreign_keys: true`：按目标库外键依赖排序（父表先插入），并自动强制串行导入；
+  **目标表带外键时必须开启**，否则并行插入可能违反 FK 顺序。
+- 探查不到外键时自动退化为原行为；被迁移集之外的表引用的表无法 TRUNCATE，会告警并改用 `DELETE FROM`。
+
 ## Data Transforms
 
 The `import.data_transforms` section controls per-value transformations during import:
@@ -281,6 +292,18 @@ The `import.data_transforms` section controls per-value transformations during i
 | `trim_strings` | Trim leading/trailing whitespace from string values |
 | `null_if` | String values to treat as SQL NULL |
 | `source_encoding` | Decode CSV from source encoding to UTF-8 (GBK, LATIN1, ISO-8859-*, Windows-1252) |
+
+## NULL 识别（三处配置的关系）
+
+导入时有三处配置都会把字段识别为 NULL，作用阶段不同、不冲突：
+
+| 配置 | 阶段 | 作用 |
+|---|---|---|
+| `import.csv.null_marker` | CSV 解析 | **主配置**：字段文本与该标记完全相等 → NULL（默认 `\N`） |
+| `import.csv.null_identifiers` | CSV 解析 | 扩展匹配规则：额外字符串列表、大小写敏感开关、正则 |
+| `import.data_transforms.null_if` | 值转换 | 常见字面量便捷入口（如 `"NULL"`、`"null"`） |
+
+一般场景只配 `null_marker` 即可；三者的命中结果一致（都写入 SQL NULL）。
 
 ## Extensions
 

@@ -1,0 +1,24 @@
+# OpenGauss → PostgreSQL DDL E2E 配置
+# 前置：启动 testdata/db/docker-compose.yaml 的 opengauss 容器（宿主端口 5433），
+#       默认用户 gaussdb / 密码 OpenGauss@123 / 库 postgres，
+#       OpenGauss 元数据提取继承 PG 方言，故 metadata 走 database 实时抽取。
+general:
+  log_level: info
+
+metadata:
+  type: database
+
+source:
+  type: opengaussdb
+  dsn: "host=127.0.0.1 port=5433 user=gaussdb password=OpenGauss@123 dbname=postgres sslmode=disable"
+  schema: public
+
+target:
+  type: postgres
+  dsn: "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
+
+ddl:
+  target_dialect: postgres
+  include_if_not_exists: true
+  schema_mapping:
+    public: public
