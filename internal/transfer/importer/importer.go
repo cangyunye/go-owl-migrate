@@ -386,25 +386,75 @@ type ImportResult struct {
 	Err      error
 }
 
-func sortByForeignKeys(tables []*md.TableDef) []*md.TableDef {
-	key := func(schema, table string) string {
-		return strings.ToLower(schema) + "." + strings.ToLower(table)
-	}
-	index := make(map[string]int, len(tables))
-	for i, t := range tables {
-		index[key(t.TableSchema, t.TableName)] = i
+// fkEdge describes a live foreign-key relationship in the target database:
+// childSchema.childTable references parentSchema.parentTable.
+type fkEdge struct {
+	childSchema  string
+	childTable   string
+	parentSchema string
+	parentTable  string
+}
+
+// targetFKEdges introspects live foreign keys from the target database.
+// Best-effort: dialects without usable catalogs (e.g. duckdb/sqlite) return
+// nil and callers fall back to unordered handling.
+func (imp *Importer) targetFKEdges(ctx context.Context) []fkEdge {
+	var q string
+	switch {
+	case imp.isMySQL():
+		q = "SELECT TABLE_SCHEMA, TABLE_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME " +
+			"FROM information_schema.KEY_COLUMN_USAGE " +
+			"WHERE REFERENCED_TABLE_SCHEMA IS NOT NULL AND REFERENCED_TABLE_NAME IS NOT NULL"
+	case imp.isOracle():
+		q = "SELECT c.owner, c.table_name, r.owner, r.table_name " +
+			"FROM all_constraints c " +
+			"JOIN all_constraints r ON c.r_owner = r.owner AND c.r_constraint_name = r.constraint_name " +
+			"WHERE c.constraint_type = 'R'"
+	default:
+		q = "SELECT cn.nspname, cc.relname, pn.nspname, pc.relname " +
+			"FROM pg_constraint c " +
+			"JOIN pg_class cc ON cc.oid = c.conrelid " +
+			"JOIN pg_namespace cn ON cn.oid = cc.relnamespace " +
+			"JOIN pg_class pc ON pc.oid = c.confrelid " +
+			"JOIN pg_namespace pn ON pn.oid = pc.relnamespace " +
+			"WHERE c.contype = 'f'"
 	}
 
-	n := len(tables)
-	inDegree := make([]int, n)
-	dependents := make([][]int, n)
-	for i, t := range tables {
-		for _, fk := range t.ForeignKeys {
-			if j, ok := index[key(fk.RefSchema, fk.RefTable)]; ok && j != i {
-				inDegree[i]++
-				dependents[j] = append(dependents[j], i)
-			}
+	rows, err := imp.db.QueryContext(ctx, q)
+	if err != nil {
+		imp.logger.Debug("target FK introspection unavailable, falling back to unordered handling", zap.Error(err))
+		return nil
+	}
+	defer rows.Close()
+
+	var edges []fkEdge
+	for rows.Next() {
+		var e fkEdge
+		if err := rows.Scan(&e.childSchema, &e.childTable, &e.parentSchema, &e.parentTable); err != nil {
+			imp.logger.Warn("scan FK edge", zap.Error(err))
+			continue
 		}
+		edges = append(edges, e)
+	}
+	if err := rows.Err(); err != nil {
+		imp.logger.Warn("iterate FK edges", zap.Error(err))
+	}
+	return edges
+}
+
+// topoOrder returns indexes sorted so that prerequisites precede dependents.
+// deps lists {dependent, prerequisite} pairs; indexes caught in cycles are
+// appended at the end in input order.
+func topoOrder(n int, deps [][2]int) []int {
+	inDegree := make([]int, n)
+	prereqOf := make([][]int, n)
+	for _, d := range deps {
+		dependent, prereq := d[0], d[1]
+		if dependent == prereq || dependent < 0 || dependent >= n || prereq < 0 || prereq >= n {
+			continue
+		}
+		inDegree[dependent]++
+		prereqOf[prereq] = append(prereqOf[prereq], dependent)
 	}
 
 	queue := make([]int, 0, n)
@@ -414,47 +464,176 @@ func sortByForeignKeys(tables []*md.TableDef) []*md.TableDef {
 		}
 	}
 
-	sorted := make([]*md.TableDef, 0, n)
+	order := make([]int, 0, n)
 	done := make([]bool, n)
 	for len(queue) > 0 {
 		i := queue[0]
 		queue = queue[1:]
-		sorted = append(sorted, tables[i])
+		order = append(order, i)
 		done[i] = true
-		for _, child := range dependents[i] {
-			inDegree[child]--
-			if inDegree[child] == 0 {
-				queue = append(queue, child)
+		for _, dependent := range prereqOf[i] {
+			inDegree[dependent]--
+			if inDegree[dependent] == 0 {
+				queue = append(queue, dependent)
 			}
 		}
 	}
 
 	for i := 0; i < n; i++ {
 		if !done[i] {
-			sorted = append(sorted, tables[i])
+			order = append(order, i)
 		}
 	}
-	return sorted
+	return order
+}
+
+// metadataFKDeps derives {dependent, prerequisite} pairs from metadata
+// foreign keys. Used as fallback when target-side introspection is empty.
+func metadataFKDeps(tables []*md.TableDef) [][2]int {
+	key := func(schema, table string) string {
+		return strings.ToLower(schema) + "." + strings.ToLower(table)
+	}
+	index := make(map[string]int, len(tables))
+	for i, t := range tables {
+		index[key(t.TableSchema, t.TableName)] = i
+	}
+
+	var deps [][2]int
+	for i, t := range tables {
+		for _, fk := range t.ForeignKeys {
+			if j, ok := index[key(fk.RefSchema, fk.RefTable)]; ok && j != i {
+				deps = append(deps, [2]int{i, j})
+			}
+		}
+	}
+	return deps
+}
+
+// targetFKDeps maps live target-database foreign keys onto the batch being
+// imported, returning {dependent, prerequisite} index pairs restricted to
+// tables inside the batch.
+func (imp *Importer) targetFKDeps(ctx context.Context, schemas, names []string) [][2]int {
+	key := func(schema, table string) string {
+		return strings.ToLower(schema) + "." + strings.ToLower(table)
+	}
+	index := make(map[string]int, len(schemas))
+	for i := range schemas {
+		index[key(schemas[i], names[i])] = i
+	}
+
+	var deps [][2]int
+	seen := make(map[[2]int]bool)
+	for _, e := range imp.targetFKEdges(ctx) {
+		child, okChild := index[key(e.childSchema, e.childTable)]
+		parent, okParent := index[key(e.parentSchema, e.parentTable)]
+		if !okChild || !okParent || child == parent {
+			continue
+		}
+		pair := [2]int{child, parent}
+		if seen[pair] {
+			continue
+		}
+		seen[pair] = true
+		deps = append(deps, pair)
+	}
+	return deps
+}
+
+// truncateUnits empties all target tables before the parallel import starts.
+//
+// PostgreSQL family: a single multi-table TRUNCATE handles FKs within the
+// batch (PG only accepts TRUNCATE of a referenced table when every referencing
+// table is included in the same statement).
+// MySQL/Oracle (and per-table fallback): TRUNCATE is blocked by the mere
+// EXISTENCE of referencing FK constraints — row count and ordering do not
+// matter. Such tables fall back to DELETE FROM, which empties only the batch
+// tables and never touches tables outside the migration batch.
+func (imp *Importer) truncateUnits(ctx context.Context, schemas, names []string) {
+	quoted := make([]string, len(schemas))
+	for i := range schemas {
+		quoted[i] = imp.quoteIdent(schemas[i]) + "." + imp.quoteIdent(names[i])
+	}
+
+	if len(quoted) > 0 && !imp.isMySQL() && !imp.isOracle() {
+		if _, err := imp.db.ExecContext(ctx, "TRUNCATE TABLE "+strings.Join(quoted, ", ")); err == nil {
+			return
+		} else {
+			imp.logger.Warn("batch TRUNCATE failed (likely referenced by tables outside the migration batch), falling back to per-table handling",
+				zap.Error(err))
+		}
+	}
+
+	for _, full := range quoted {
+		if _, err := imp.db.ExecContext(ctx, "TRUNCATE TABLE "+full); err != nil {
+			imp.logger.Warn("TRUNCATE failed (FK constraint present or table missing), falling back to DELETE FROM",
+				zap.String("table", full), zap.Error(err))
+			if _, derr := imp.db.ExecContext(ctx, "DELETE FROM "+full); derr != nil {
+				imp.logger.Warn("DELETE FROM failed (table may not exist)",
+					zap.String("table", full), zap.Error(derr))
+			}
+		}
+	}
 }
 
 // ImportTables imports CSV data for multiple tables.
 func (imp *Importer) ImportTables(ctx context.Context, tables []*md.TableDef, schemaMapping map[string]string) ([]ImportResult, error) {
-	if imp.cfg.RespectForeignKeys {
-		tables = sortByForeignKeys(tables)
+	type importUnit struct {
+		tbl          *md.TableDef
+		targetSchema string
 	}
+	units := make([]importUnit, len(tables))
+	schemas := make([]string, len(tables))
+	names := make([]string, len(tables))
+	for i, t := range tables {
+		targetSchema := t.TableSchema
+		if m, ok := schemaMapping[targetSchema]; ok {
+			targetSchema = m
+		}
+		units[i] = importUnit{tbl: t, targetSchema: targetSchema}
+		schemas[i] = targetSchema
+		names[i] = t.TableName
+	}
+
+	// Resolve live FK dependencies among the batch once: they drive both the
+	// truncate order (children first) and, when respect_foreign_keys is set,
+	// the insert order (parents first). Metadata FKs are fallback only.
+	var deps [][2]int
+	if imp.cfg.TruncateBefore || imp.cfg.RespectForeignKeys {
+		deps = imp.targetFKDeps(ctx, schemas, names)
+	}
+	if imp.cfg.TruncateBefore {
+		imp.truncateUnits(ctx, schemas, names)
+	}
+	if imp.cfg.RespectForeignKeys {
+		if len(deps) == 0 {
+			deps = metadataFKDeps(tables)
+		}
+		if len(deps) > 0 {
+			reordered := make([]importUnit, 0, len(units))
+			for _, i := range topoOrder(len(units), deps) {
+				reordered = append(reordered, units[i])
+			}
+			units = reordered
+		}
+	}
+
 	workers := imp.cfg.MaxWorkers
 	if workers <= 0 {
 		workers = 1
 	}
-	if workers > len(tables) {
-		workers = len(tables)
+	if imp.cfg.RespectForeignKeys && workers > 1 {
+		imp.logger.Info("respect_foreign_keys: forcing sequential import to honor FK dependency order")
+		workers = 1
+	}
+	if workers > len(units) {
+		workers = len(units)
 	}
 
-	tableCh := make(chan *md.TableDef, len(tables))
-	for _, t := range tables {
-		tableCh <- t
+	unitCh := make(chan importUnit, len(units))
+	for _, u := range units {
+		unitCh <- u
 	}
-	close(tableCh)
+	close(unitCh)
 
 	var (
 		results []ImportResult
@@ -466,19 +645,14 @@ func (imp *Importer) ImportTables(ctx context.Context, tables []*md.TableDef, sc
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for tbl := range tableCh {
+			for u := range unitCh {
 				select {
 				case <-ctx.Done():
 					return
 				default:
 				}
 
-				targetSchema := tbl.TableSchema
-				if m, ok := schemaMapping[targetSchema]; ok {
-					targetSchema = m
-				}
-
-				result := imp.importOneTable(ctx, tbl, targetSchema)
+				result := imp.importOneTable(ctx, u.tbl, u.targetSchema)
 				mu.Lock()
 				results = append(results, result)
 				mu.Unlock()
@@ -641,14 +815,8 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 		strings.Join(placeholders, ", "),
 	)
 
-	// Truncate if configured
-	if imp.cfg.TruncateBefore {
-		truncSQL := fmt.Sprintf("TRUNCATE TABLE %s.%s",
-			imp.quoteIdent(targetSchema), imp.quoteIdent(tbl.TableName))
-		if _, err := conn.ExecContext(ctx, truncSQL); err != nil {
-			imp.logger.Warn("TRUNCATE failed (table may not exist yet)", zap.Error(err))
-		}
-	}
+	// Note: TRUNCATE is handled by ImportTables' pre-pass (truncateUnits),
+	// which orders children before parents so live FKs never block it.
 
 	if imp.cfg.DisableConstraints || imp.cfg.DisableTriggers {
 		disableStmts, enableStmts := imp.guardStatements(ctx, conn, targetSchema, tbl.TableName)

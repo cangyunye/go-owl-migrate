@@ -339,6 +339,64 @@ func TestImporter_TruncateBefore(t *testing.T) {
 	}
 }
 
+// TestImporter_TruncateBefore_FKOrder verifies that truncate_before works when
+// target tables carry live foreign keys: children must be truncated before
+// parents, and with respect_foreign_keys the parents must be inserted before
+// children (sequentially), regardless of input order.
+func TestImporter_TruncateBefore_FKOrder(t *testing.T) {
+	db := connectPG(t)
+	schema := setupSchema(t, db)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		`CREATE TABLE %s.dept (deptno integer PRIMARY KEY, dname text)`, schema)); err != nil {
+		t.Fatalf("create dept: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		`CREATE TABLE %s.emp (empno integer PRIMARY KEY, deptno integer REFERENCES %s.dept(deptno))`, schema, schema)); err != nil {
+		t.Fatalf("create emp: %v", err)
+	}
+	db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.dept VALUES (99, 'old')`, schema))
+	db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.emp VALUES (999, 99)`, schema))
+
+	dir := t.TempDir()
+	writeCSV(t, dir, schema, "dept", []string{"deptno,dname", "10,ACC", "20,RES"})
+	writeCSV(t, dir, schema, "emp", []string{"empno,deptno", "1,10", "2,20"})
+
+	dept := &md.TableDef{TableSchema: schema, TableName: "dept"}
+	emp := &md.TableDef{TableSchema: schema, TableName: "emp"}
+
+	logger, _ := zap.NewDevelopment()
+	imp := New(db, Config{
+		SourceDir:          dir,
+		CommitInterval:     100,
+		TruncateBefore:     true,
+		RespectForeignKeys: true,
+		ErrorPolicy:        "stop",
+		MaxWorkers:         2,
+		TargetDBType:       "postgres",
+		Logger:             logger,
+	})
+
+	// emp listed before dept: ordering must be corrected internally.
+	results, err := imp.ImportTables(ctx, []*md.TableDef{emp, dept}, nil)
+	if err != nil {
+		t.Fatalf("ImportTables: %v", err)
+	}
+	for _, r := range results {
+		if r.Err != nil {
+			t.Fatalf("import %s.%s: %v", r.Schema, r.Table, r.Err)
+		}
+	}
+
+	if got := countRows(t, db, schema, "dept"); got != 2 {
+		t.Errorf("dept rows = %d, want 2 (stale rows must be truncated)", got)
+	}
+	if got := countRows(t, db, schema, "emp"); got != 2 {
+		t.Errorf("emp rows = %d, want 2", got)
+	}
+}
+
 func TestImporter_PG_CopyFastPath(t *testing.T) {
 	db := connectPG(t)
 	schema := setupSchema(t, db)

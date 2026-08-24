@@ -174,25 +174,140 @@ func TestImportOneTable_SkipRow_MaxErrors(t *testing.T) {
 	}
 }
 
-func TestImportOneTable_TruncateBefore(t *testing.T) {
-	imp, mock, tbl := newImportMock(t, Config{TruncateBefore: true, CommitInterval: 100})
+func TestImportTables_TruncateFKBatch(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"scott.dept.csv": "DEPTNO,DNAME\n10,ACCOUNTING\n",
+		"scott.emp.csv":  "EMPNO,DEPTNO\n7369,10\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("write csv: %v", err)
+		}
+	}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
 
-	mock.ExpectExec("TRUNCATE TABLE").WillReturnResult(sqlmock.NewResult(0, 0))
+	dept, err := md.NewTableDef("SCOTT", "DEPT")
+	if err != nil {
+		t.Fatalf("new table: %v", err)
+	}
+	emp, err := md.NewTableDef("SCOTT", "EMP")
+	if err != nil {
+		t.Fatalf("new table: %v", err)
+	}
+
+	imp := New(db, Config{
+		SourceDir:          dir,
+		TruncateBefore:     true,
+		RespectForeignKeys: true,
+		CommitInterval:     100,
+		TargetDBType:       "postgres",
+		MaxWorkers:         2,
+	})
+
+	fkRows := sqlmock.NewRows([]string{"child_schema", "child_table", "parent_schema", "parent_table"}).
+		AddRow("public", "EMP", "public", "DEPT")
+	mock.ExpectQuery("pg_constraint").WillReturnRows(fkRows)
+
+	// PG family: one multi-table TRUNCATE covers the FK cluster
+	mock.ExpectExec(`TRUNCATE TABLE "public"\."DEPT", "public"\."EMP"`).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	// inserts respect FK order: parent (DEPT) before child (EMP)
 	mock.ExpectBegin()
 	mock.ExpectExec("SAVEPOINT owl_batch").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec("INSERT INTO").WillReturnResult(sqlmock.NewResult(0, 3))
+	mock.ExpectExec(`INSERT INTO "public"\."DEPT"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("RELEASE SAVEPOINT owl_batch").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	res := imp.importOneTable(context.Background(), tbl, "SCOTT")
-	if res.Err != nil {
-		t.Fatalf("unexpected err: %v", res.Err)
+	mock.ExpectBegin()
+	mock.ExpectExec("SAVEPOINT owl_batch").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`INSERT INTO "public"\."EMP"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("RELEASE SAVEPOINT owl_batch").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	results, err := imp.ImportTables(context.Background(), []*md.TableDef{dept, emp}, map[string]string{"SCOTT": "public"})
+	if err != nil {
+		t.Fatalf("ImportTables: %v", err)
 	}
-	if res.Actual != 3 {
-		t.Errorf("got actual=%d, want 3", res.Actual)
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+	for _, r := range results {
+		if r.Err != nil {
+			t.Fatalf("unexpected error for %s.%s: %v", r.Schema, r.Table, r.Err)
+		}
+		if r.Actual != 1 {
+			t.Errorf("%s.%s: actual=%d, want 1", r.Schema, r.Table, r.Actual)
+		}
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("expectations: %v", err)
+	}
+}
+
+func TestImportTables_TruncateFallbackDelete(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "scott.emp.csv"), []byte("EMPNO\n1\n"), 0644); err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	emp, err := md.NewTableDef("SCOTT", "EMP")
+	if err != nil {
+		t.Fatalf("new table: %v", err)
+	}
+
+	imp := New(db, Config{
+		SourceDir:      dir,
+		TruncateBefore: true,
+		CommitInterval: 100,
+		TargetDBType:   "postgres",
+	})
+
+	mock.ExpectQuery("pg_constraint").WillReturnRows(
+		sqlmock.NewRows([]string{"child_schema", "child_table", "parent_schema", "parent_table"}))
+	// batch statement fails (referenced by a table outside the batch), then
+	// per-table TRUNCATE fails too and falls back to DELETE FROM
+	fkErr := fmt.Errorf("pq: cannot truncate a table referenced in a foreign key constraint (0A000)")
+	mock.ExpectExec(`TRUNCATE TABLE "public"\."EMP"`).WillReturnError(fkErr)
+	mock.ExpectExec(`TRUNCATE TABLE "public"\."EMP"`).WillReturnError(fkErr)
+	mock.ExpectExec(`DELETE FROM "public"\."EMP"`).WillReturnResult(sqlmock.NewResult(0, 5))
+
+	mock.ExpectBegin()
+	mock.ExpectExec("SAVEPOINT owl_batch").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`INSERT INTO "public"\."EMP"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("RELEASE SAVEPOINT owl_batch").WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
+
+	results, err := imp.ImportTables(context.Background(), []*md.TableDef{emp}, map[string]string{"SCOTT": "public"})
+	if err != nil {
+		t.Fatalf("ImportTables: %v", err)
+	}
+	if results[0].Err != nil {
+		t.Fatalf("unexpected error: %v", results[0].Err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("expectations: %v", err)
+	}
+}
+
+func TestTopoOrder(t *testing.T) {
+	order := topoOrder(3, [][2]int{{2, 0}, {2, 1}})
+	if !reflect.DeepEqual(order, []int{0, 1, 2}) {
+		t.Errorf("got %v, want [0 1 2]", order)
+	}
+
+	cyclic := topoOrder(2, [][2]int{{0, 1}, {1, 0}})
+	if len(cyclic) != 2 {
+		t.Errorf("cyclic: got %v, want both indexes", cyclic)
 	}
 }
 

@@ -261,12 +261,21 @@ func fkRef(childSchema, child, parentSchema, parent string) *md.ForeignKeyDef {
 	return &md.ForeignKeyDef{TableSchema: childSchema, TableName: child, RefSchema: parentSchema, RefTable: parent}
 }
 
+func sortByMetadataFK(tables []*md.TableDef) []*md.TableDef {
+	order := topoOrder(len(tables), metadataFKDeps(tables))
+	sorted := make([]*md.TableDef, 0, len(tables))
+	for _, i := range order {
+		sorted = append(sorted, tables[i])
+	}
+	return sorted
+}
+
 func TestUnit_SortByForeignKeys(t *testing.T) {
 	t.Run("parent before child", func(t *testing.T) {
 		emp := &md.TableDef{TableSchema: "SCOTT", TableName: "EMP"}
 		emp.AddForeignKey(fkRef("SCOTT", "EMP", "SCOTT", "DEPT"))
 		dept := &md.TableDef{TableSchema: "SCOTT", TableName: "DEPT"}
-		sorted := sortByForeignKeys([]*md.TableDef{emp, dept})
+		sorted := sortByMetadataFK([]*md.TableDef{emp, dept})
 		if sorted[0].TableName != "DEPT" || sorted[1].TableName != "EMP" {
 			t.Errorf("got [%s,%s], want [DEPT,EMP]", sorted[0].TableName, sorted[1].TableName)
 		}
@@ -277,7 +286,7 @@ func TestUnit_SortByForeignKeys(t *testing.T) {
 		b.AddForeignKey(fkRef("S", "B", "S", "A"))
 		c := &md.TableDef{TableSchema: "S", TableName: "C"}
 		c.AddForeignKey(fkRef("S", "C", "S", "B"))
-		sorted := sortByForeignKeys([]*md.TableDef{c, b, a})
+		sorted := sortByMetadataFK([]*md.TableDef{c, b, a})
 		if sorted[0].TableName != "A" || sorted[1].TableName != "B" || sorted[2].TableName != "C" {
 			t.Errorf("got [%s,%s,%s], want [A,B,C]", sorted[0].TableName, sorted[1].TableName, sorted[2].TableName)
 		}
@@ -285,7 +294,7 @@ func TestUnit_SortByForeignKeys(t *testing.T) {
 	t.Run("no fk preserves order", func(t *testing.T) {
 		x := &md.TableDef{TableSchema: "S", TableName: "X"}
 		y := &md.TableDef{TableSchema: "S", TableName: "Y"}
-		sorted := sortByForeignKeys([]*md.TableDef{x, y})
+		sorted := sortByMetadataFK([]*md.TableDef{x, y})
 		if sorted[0].TableName != "X" || sorted[1].TableName != "Y" {
 			t.Errorf("order not preserved: [%s,%s]", sorted[0].TableName, sorted[1].TableName)
 		}
@@ -294,7 +303,7 @@ func TestUnit_SortByForeignKeys(t *testing.T) {
 		emp := &md.TableDef{TableSchema: "SCOTT", TableName: "EMP"}
 		emp.AddForeignKey(fkRef("SCOTT", "EMP", "OTHER", "EXT"))
 		dept := &md.TableDef{TableSchema: "SCOTT", TableName: "DEPT"}
-		sorted := sortByForeignKeys([]*md.TableDef{emp, dept})
+		sorted := sortByMetadataFK([]*md.TableDef{emp, dept})
 		if sorted[0].TableName != "EMP" || sorted[1].TableName != "DEPT" {
 			t.Errorf("got [%s,%s], want [EMP,DEPT]", sorted[0].TableName, sorted[1].TableName)
 		}
@@ -304,7 +313,7 @@ func TestUnit_SortByForeignKeys(t *testing.T) {
 		a.AddForeignKey(fkRef("S", "A", "S", "B"))
 		b := &md.TableDef{TableSchema: "S", TableName: "B"}
 		b.AddForeignKey(fkRef("S", "B", "S", "A"))
-		sorted := sortByForeignKeys([]*md.TableDef{a, b})
+		sorted := sortByMetadataFK([]*md.TableDef{a, b})
 		if len(sorted) != 2 {
 			t.Errorf("expected 2 tables, got %d", len(sorted))
 		}
