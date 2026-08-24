@@ -136,6 +136,19 @@ owl-migrate export ddl -c ./configs/migrate.example.yaml
 owl-migrate gen-select -c ./configs/migrate.example.yaml
 ```
 
+### Live Test Databases (docker)
+
+Online workflows (`export data` / `import` / `migrate`) need real databases.
+The repo ships a one-command test environment that auto-seeds SCOTT/EMP/DEPT
+test data on first start (Oracle / PostgreSQL / MySQL):
+
+```bash
+cd testdata/db && docker compose up -d
+```
+
+Credentials, ports, and a DSN cheat sheet: [testdata/db/README.md](../testdata/db/README.md).
+Ready-made configs to try immediately: `testdata/db/oracle_to_pg.yaml`, `testdata/db/mysql_to_pg.yaml`.
+
 ## Configuration File
 
 The minimal config requires:
@@ -167,3 +180,4 @@ See [Configuration Reference](config.md) for the full config structure.
 - [Migration Pipeline](migration-pipeline.md) — Export/import, checkpoint/resume, error handling
 - [CSV Metadata Format](csv-format.md) — Defining schemas offline
 - [Dialect & Type Mapping](dialect-mapping.md) — Database-specific details
+- [Test Databases](../testdata/db/README.md) — docker-compose environment for online workflows

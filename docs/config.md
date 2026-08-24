@@ -110,6 +110,9 @@ select_gen:
     page_size: 5000                         # rows per batch
   include_row_number: false                 # Add ROW_NUMBER() column
   add_export_columns: false                 # Add export helper columns
+  # 注意：select_gen.batch 只影响 gen-select 命令（生成 SELECT 语句）；
+  # 真实数据导出走 export.batch。二者互不继承、默认值相同（cursor/5000），
+  # 如需改动请同步修改，避免生成语句与实际导出的分页行为不一致。
 
 export:
   output_dir: ./output/data/                # Output directory for exported data files

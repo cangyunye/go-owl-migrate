@@ -53,3 +53,6 @@ docs-site/docs
 
 # opencode
 .opencode/
+
+# dts 问题档案（插件自动维护，仅本地）
+dts/
