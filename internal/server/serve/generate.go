@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"crypto/rand"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -76,7 +75,9 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
 
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
@@ -147,7 +148,9 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 		PageSize           int    `json:"page_size"`
 		NoQuoteIdentifiers *bool  `json:"no_quote_identifiers"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
 
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
@@ -210,7 +213,9 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		Truncate           bool  `json:"truncate"`
 		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
 
 	dataDir := cfg.Import.SourceDir
 	if dataDir == "" {

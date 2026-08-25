@@ -3,6 +3,7 @@ package serve
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"nhooyr.io/websocket"
 
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
@@ -262,5 +266,52 @@ func TestGetConfig_MasksDSNPassword(t *testing.T) {
 	}
 	if strings.Count(string(body), "******") < 2 {
 		t.Fatalf("expected both dsns masked, got: %s", body)
+	}
+}
+
+func TestBodyLimit_RejectsOversizedPayload(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	srv := NewServer(Config{Store: store})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Post(ts.URL+"/api/v1/metadata/load", "application/json",
+		bytes.NewReader(bytes.Repeat([]byte("A"), 2<<20)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body: %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(string(body), "request body too large") {
+		t.Fatalf("expected body-limit error, got: %s", body)
+	}
+}
+
+func TestWebSocket_RejectsForeignOrigin(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	srv := NewServer(Config{Store: store})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	hdr := http.Header{}
+	hdr.Set("Origin", "http://evil.example")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/v1/jobs/j1/ws"
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: hdr})
+	if err == nil {
+		conn.Close(websocket.StatusNormalClosure, "")
+		t.Fatal("expected foreign-origin dial to be rejected")
 	}
 }

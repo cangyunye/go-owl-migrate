@@ -1,7 +1,6 @@
 package serve
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -121,8 +120,7 @@ func (s *Server) handleUploadConfig(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 		YAML string `json:"yaml"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req, maxConfigBytes) {
 		return
 	}
 
