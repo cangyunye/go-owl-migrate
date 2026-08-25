@@ -2,6 +2,7 @@ package serve
 
 import (
 	"archive/zip"
+	"crypto/rand"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
@@ -331,7 +333,9 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 }
 
 func randSuffix() string {
-	return fmt.Sprintf("%d", os.Getpid()) + "-" + fmt.Sprint(len(os.TempDir()))
+	var b [4]byte
+	rand.Read(b[:])
+	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), b[:])
 }
 
 // detectTablesFromCSVDir infers TableDefs from CSV data file headers,
