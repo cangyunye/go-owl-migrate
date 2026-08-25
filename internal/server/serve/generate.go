@@ -35,7 +35,9 @@ const genOutputKeep = 10
 func (s *Server) recordGenOutput(kind, dir string) error {
 	pruned, err := s.store.RecordGeneration(kind, dir, genOutputKeep)
 	for _, d := range pruned {
-		os.RemoveAll(d)
+		if rmErr := os.RemoveAll(d); rmErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: remove pruned generation dir %s: %v\n", d, rmErr)
+		}
 	}
 	return err
 }
