@@ -173,6 +173,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	maskConfigMap(m)
 	writeJSON(w, http.StatusOK, m)
 }
 
@@ -312,6 +313,20 @@ func withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// maskConfigMap masks DSN passwords in a serialized config map before it is
+// returned by read endpoints.
+func maskConfigMap(m map[string]any) {
+	for _, key := range []string{"source", "target"} {
+		sec, _ := m[key].(map[string]any)
+		if sec == nil {
+			continue
+		}
+		if dsn, ok := sec["dsn"].(string); ok && dsn != "" {
+			sec["dsn"] = config.MaskDSN(dsn)
+		}
+	}
 }
 
 func configToMap(cfg *config.Config) (map[string]any, error) {

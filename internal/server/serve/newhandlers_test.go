@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/service"
@@ -221,5 +222,45 @@ func TestDownloadGen_PersistedAcrossRestart(t *testing.T) {
 	}
 	if len(zr.File) != 1 || zr.File[0].Name != "emp.sql" {
 		t.Fatalf("zip contents wrong: %+v", zr.File)
+	}
+}
+
+func TestGetConfig_MasksDSNPassword(t *testing.T) {
+	srv := NewServer(Config{ConfigPath: filepath.Join(t.TempDir(), "migrate.yaml")})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	putBody, err := json.Marshal(map[string]any{
+		"source": map[string]any{"type": "oracle", "dsn": "oracle://scott:tiger@db:1521/ORCL"},
+		"target": map[string]any{"type": "postgres", "dsn": "postgres://u:p@h/db"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/v1/config", bytes.NewReader(putBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("PUT status = %d, want 200", resp.StatusCode)
+	}
+
+	resp, err = http.Get(ts.URL + "/api/v1/config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), "tiger") || strings.Contains(string(body), ":p@h/") {
+		t.Fatalf("response leaks password: %s", body)
+	}
+	if strings.Count(string(body), "******") < 2 {
+		t.Fatalf("expected both dsns masked, got: %s", body)
 	}
 }
