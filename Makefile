@@ -27,7 +27,7 @@ web/docsite:
 	@cp docs-site/index.html web/docsite/
 	@cp -R docs-site/vendor web/docsite/vendor
 	@cp docs/*.md web/docsite/docs/
-	@echo "Docs staged into web/docsite/"
+	@echo "Docs staged into web/docsite/ (placeholders overwritten; git restore web/docsite/ before committing)"
 
 # Default build: all dialects (core + compound + optional with tags)
 build: web/docsite
@@ -76,22 +76,22 @@ duckdb/download:
 	@echo "Build with: CGO_LDFLAGS="-L./lib" make build/duckdb-lib"
 
 # Core-only: 3 dialects (oracle, postgres, mysql) + compound dialects
-build/core:
+build/core: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	$(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core $(MAIN_PATH)
+	CGO_ENABLED=0 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core"
 
 # Minimal: only oracle, postgres, mysql (no compound dialects)
-build/minimal:
+build/minimal: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	$(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
+	CGO_ENABLED=0 $(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
 	  -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-minimal $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-minimal"
 
 # Oracle-only: single dialect build
-build/oracle:
+build/oracle: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	$(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
+	CGO_ENABLED=0 $(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
 	  -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-oracle $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-oracle"
 
