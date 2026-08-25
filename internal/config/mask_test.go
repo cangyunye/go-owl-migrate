@@ -11,6 +11,7 @@ func TestMaskDSN(t *testing.T) {
 		{"postgres url", "postgres://scott:tiger@db.example:5432/app", "postgres://scott:******@db.example:5432/app"},
 		{"oracle url", "oracle://scott:tiger@10.0.0.1:1521/ORCL", "oracle://scott:******@10.0.0.1:1521/ORCL"},
 		{"mysql native", "scott:tiger@tcp(127.0.0.1:3306)/app", "scott:******@tcp(127.0.0.1:3306)/app"},
+		{"mysql native, password with slash", "scott:my/pass@tcp(127.0.0.1:3306)/app", "scott:******@tcp(127.0.0.1:3306)/app"},
 		{"url without password", "postgres://scott@db.example:5432/app", "postgres://scott@db.example:5432/app"},
 		{"empty", "", ""},
 		{"unrecognized", "some-host:1521", "some-host:1521"},

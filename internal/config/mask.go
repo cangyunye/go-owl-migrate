@@ -16,9 +16,9 @@ func MaskDSN(dsn string) string {
 	if dsn == "" {
 		return dsn
 	}
-	if m := mysqlDSNPassword.FindStringSubmatch(dsn); m != nil && !strings.Contains(m[2], "/") {
-		// m[2] containing "/" means we matched a scheme like "postgres://u",
-		// not a native MySQL DSN; let url.Parse handle that below.
+	if m := mysqlDSNPassword.FindStringSubmatch(dsn); m != nil && !strings.HasPrefix(m[2], "//") {
+		// m[2] starting with "//" means we matched a scheme like
+		// "postgres://u", not a native MySQL DSN; let url.Parse handle that below.
 		return m[1] + ":******@" + dsn[len(m[0]):]
 	}
 	if u, err := url.Parse(dsn); err == nil && u.User != nil {
