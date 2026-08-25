@@ -56,3 +56,9 @@ docs-site/docs
 
 # dts 问题档案（插件自动维护，仅本地）
 dts/
+
+web/docsite/*
+!web/docsite/index.html
+!web/docsite/docs/
+web/docsite/docs/*
+!web/docsite/docs/index.md
