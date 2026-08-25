@@ -331,3 +331,34 @@ func TestJobStore_NodeIDUpgrade(t *testing.T) {
 		t.Errorf("node_id = %q, want \"local\"", nodeID)
 	}
 }
+
+func TestJobStore_GenerationRetention(t *testing.T) {
+	store, err := NewJobStore(filepath.Join(t.TempDir(), "gen.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	defer store.Close()
+
+	var allPruned []string
+	for i := 1; i <= 3; i++ {
+		pruned, err := store.RecordGeneration("ddl", fmt.Sprintf("/tmp/gen-%d", i), 2)
+		if err != nil {
+			t.Fatalf("RecordGeneration(%d): %v", i, err)
+		}
+		allPruned = append(allPruned, pruned...)
+	}
+
+	if len(allPruned) != 1 || allPruned[0] != "/tmp/gen-1" {
+		t.Fatalf("pruned = %v, want [/tmp/gen-1]", allPruned)
+	}
+	dir, err := store.LatestGeneration("ddl")
+	if err != nil {
+		t.Fatalf("LatestGeneration: %v", err)
+	}
+	if dir != "/tmp/gen-3" {
+		t.Errorf("LatestGeneration = %q, want /tmp/gen-3", dir)
+	}
+	if _, err := store.LatestGeneration("insert"); err == nil {
+		t.Error("LatestGeneration for unknown kind should error")
+	}
+}

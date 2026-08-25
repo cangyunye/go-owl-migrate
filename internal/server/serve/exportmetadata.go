@@ -123,7 +123,10 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setGenOutput("metadata", outDir)
+	if err := s.recordGenOutput("metadata", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir":  outDir,
 		"format":      format,

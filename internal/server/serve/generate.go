@@ -20,11 +20,24 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
-// genOutput tracks the most recent generation output directory per kind so
-// the download endpoint can zip it up.
+// genFile is a single generated file returned in endpoint responses.
 type genFile struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
+}
+
+// genOutputKeep is how many generation outputs are retained per kind; the
+// oldest dirs are removed from disk when the limit is exceeded.
+const genOutputKeep = 10
+
+// recordGenOutput persists a generation output directory in the job store and
+// prunes retired outputs from disk.
+func (s *Server) recordGenOutput(kind, dir string) error {
+	pruned, err := s.store.RecordGeneration(kind, dir, genOutputKeep)
+	for _, d := range pruned {
+		os.RemoveAll(d)
+	}
+	return err
 }
 
 func (s *Server) requireMetadata() (*md.SchemaModel, error) {
@@ -106,7 +119,10 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	collect(gen.GeneratePackages(sm, schema))
 	collect(gen.GeneratePackageBodies(sm, schema))
 
-	s.setGenOutput("ddl", outDir)
+	if err := s.recordGenOutput("ddl", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir": outDir,
 		"count":      len(all),
@@ -171,7 +187,10 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setGenOutput("select", outDir)
+	if err := s.recordGenOutput("select", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir": outDir,
 		"count":      len(files),
@@ -235,7 +254,10 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setGenOutput("insert", outDir)
+	if err := s.recordGenOutput("insert", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir": outDir,
 		"count":      len(files),
@@ -301,9 +323,9 @@ func (s *Server) handleMetadataTableDetail(w http.ResponseWriter, r *http.Reques
 // handleDownloadGen zips the most recent generation output of the given kind.
 func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dir := s.getGenOutput(kind)
-		if dir == "" {
-			writeError(w, http.StatusBadRequest, "nothing generated yet for "+kind)
+		dir, err := s.store.LatestGeneration(kind)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		entries, err := os.ReadDir(dir)

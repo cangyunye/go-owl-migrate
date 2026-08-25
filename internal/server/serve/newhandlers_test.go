@@ -1,11 +1,17 @@
 package serve
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
 func TestHandler_ShowQuery_AllTypes(t *testing.T) {
@@ -174,5 +180,46 @@ func TestHandler_ExportMetadata_MissingSchema(t *testing.T) {
 		`{"source":{"type":"oracle","dsn":"x/y@localhost:1521/orcl"}}`)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestDownloadGen_PersistedAcrossRestart(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "t.db")
+	store, err := service.NewJobStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	outDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outDir, "emp.sql"), []byte("CREATE TABLE emp (id INT);"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordGeneration("ddl", outDir, 10); err != nil {
+		t.Fatalf("RecordGeneration: %v", err)
+	}
+
+	srv := NewServer(Config{Store: store})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := http.Get(ts.URL + "/api/v1/ddl/download")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("not a zip: %v", err)
+	}
+	if len(zr.File) != 1 || zr.File[0].Name != "emp.sql" {
+		t.Fatalf("zip contents wrong: %+v", zr.File)
 	}
 }

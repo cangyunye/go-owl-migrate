@@ -33,7 +33,6 @@ type Server struct {
 	mu          sync.RWMutex
 	cfg         *config.Config
 	schemaModel *md.SchemaModel
-	genOutputs  map[string]string
 }
 
 func NewServer(cfg Config) *Server {
@@ -45,20 +44,7 @@ func NewServer(cfg Config) *Server {
 		configDir:  cfg.ConfigDir,
 		hub:        NewHub(cfg.Store),
 		cfg:        &config.Config{},
-		genOutputs: make(map[string]string),
 	}
-}
-
-func (s *Server) setGenOutput(kind, dir string) {
-	s.mu.Lock()
-	s.genOutputs[kind] = dir
-	s.mu.Unlock()
-}
-
-func (s *Server) getGenOutput(kind string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.genOutputs[kind]
 }
 
 func (s *Server) Handler() http.Handler {

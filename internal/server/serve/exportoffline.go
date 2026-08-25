@@ -100,7 +100,10 @@ func (s *Server) handleExportOffline(w http.ResponseWriter, r *http.Request) {
 		outputFiles = append(outputFiles, res.OutputFile)
 	}
 
-	s.setGenOutput("export-offline", outDir)
+	if err := s.recordGenOutput("export-offline", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 
 	resp := map[string]any{
 		"output_dir":  outDir,

@@ -103,6 +103,14 @@ CREATE TABLE IF NOT EXISTS progress_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_job_seq ON progress_events(job_id, seq);
+
+CREATE TABLE IF NOT EXISTS generation_outputs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    dir        TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_gen_kind ON generation_outputs(kind, id);
 `
 	_, err := s.db.Exec(schema)
 	if err != nil {
@@ -296,6 +304,66 @@ func (s *JobStore) MarkRunningAsInterrupted() (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// RecordGeneration stores a generation output record, prunes records beyond
+// keep for that kind, and returns the pruned dirs so the caller can delete
+// them from disk.
+func (s *JobStore) RecordGeneration(kind, dir string, keep int) ([]string, error) {
+	if _, err := s.db.Exec(
+		`INSERT INTO generation_outputs (kind, dir) VALUES (?, ?)`, kind, dir,
+	); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(
+		`SELECT id, dir FROM generation_outputs WHERE kind = ? AND id NOT IN
+		 (SELECT id FROM generation_outputs WHERE kind = ? ORDER BY id DESC LIMIT ?)`,
+		kind, kind, keep,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type stale struct {
+		id  int64
+		dir string
+	}
+	var stales []stale
+	for rows.Next() {
+		var p stale
+		if err := rows.Scan(&p.id, &p.dir); err != nil {
+			return nil, err
+		}
+		stales = append(stales, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	dirs := make([]string, 0, len(stales))
+	for _, p := range stales {
+		if _, err := s.db.Exec(`DELETE FROM generation_outputs WHERE id = ?`, p.id); err != nil {
+			return dirs, err
+		}
+		dirs = append(dirs, p.dir)
+	}
+	return dirs, nil
+}
+
+// LatestGeneration returns the most recent output dir for kind.
+func (s *JobStore) LatestGeneration(kind string) (string, error) {
+	var dir string
+	err := s.db.QueryRow(
+		`SELECT dir FROM generation_outputs WHERE kind = ? ORDER BY id DESC LIMIT 1`, kind,
+	).Scan(&dir)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("nothing generated yet for %s", kind)
+	}
+	if err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 func (s *JobStore) Close() error {
