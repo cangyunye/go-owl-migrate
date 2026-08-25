@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type Job struct {
@@ -47,8 +47,8 @@ type JobStore struct {
 }
 
 func NewJobStore(dbPath string) (*JobStore, error) {
-	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL", dbPath)
-	db, err := sql.Open("sqlite3", dsn)
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
