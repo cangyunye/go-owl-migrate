@@ -71,7 +71,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     config      TEXT,
     pid         INTEGER DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now')),
-    finished_at TEXT
+    finished_at TEXT,
+    node_id     TEXT NOT NULL DEFAULT 'local'
 );
 
 CREATE TABLE IF NOT EXISTS job_checkpoints (
@@ -84,6 +85,7 @@ CREATE TABLE IF NOT EXISTS job_checkpoints (
     imported_rows INTEGER DEFAULT 0,
     status        TEXT DEFAULT '',
     error         TEXT DEFAULT '',
+    node_id       TEXT NOT NULL DEFAULT 'local',
     PRIMARY KEY (job_id, schema, table_name)
 );
 
@@ -96,13 +98,39 @@ CREATE TABLE IF NOT EXISTS progress_events (
     table_name TEXT DEFAULT '',
     rows       INTEGER DEFAULT 0,
     message    TEXT DEFAULT '',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    node_id    TEXT NOT NULL DEFAULT 'local'
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_job_seq ON progress_events(job_id, seq);
 `
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := s.addNodeIDColumns(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// addNodeIDColumns backfills the 2.0 node_id seam into databases created
+// before the column existed. Tables are hardcoded; names never come from input.
+func (s *JobStore) addNodeIDColumns() error {
+	for _, tbl := range []string{"jobs", "job_checkpoints", "progress_events"} {
+		var n int
+		q := fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = 'node_id'`, tbl)
+		if err := s.db.QueryRow(q).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			q = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN node_id TEXT NOT NULL DEFAULT 'local'`, tbl)
+			if _, err := s.db.Exec(q); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *JobStore) CreateJob(jobID, jobType, configJSON string) error {

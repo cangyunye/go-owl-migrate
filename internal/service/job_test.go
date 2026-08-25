@@ -1,6 +1,7 @@
 package service
 
 import (
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -291,5 +292,42 @@ func TestJobStore_ConcurrentWrites(t *testing.T) {
 	}
 	if len(events) != 100 {
 		t.Errorf("len(events) = %d, want 100", len(events))
+	}
+}
+
+func TestJobStore_NodeIDUpgrade(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "upgrade.db")
+
+	// Create a legacy database lacking node_id columns.
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE jobs (job_id TEXT PRIMARY KEY, type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running', config TEXT, pid INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')), finished_at TEXT)`,
+		`CREATE TABLE job_checkpoints (job_id TEXT NOT NULL, schema TEXT NOT NULL, table_name TEXT NOT NULL, exported INTEGER DEFAULT 0, exported_rows INTEGER DEFAULT 0, imported INTEGER DEFAULT 0, imported_rows INTEGER DEFAULT 0, status TEXT DEFAULT '', error TEXT DEFAULT '', PRIMARY KEY (job_id, schema, table_name))`,
+		`CREATE TABLE progress_events (id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, seq INTEGER NOT NULL, event_type TEXT NOT NULL, schema TEXT DEFAULT '', table_name TEXT DEFAULT '', rows INTEGER DEFAULT 0, message TEXT DEFAULT '', created_at TEXT DEFAULT (datetime('now')))`,
+	} {
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatalf("create legacy table: %v", err)
+		}
+	}
+	raw.Close()
+
+	store, err := NewJobStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewJobStore on legacy db: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.CreateJob("j1", "migrate", "{}"); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	var nodeID string
+	if err := store.db.QueryRow(`SELECT node_id FROM jobs WHERE job_id = 'j1'`).Scan(&nodeID); err != nil {
+		t.Fatalf("node_id missing: %v", err)
+	}
+	if nodeID != "local" {
+		t.Errorf("node_id = %q, want \"local\"", nodeID)
 	}
 }
