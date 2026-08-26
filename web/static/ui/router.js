@@ -14,6 +14,7 @@ import { render as renderSelect } from './views/select.js';
 import { render as renderInsert } from './views/insert.js';
 import { render as renderMigrate } from './views/migrate.js';
 import { render as renderExport } from './views/export.js';
+import { render as renderImport } from './views/import.js';
 
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
@@ -40,7 +41,8 @@ const routes = [
     { re: /^\/select$/, render: renderSelect, active: '/select', title: 'SELECT' },
     { re: /^\/insert$/, render: renderInsert, active: '/insert', title: 'INSERT' },
     { re: /^\/migrate$/, render: renderMigrate, active: '/migrate', title: '迁移' },
-    { re: /^\/export$/, render: renderExport, active: '/export', title: '导出' }
+    { re: /^\/export$/, render: renderExport, active: '/export', title: '导出' },
+    { re: /^\/import$/, render: renderImport, active: '/import', title: '导入' }
 ];
 
 function renderComingSoon(root, params, route) {
