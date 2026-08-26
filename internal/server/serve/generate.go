@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"crypto/rand"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -332,7 +333,11 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		dir, err := s.store.LatestGeneration(kind)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
+			if errors.Is(err, service.ErrNoGeneration) {
+				writeError(w, http.StatusBadRequest, err.Error())
+			} else {
+				writeError(w, http.StatusInternalServerError, "lookup generation output: "+err.Error())
+			}
 			return
 		}
 		entries, err := os.ReadDir(dir)

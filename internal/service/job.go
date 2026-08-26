@@ -2,11 +2,16 @@ package service
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// ErrNoGeneration is returned by LatestGeneration when no output of a kind
+// has been recorded yet.
+var ErrNoGeneration = errors.New("nothing generated yet")
 
 type Job struct {
 	JobID      string  `json:"job_id"`
@@ -358,7 +363,7 @@ func (s *JobStore) LatestGeneration(kind string) (string, error) {
 		`SELECT dir FROM generation_outputs WHERE kind = ? ORDER BY id DESC LIMIT 1`, kind,
 	).Scan(&dir)
 	if err == sql.ErrNoRows {
-		return "", fmt.Errorf("nothing generated yet for %s", kind)
+		return "", fmt.Errorf("%w: %s", ErrNoGeneration, kind)
 	}
 	if err != nil {
 		return "", err

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -14,6 +15,9 @@ import (
 // owner refuses the start, a dead or unreadable one means a stale lock that
 // we take over.
 func acquireServeLock(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
 	pid := strconv.Itoa(os.Getpid())
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err == nil {
