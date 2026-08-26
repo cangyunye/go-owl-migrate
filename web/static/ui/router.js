@@ -13,6 +13,7 @@ import { render as renderDDL } from './views/ddl.js';
 import { render as renderSelect } from './views/select.js';
 import { render as renderInsert } from './views/insert.js';
 import { render as renderMigrate } from './views/migrate.js';
+import { render as renderExport } from './views/export.js';
 
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
@@ -38,7 +39,8 @@ const routes = [
     { re: /^\/ddl$/, render: renderDDL, active: '/ddl', title: 'DDL' },
     { re: /^\/select$/, render: renderSelect, active: '/select', title: 'SELECT' },
     { re: /^\/insert$/, render: renderInsert, active: '/insert', title: 'INSERT' },
-    { re: /^\/migrate$/, render: renderMigrate, active: '/migrate', title: '迁移' }
+    { re: /^\/migrate$/, render: renderMigrate, active: '/migrate', title: '迁移' },
+    { re: /^\/export$/, render: renderExport, active: '/export', title: '导出' }
 ];
 
 function renderComingSoon(root, params, route) {
