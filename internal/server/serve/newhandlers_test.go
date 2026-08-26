@@ -315,3 +315,130 @@ func TestWebSocket_RejectsForeignOrigin(t *testing.T) {
 		t.Fatal("expected foreign-origin dial to be rejected")
 	}
 }
+
+func TestAuth_RequiresToken(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	srv := NewServer(Config{Store: store, Token: "s3cret"})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	client := ts.Client()
+	// No token → 401
+	resp, err := client.Get(ts.URL + "/api/v1/jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("no-token status = %d, want 401", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Correct token → 200
+	req, _ := http.NewRequest("GET", ts.URL+"/api/v1/jobs", nil)
+	req.Header.Set("Authorization", "Bearer s3cret")
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("token status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Wrong token → 401
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/jobs", nil)
+	req.Header.Set("Authorization", "Bearer nope")
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong-token status = %d, want 401", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Health is exempt
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/health", nil)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("health status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestAuth_AllowsWebSocketWithToken(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	srv := NewServer(Config{Store: store, Token: "s3cret"})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/v1/jobs/j1/ws?token=s3cret"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial(%s) got 401/rejected handshake: %v", wsURL, err)
+	}
+	// Handshake succeeded under a configured token (no 401). Keep the
+	// connection open to prove the WS is reachable before closing.
+	conn.Close(websocket.StatusNormalClosure, "")
+}
+
+func TestSPA_UIShellServed(t *testing.T) {
+	srv := NewServer(Config{})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := ts.Client().Get(ts.URL + "/ui")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /ui status = %d, want 200", resp.StatusCode)
+	}
+
+	// index asset within /ui/static/ or /static/ui/
+	r2, err := ts.Client().Get(ts.URL + "/static/ui/router.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2.Body.Close()
+	if r2.StatusCode != http.StatusOK {
+		t.Fatalf("GET /static/ui/router.js status = %d, want 200", r2.StatusCode)
+	}
+}
+
+func TestAuth_DisabledWhenNoToken(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	srv := NewServer(Config{Store: store}) // Token empty
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := ts.Client().Get(ts.URL + "/api/v1/jobs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("no-token-configured status = %d, want 200", resp.StatusCode)
+	}
+}

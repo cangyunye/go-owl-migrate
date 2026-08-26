@@ -28,6 +28,21 @@ func (s *Server) registerPages(mux *http.ServeMux) {
 	staticFS, _ := fs.Sub(web.FS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
+	// SPA shell (Phase 1). /ui serves the static index; the SPA is fully
+	// client-side (hash routing), so only this entry is needed. The page
+	// loads /static/js/app.js + /static/ui/router.js (absolute paths).
+	serveSPA := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		data, err := web.FS.ReadFile("static/ui/index.html")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write(data)
+	}
+	mux.HandleFunc("GET /ui", serveSPA)
+	mux.HandleFunc("GET /ui/{$}", serveSPA)
+
 	pages := []struct {
 		path   string
 		file   string

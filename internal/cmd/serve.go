@@ -29,6 +29,7 @@ func serveCmd() *cobra.Command {
 		dbPath     string
 		configOut  string
 		configDir  string
+		token      string
 	)
 
 	cmd := &cobra.Command{
@@ -50,6 +51,12 @@ No authentication is required — intended for local or trusted-network use.`,
 			}
 			if configDir == "" {
 				configDir = paths.ConfigLibraryDir()
+			}
+			if token == "" {
+				token = os.Getenv("OWL_MIGRATE_TOKEN")
+			}
+			if err := requireBindHost(host, token); err != nil {
+				return err
 			}
 			os.MkdirAll(tempDir, 0755)
 			os.MkdirAll(filepath.Dir(dbPath), 0755)
@@ -106,6 +113,7 @@ No authentication is required — intended for local or trusted-network use.`,
 				ConfigPath: configOut,
 				TempDir:    tempDir,
 				ConfigDir:  configDir,
+				Token:      token,
 			})
 
 			serveAddr := fmt.Sprintf("%s:%d", host, port)
@@ -154,6 +162,7 @@ No authentication is required — intended for local or trusted-network use.`,
 	cmd.Flags().StringVar(&dbPath, "db", "", "SQLite database path (default: ~/.owl/migrate/owl-migrate.db)")
 	cmd.Flags().StringVar(&configOut, "config-out", "", "where saved configs are written (default: ~/.owl/migrate/migrate.yaml)")
 	cmd.Flags().StringVar(&configDir, "config-dir", "", "directory for the reusable config library (default: ~/.owl/migrate/configs/library/)")
+	cmd.Flags().StringVar(&token, "token", "", "auth token (also OWL_MIGRATE_TOKEN); required to bind non-loopback")
 
 	return cmd
 }

@@ -4,29 +4,42 @@
 
 /* ── api: fetch wrappers ─────────────────────────────────── */
 const api = {
+    _token: '',
+    setToken(t) { this._token = t || ''; try { localStorage.setItem('owl-token', this._token); } catch (e) {} },
+    getToken() { try { return localStorage.getItem('owl-token') || ''; } catch (e) { return this._token; } },
     async _handle(resp) {
+        if (resp.status === 401) {
+            const ev = new CustomEvent('owl-auth-required');
+            window.dispatchEvent(ev);
+            throw new Error('unauthorized');
+        }
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({}));
             throw new Error(err.error || `${resp.status} ${resp.statusText}`);
         }
         return resp.json();
     },
-    get(path) { return fetch(path).then(r => this._handle(r)); },
+    _headers(extra) {
+        const h = Object.assign({}, extra || {});
+        const t = this.getToken();
+        if (t) h['Authorization'] = 'Bearer ' + t;
+        return h;
+    },
+    get(path) { return fetch(path, { headers: this._headers() }).then(r => this._handle(r)); },
     post(path, body) {
-        return fetch(path, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body || {})
-        }).then(r => this._handle(r));
+        return fetch(path, { method: 'POST', headers: this._headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(body || {}) }).then(r => this._handle(r));
     },
     put(path, body) {
-        return fetch(path, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body || {})
-        }).then(r => this._handle(r));
+        return fetch(path, { method: 'PUT', headers: this._headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(body || {}) }).then(r => this._handle(r));
     },
-    del(path) { return fetch(path, { method: 'DELETE' }).then(r => this._handle(r)); }
+    del(path) { return fetch(path, { method: 'DELETE', headers: this._headers() }).then(r => this._handle(r)); },
+    wsURL(path) {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let u = proto + '//' + location.host + path;
+        const t = this.getToken();
+        if (t) u += (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(t);
+        return u;
+    }
 };
 
 /* ── util ────────────────────────────────────────────────── */
@@ -152,6 +165,11 @@ const highlightYAML = (function () {
     if (tbtn) tbtn.addEventListener('click', () => theme.toggle());
 })();
 
+/* ── auth: prompt when backend rejects the token ──────────── */
+window.addEventListener('owl-auth-required', () => {
+    if (window.authPrompt) window.authPrompt.show();
+});
+
 /* ── jobUI: start / stream / cancel a job ────────────────── */
 const jobUI = {
     jobId: null,
@@ -184,8 +202,7 @@ const jobUI = {
     },
 
     connect(jobId) {
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.ws = new WebSocket(proto + '//' + location.host + '/api/v1/jobs/' + jobId + '/ws');
+        this.ws = new WebSocket(api.wsURL('/api/v1/jobs/' + jobId + '/ws'));
         this.ws.onmessage = (e) => {
             const m = JSON.parse(e.data);
             if (m.type === 'progress') {
@@ -254,3 +271,9 @@ function renderGenFiles(files, listEl, previewEl) {
     });
     previewEl.innerHTML = highlightSQL(files[0].content || '');
 }
+
+/* expose kernel globals to window so strict ES modules can use them */
+window.api = api;
+window.theme = theme;
+window.toast = toast;
+window.jobUI = jobUI;
