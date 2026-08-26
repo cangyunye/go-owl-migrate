@@ -31,8 +31,7 @@ const NAV = [
     { route: '/migrate', active: '/migrate', title: '迁移' },
     { route: '/export', active: '/export', title: '导出' },
     { route: '/import', active: '/import', title: '导入' },
-    { route: '/jobs', active: '/jobs', title: '任务' },
-    { route: '/docs', active: '/docs', title: '文档' }
+    { route: '/jobs', active: '/jobs', title: '任务' }
 ];
 
 /* ── route table: ordered; first match wins ───────────────── */
