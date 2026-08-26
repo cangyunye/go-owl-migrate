@@ -3,7 +3,6 @@ package serve
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -25,8 +24,7 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 		Format string          `json:"format"`
 		Scope  string          `json:"scope"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
 
@@ -123,7 +121,10 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setGenOutput("metadata", outDir)
+	if err := s.recordGenOutput("metadata", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir":  outDir,
 		"format":      format,

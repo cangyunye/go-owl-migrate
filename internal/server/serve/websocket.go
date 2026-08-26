@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"sync"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -12,90 +11,16 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
-type wsClient struct {
-	conn    *websocket.Conn
-	failures int
-}
-
-type Hub struct {
-	mu          sync.Mutex
-	subscribers map[string]map[*wsClient]struct{}
-	store       *service.JobStore
-	pollInterval time.Duration
-}
-
-func NewHub(store *service.JobStore) *Hub {
-	return &Hub{
-		subscribers:  make(map[string]map[*wsClient]struct{}),
-		store:        store,
-		pollInterval: 500 * time.Millisecond,
-	}
-}
-
-func (h *Hub) addSubscriber(jobID string, client *wsClient) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.subscribers[jobID] == nil {
-		h.subscribers[jobID] = make(map[*wsClient]struct{})
-	}
-	h.subscribers[jobID][client] = struct{}{}
-}
-
-func (h *Hub) removeSubscriber(jobID string, client *wsClient) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if subs, ok := h.subscribers[jobID]; ok {
-		delete(subs, client)
-		if len(subs) == 0 {
-			delete(h.subscribers, jobID)
-		}
-	}
-}
-
-func (h *Hub) broadcast(jobID string, data []byte) {
-	h.mu.Lock()
-	subs := make([]*wsClient, 0)
-	for c := range h.subscribers[jobID] {
-		subs = append(subs, c)
-	}
-	h.mu.Unlock()
-
-	for _, c := range subs {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := c.conn.Write(ctx, websocket.MessageText, data)
-		cancel()
-		if err != nil {
-			c.failures++
-			if c.failures >= 3 {
-				h.removeSubscriber(jobID, c)
-				c.conn.Close(websocket.StatusInternalError, "send failures")
-			}
-		} else {
-			c.failures = 0
-		}
-	}
-}
-
-func (h *Hub) hasSubscribers(jobID string) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return len(h.subscribers[jobID]) > 0
-}
+const wsPollInterval = 500 * time.Millisecond
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("id")
 
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
-
-	client := &wsClient{conn: conn}
-	s.hub.addSubscriber(jobID, client)
-	defer s.hub.removeSubscriber(jobID, client)
 
 	events, err := s.store.GetEvents(jobID, 0)
 	if err == nil {
@@ -139,7 +64,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticker := time.NewTicker(s.hub.pollInterval)
+	ticker := time.NewTicker(wsPollInterval)
 	defer ticker.Stop()
 
 	for {

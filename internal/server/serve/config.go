@@ -1,7 +1,6 @@
 package serve
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 
@@ -84,8 +83,7 @@ func (s *Server) handleUploadConfigLegacy(w http.ResponseWriter, r *http.Request
 	var req struct {
 		YAML string `json:"yaml"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req, maxConfigBytes) {
 		return
 	}
 	if req.YAML == "" {

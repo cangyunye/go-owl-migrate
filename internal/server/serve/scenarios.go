@@ -1,7 +1,6 @@
 package serve
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"gopkg.in/yaml.v3"
@@ -36,8 +35,7 @@ func (s *Server) handleBuildScenarioConfig(w http.ResponseWriter, r *http.Reques
 		Values map[string]string `json:"values"`
 		Save   bool              `json:"save"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
 

@@ -9,7 +9,7 @@ COMMIT_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date "+%Y-%m-%d %H:%M:%S")
 LDFLAGS := -ldflags "-s -w -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.version=0.3.0' -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.commitID=$(COMMIT_ID)' -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime=$(BUILD_TIME)'"
 
-.PHONY: build test lint fmt deps clean run
+.PHONY: build test lint fmt deps clean run web/docsite
 
 # Build tags for optional dialects:
 #   sqlite3    — include SQLite3 support (CGo, requires gcc)
@@ -19,14 +19,24 @@ LDFLAGS := -ldflags "-s -w -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.
 # included by default. Exclude with:
 #   go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb"
 
+# Stage the docs portal + markdown into web/docsite/ so go:embed can bundle
+# them (go:embed cannot reference parent directories). Regenerated on build.
+web/docsite:
+	@rm -rf web/docsite
+	@mkdir -p web/docsite/docs
+	@cp docs-site/index.html web/docsite/
+	@cp -R docs-site/vendor web/docsite/vendor
+	@cp docs/*.md web/docsite/docs/
+	@echo "Docs staged into web/docsite/ (placeholders overwritten; git restore web/docsite/ before committing)"
+
 # Default build: all dialects (core + compound + optional with tags)
-build:
+build: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	$(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME) $(MAIN_PATH)
+	CGO_ENABLED=0 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME) $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)"
 
 # Build with SQLite3 support (CGo required)
-build/sqlite3:
+build/sqlite3: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
 	$(GO) build -tags sqlite3 $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-sqlite3 $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-sqlite3"
@@ -34,7 +44,7 @@ build/sqlite3:
 # Build with DuckDB support (CGo + libduckdb required)
 # Uses prebuilt libduckdb bundled with go-duckdb driver (static link, default).
 # For custom/system libduckdb, add -tags duckdb_use_lib and set CGO_LDFLAGS.
-build/duckdb:
+build/duckdb: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
 	$(GO) build -tags duckdb $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-duckdb $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-duckdb"
@@ -43,7 +53,7 @@ build/duckdb:
 # Requires libduckdb installed or downloaded:
 #   make duckdb/download    — downloads prebuilt libduckdb v1.7.0
 #   export CGO_LDFLAGS="-L./lib" && make build/duckdb-lib
-build/duckdb-lib:
+build/duckdb-lib: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
 	$(GO) build -tags "duckdb,duckdb_use_lib" $(LDFLAGS) \
 	  -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-duckdb-lib $(MAIN_PATH)
@@ -66,36 +76,36 @@ duckdb/download:
 	@echo "Build with: CGO_LDFLAGS="-L./lib" make build/duckdb-lib"
 
 # Core-only: 3 dialects (oracle, postgres, mysql) + compound dialects
-build/core:
+build/core: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	$(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core $(MAIN_PATH)
+	CGO_ENABLED=0 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core"
 
 # Minimal: only oracle, postgres, mysql (no compound dialects)
-build/minimal:
+build/minimal: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	$(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
+	CGO_ENABLED=0 $(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
 	  -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-minimal $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-minimal"
 
 # Oracle-only: single dialect build
-build/oracle:
+build/oracle: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	$(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
+	CGO_ENABLED=0 $(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
 	  -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-oracle $(MAIN_PATH)
 	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-oracle"
 
-build/linux:
+build/linux: web/docsite
 	@mkdir -p $(BUILD_DIR)/linux-amd64
-	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/linux-amd64/$(BINARY_NAME) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/linux-amd64/$(BINARY_NAME) $(MAIN_PATH)
 
-build/darwin-arm64:
+build/darwin-arm64: web/docsite
 	@mkdir -p $(BUILD_DIR)/darwin-arm64
-	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/darwin-arm64/$(BINARY_NAME) $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/darwin-arm64/$(BINARY_NAME) $(MAIN_PATH)
 
-build/windows:
+build/windows: web/docsite
 	@mkdir -p $(BUILD_DIR)/windows-amd64
-	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/windows-amd64/$(BINARY_NAME).exe $(MAIN_PATH)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/windows-amd64/$(BINARY_NAME).exe $(MAIN_PATH)
 
 build/all: build build/linux build/windows
 

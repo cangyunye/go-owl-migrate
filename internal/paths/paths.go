@@ -61,6 +61,10 @@ func HeartbeatPath() string {
 	return filepath.Join(TempDir(), "owl-migrate-master.heartbeat")
 }
 
+func ServeLockPath() string {
+	return filepath.Join(Home(), "serve.lock")
+}
+
 func ResolveConfigPath(explicit string) string {
 	if explicit != "" {
 		return explicit

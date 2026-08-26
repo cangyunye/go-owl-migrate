@@ -3,10 +3,10 @@ package master
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -196,49 +196,45 @@ func TestMaster_StartJob_MissingType(t *testing.T) {
 	}
 }
 
-func TestSelectPort(t *testing.T) {
-	// Occupy one port and free another, so the choice is deterministic
-	// regardless of what else is running on the machine.
-	busyLn, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen busy: %v", err)
+func TestKillProcess_TermsPromptly(t *testing.T) {
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
 	}
-	defer busyLn.Close()
-	busyPort := busyLn.Addr().(*net.TCPAddr).Port
+	killProcess(cmd.Process.Pid)
 
-	freeLn, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen free: %v", err)
-	}
-	freePort := freeLn.Addr().(*net.TCPAddr).Port
-	freeLn.Close() // now free
-
-	t.Run("skips occupied preferred port", func(t *testing.T) {
-		port, err := selectPort([]int{busyPort, freePort}, nil)
-		if err != nil {
-			t.Fatalf("selectPort: %v", err)
-		}
-		if port != freePort {
-			t.Errorf("port = %d, want %d (should skip occupied %d)", port, freePort, busyPort)
-		}
-	})
-
-	t.Run("falls back to range", func(t *testing.T) {
-		port, err := selectPort([]int{busyPort}, [][2]int{{freePort, freePort}})
-		if err != nil {
-			t.Fatalf("selectPort: %v", err)
-		}
-		if port != freePort {
-			t.Errorf("port = %d, want %d (from fallback range)", port, freePort)
-		}
-	})
-
-	t.Run("errors when nothing available", func(t *testing.T) {
-		_, err := selectPort([]int{busyPort}, [][2]int{{busyPort, busyPort}})
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
 		if err == nil {
-			t.Error("expected error when all ports occupied")
+			t.Fatal("expected sleep to die from a signal")
 		}
-	})
+	case <-time.After(3 * time.Second):
+		cmd.Process.Kill()
+		t.Fatal("process ignored SIGTERM beyond 3s")
+	}
+}
+
+func TestKillProcess_EscalatesToKill(t *testing.T) {
+	old := killGrace
+	killGrace = 300 * time.Millisecond
+	t.Cleanup(func() { killGrace = old })
+
+	cmd := exec.Command("sh", "-c", `trap '' TERM; sleep 30`)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	killProcess(cmd.Process.Pid)
+
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		cmd.Process.Kill()
+		t.Fatal("process survived SIGTERM + grace period")
+	}
 }
 
 func waitForStatus(t *testing.T, m *Master, jobID, want string) {

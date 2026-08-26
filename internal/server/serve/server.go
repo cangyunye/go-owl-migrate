@@ -2,6 +2,8 @@ package serve
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -28,12 +30,10 @@ type Server struct {
 	configPath string
 	tempDir    string
 	configDir  string
-	hub        *Hub
 
 	mu          sync.RWMutex
 	cfg         *config.Config
 	schemaModel *md.SchemaModel
-	genOutputs  map[string]string
 }
 
 func NewServer(cfg Config) *Server {
@@ -43,22 +43,8 @@ func NewServer(cfg Config) *Server {
 		configPath: cfg.ConfigPath,
 		tempDir:    cfg.TempDir,
 		configDir:  cfg.ConfigDir,
-		hub:        NewHub(cfg.Store),
 		cfg:        &config.Config{},
-		genOutputs: make(map[string]string),
 	}
-}
-
-func (s *Server) setGenOutput(kind, dir string) {
-	s.mu.Lock()
-	s.genOutputs[kind] = dir
-	s.mu.Unlock()
-}
-
-func (s *Server) getGenOutput(kind string) string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.genOutputs[kind]
 }
 
 func (s *Server) Handler() http.Handler {
@@ -109,7 +95,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerPages(mux)
 	s.registerDocs(mux)
 
-	return withCORS(mux)
+	return mux
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -187,13 +173,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	maskConfigMap(m)
 	writeJSON(w, http.StatusOK, m)
 }
 
 func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	var raw map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &raw, maxBodyBytes) {
 		return
 	}
 
@@ -221,8 +207,7 @@ func (s *Server) handleMetadataLoad(w http.ResponseWriter, r *http.Request) {
 		Metadata config.MetadataConfig `json:"metadata"`
 		Source   config.DBConfig       `json:"source"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
 
@@ -315,17 +300,46 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func withCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
+const (
+	maxBodyBytes   = 1 << 20 // 1 MiB general request bodies
+	maxConfigBytes = 2 << 20 // 2 MiB config YAML uploads
+)
+
+// decodeJSON enforces the body limit then decodes JSON, writing a 400 error
+// and returning false on failure. The body is read in full under
+// MaxBytesReader first so an oversized body is reported as too large even
+// when it is also malformed JSON.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			writeError(w, http.StatusBadRequest, "request body too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		}
-		next.ServeHTTP(w, r)
-	})
+		return false
+	}
+	if err := json.Unmarshal(data, v); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return false
+	}
+	return true
+}
+
+// maskConfigMap masks DSN passwords in a serialized config map before it is
+// returned by read endpoints.
+func maskConfigMap(m map[string]any) {
+	for _, key := range []string{"source", "target"} {
+		sec, _ := m[key].(map[string]any)
+		if sec == nil {
+			continue
+		}
+		if dsn, ok := sec["dsn"].(string); ok && dsn != "" {
+			sec["dsn"] = config.MaskDSN(dsn)
+		}
+	}
 }
 
 func configToMap(cfg *config.Config) (map[string]any, error) {

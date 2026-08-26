@@ -32,7 +32,9 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request, jobType string
 		SkipDDL         bool   `json:"skip_ddl"`
 		ContinueOnError bool   `json:"continue_on_error"`
 	}
-	json.NewDecoder(r.Body).Decode(&body)
+	if !decodeJSON(w, r, &body, maxBodyBytes) {
+		return
+	}
 
 	payload := map[string]any{
 		"type":   jobType,

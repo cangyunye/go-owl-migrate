@@ -2,13 +2,15 @@ package serve
 
 import (
 	"archive/zip"
+	"crypto/rand"
 	"encoding/csv"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
@@ -18,11 +20,26 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
-// genOutput tracks the most recent generation output directory per kind so
-// the download endpoint can zip it up.
+// genFile is a single generated file returned in endpoint responses.
 type genFile struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
+}
+
+// genOutputKeep is how many generation outputs are retained per kind; the
+// oldest dirs are removed from disk when the limit is exceeded.
+const genOutputKeep = 10
+
+// recordGenOutput persists a generation output directory in the job store and
+// prunes retired outputs from disk.
+func (s *Server) recordGenOutput(kind, dir string) error {
+	pruned, err := s.store.RecordGeneration(kind, dir, genOutputKeep)
+	for _, d := range pruned {
+		if rmErr := os.RemoveAll(d); rmErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: remove pruned generation dir %s: %v\n", d, rmErr)
+		}
+	}
+	return err
 }
 
 func (s *Server) requireMetadata() (*md.SchemaModel, error) {
@@ -59,7 +76,9 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
 
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
@@ -104,7 +123,10 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	collect(gen.GeneratePackages(sm, schema))
 	collect(gen.GeneratePackageBodies(sm, schema))
 
-	s.setGenOutput("ddl", outDir)
+	if err := s.recordGenOutput("ddl", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir": outDir,
 		"count":      len(all),
@@ -127,7 +149,9 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 		PageSize           int    `json:"page_size"`
 		NoQuoteIdentifiers *bool  `json:"no_quote_identifiers"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
 
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
@@ -169,7 +193,10 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setGenOutput("select", outDir)
+	if err := s.recordGenOutput("select", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir": outDir,
 		"count":      len(files),
@@ -187,7 +214,9 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		Truncate           bool  `json:"truncate"`
 		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeJSON(w, r, &req, maxBodyBytes) {
+		return
+	}
 
 	dataDir := cfg.Import.SourceDir
 	if dataDir == "" {
@@ -233,7 +262,10 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setGenOutput("insert", outDir)
+	if err := s.recordGenOutput("insert", outDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir": outDir,
 		"count":      len(files),
@@ -299,9 +331,13 @@ func (s *Server) handleMetadataTableDetail(w http.ResponseWriter, r *http.Reques
 // handleDownloadGen zips the most recent generation output of the given kind.
 func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dir := s.getGenOutput(kind)
-		if dir == "" {
-			writeError(w, http.StatusBadRequest, "nothing generated yet for "+kind)
+		dir, err := s.store.LatestGeneration(kind)
+		if err != nil {
+			if errors.Is(err, service.ErrNoGeneration) {
+				writeError(w, http.StatusBadRequest, err.Error())
+			} else {
+				writeError(w, http.StatusInternalServerError, "lookup generation output: "+err.Error())
+			}
 			return
 		}
 		entries, err := os.ReadDir(dir)
@@ -331,7 +367,9 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 }
 
 func randSuffix() string {
-	return fmt.Sprintf("%d", os.Getpid()) + "-" + fmt.Sprint(len(os.TempDir()))
+	var b [4]byte
+	rand.Read(b[:])
+	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), b[:])
 }
 
 // detectTablesFromCSVDir infers TableDefs from CSV data file headers,

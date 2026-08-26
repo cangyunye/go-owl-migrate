@@ -55,6 +55,12 @@ No authentication is required — intended for local or trusted-network use.`,
 			os.MkdirAll(filepath.Dir(dbPath), 0755)
 			os.MkdirAll(configDir, 0755)
 
+			lockPath := paths.ServeLockPath()
+			if err := acquireServeLock(lockPath); err != nil {
+				return err
+			}
+			defer releaseServeLock(lockPath)
+
 			store, err := service.NewJobStore(dbPath)
 			if err != nil {
 				return fmt.Errorf("open job store: %w", err)

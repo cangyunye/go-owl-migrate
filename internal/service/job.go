@@ -2,11 +2,16 @@ package service
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
+
+// ErrNoGeneration is returned by LatestGeneration when no output of a kind
+// has been recorded yet.
+var ErrNoGeneration = errors.New("nothing generated yet")
 
 type Job struct {
 	JobID      string  `json:"job_id"`
@@ -47,8 +52,8 @@ type JobStore struct {
 }
 
 func NewJobStore(dbPath string) (*JobStore, error) {
-	dsn := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL", dbPath)
-	db, err := sql.Open("sqlite3", dsn)
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
@@ -71,7 +76,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     config      TEXT,
     pid         INTEGER DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now')),
-    finished_at TEXT
+    finished_at TEXT,
+    node_id     TEXT NOT NULL DEFAULT 'local'
 );
 
 CREATE TABLE IF NOT EXISTS job_checkpoints (
@@ -84,6 +90,7 @@ CREATE TABLE IF NOT EXISTS job_checkpoints (
     imported_rows INTEGER DEFAULT 0,
     status        TEXT DEFAULT '',
     error         TEXT DEFAULT '',
+    node_id       TEXT NOT NULL DEFAULT 'local',
     PRIMARY KEY (job_id, schema, table_name)
 );
 
@@ -96,13 +103,47 @@ CREATE TABLE IF NOT EXISTS progress_events (
     table_name TEXT DEFAULT '',
     rows       INTEGER DEFAULT 0,
     message    TEXT DEFAULT '',
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    node_id    TEXT NOT NULL DEFAULT 'local'
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_job_seq ON progress_events(job_id, seq);
+
+CREATE TABLE IF NOT EXISTS generation_outputs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    dir        TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_gen_kind ON generation_outputs(kind, id);
 `
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+	if err := s.addNodeIDColumns(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// addNodeIDColumns backfills the 2.0 node_id seam into databases created
+// before the column existed. Tables are hardcoded; names never come from input.
+func (s *JobStore) addNodeIDColumns() error {
+	for _, tbl := range []string{"jobs", "job_checkpoints", "progress_events"} {
+		var n int
+		q := fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = 'node_id'`, tbl)
+		if err := s.db.QueryRow(q).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			q = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN node_id TEXT NOT NULL DEFAULT 'local'`, tbl)
+			if _, err := s.db.Exec(q); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *JobStore) CreateJob(jobID, jobType, configJSON string) error {
@@ -268,6 +309,66 @@ func (s *JobStore) MarkRunningAsInterrupted() (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// RecordGeneration stores a generation output record, prunes records beyond
+// keep for that kind, and returns the pruned dirs so the caller can delete
+// them from disk.
+func (s *JobStore) RecordGeneration(kind, dir string, keep int) ([]string, error) {
+	if _, err := s.db.Exec(
+		`INSERT INTO generation_outputs (kind, dir) VALUES (?, ?)`, kind, dir,
+	); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.Query(
+		`SELECT id, dir FROM generation_outputs WHERE kind = ? AND id NOT IN
+		 (SELECT id FROM generation_outputs WHERE kind = ? ORDER BY id DESC LIMIT ?)`,
+		kind, kind, keep,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type stale struct {
+		id  int64
+		dir string
+	}
+	var stales []stale
+	for rows.Next() {
+		var p stale
+		if err := rows.Scan(&p.id, &p.dir); err != nil {
+			return nil, err
+		}
+		stales = append(stales, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	dirs := make([]string, 0, len(stales))
+	for _, p := range stales {
+		if _, err := s.db.Exec(`DELETE FROM generation_outputs WHERE id = ?`, p.id); err != nil {
+			return dirs, err
+		}
+		dirs = append(dirs, p.dir)
+	}
+	return dirs, nil
+}
+
+// LatestGeneration returns the most recent output dir for kind.
+func (s *JobStore) LatestGeneration(kind string) (string, error) {
+	var dir string
+	err := s.db.QueryRow(
+		`SELECT dir FROM generation_outputs WHERE kind = ? ORDER BY id DESC LIMIT 1`, kind,
+	).Scan(&dir)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("%w: %s", ErrNoGeneration, kind)
+	}
+	if err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 func (s *JobStore) Close() error {
