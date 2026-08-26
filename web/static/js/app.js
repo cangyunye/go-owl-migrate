@@ -202,8 +202,7 @@ const jobUI = {
     },
 
     connect(jobId) {
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.ws = new WebSocket(proto + '//' + location.host + '/api/v1/jobs/' + jobId + '/ws');
+        this.ws = new WebSocket(api.wsURL('/api/v1/jobs/' + jobId + '/ws'));
         this.ws.onmessage = (e) => {
             const m = JSON.parse(e.data);
             if (m.type === 'progress') {

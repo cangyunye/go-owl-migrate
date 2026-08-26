@@ -83,6 +83,7 @@ function route(hash) {
 const tokenPrompt = {
     overlay: null,
     _mount() {
+        if (this.overlay) return this.overlay;
         const overlay = document.createElement('div');
         // Layout only — visual styling reuses existing .panel / .btn-* CSS.
         const os = overlay.style;
