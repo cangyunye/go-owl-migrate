@@ -9,6 +9,25 @@
 import { render as renderHome } from './views/home.js';
 import { render as renderJobs } from './views/jobs.js';
 import { render as renderJobDetail } from './views/jobDetail.js';
+import { render as renderDDL } from './views/ddl.js';
+import { render as renderSelect } from './views/select.js';
+import { render as renderInsert } from './views/insert.js';
+import { render as renderMigrate } from './views/migrate.js';
+import { render as renderExport } from './views/export.js';
+import { render as renderImport } from './views/import.js';
+import { render as renderExportMetadata } from './views/exportMetadata.js';
+import { render as renderMetadata } from './views/metadata.js';
+import { render as renderConfig } from './views/config.js';
+
+/* ── jobUI singleton originals ────────────────────────────────
+   jobUI is created by app.js (classic script, runs before these
+   ES modules). Since view modules' overrides are installed at
+   render-time (not module-eval), the kernel methods below are still
+   the originals at this point. If window.jobUI is somehow absent,
+   fall back to undefined so the reset is a no-op rather than a throw. */
+const ORIG_LOG_LINE = window.jobUI && window.jobUI.logLine;
+const ORIG_FINISH = window.jobUI && window.jobUI.finish;
+const ORIG_ON_COMPLETE = window.jobUI && window.jobUI.onComplete;
 
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
@@ -22,15 +41,23 @@ const NAV = [
     { route: '/migrate', active: '/migrate', title: '迁移' },
     { route: '/export', active: '/export', title: '导出' },
     { route: '/import', active: '/import', title: '导入' },
-    { route: '/jobs', active: '/jobs', title: '任务' },
-    { route: '/docs', active: '/docs', title: '文档' }
+    { route: '/jobs', active: '/jobs', title: '任务' }
 ];
 
 /* ── route table: ordered; first match wins ───────────────── */
 const routes = [
     { re: /^\/$/, render: renderHome, active: '/', title: '首页' },
+    { re: /^\/config$/, render: renderConfig, active: '/config', title: '配置' },
+    { re: /^\/metadata$/, render: renderMetadata, active: '/metadata', title: '元数据' },
     { re: /^\/jobs$/, render: renderJobs, active: '/jobs', title: '任务' },
-    { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' }
+    { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' },
+    { re: /^\/ddl$/, render: renderDDL, active: '/ddl', title: 'DDL' },
+    { re: /^\/select$/, render: renderSelect, active: '/select', title: 'SELECT' },
+    { re: /^\/insert$/, render: renderInsert, active: '/insert', title: 'INSERT' },
+    { re: /^\/migrate$/, render: renderMigrate, active: '/migrate', title: '迁移' },
+    { re: /^\/export$/, render: renderExport, active: '/export', title: '导出' },
+    { re: /^\/import$/, render: renderImport, active: '/import', title: '导入' },
+    { re: /^\/export-metadata$/, render: renderExportMetadata, active: '/export-metadata', title: '元数据导出' }
 ];
 
 function renderComingSoon(root, params, route) {
@@ -57,6 +84,13 @@ function setCrumb(title) {
 }
 
 function route(hash) {
+    // jobUI is a singleton; reset its override hooks to the kernel
+    // originals before every render so a prior view's overrides (e.g.
+    // migrate's stage advance) never fire against a different view's DOM.
+    window.jobUI.logLine = ORIG_LOG_LINE;
+    window.jobUI.finish = ORIG_FINISH;
+    window.jobUI.onComplete = ORIG_ON_COMPLETE;
+
     const path = (hash || '').replace(/^#/, '') || '/';
     const viewEl = document.getElementById('view');
     if (!viewEl) return;
