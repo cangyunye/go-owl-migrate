@@ -15,6 +15,7 @@ Offline-first database migration tool for Oracle, PostgreSQL, MySQL, and derivat
 | [Developer Guide](development.md) | Project structure, testing, extending dialects |
 | [Database Metadata Queries](database-metadata/index.md) | Full metadata query SQL reference per database type (Oracle, PostgreSQL, MySQL, DuckDB, SQLite3) |
 | [Online Incremental Migration](online-migration.md) | Design for `owl-migrate online` (trigger CDC, replay, file-batch fallback) — status: draft |
+| [Web API Contract](api-contract.md) | Frozen `/api/v1` HTTP API for the `owl-migrate serve` web mode, including security behavior |
 
 ## Quick Start
 
