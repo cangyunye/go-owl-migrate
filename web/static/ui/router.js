@@ -19,6 +19,16 @@ import { render as renderExportMetadata } from './views/exportMetadata.js';
 import { render as renderMetadata } from './views/metadata.js';
 import { render as renderConfig } from './views/config.js';
 
+/* ── jobUI singleton originals ────────────────────────────────
+   jobUI is created by app.js (classic script, runs before these
+   ES modules). Since view modules' overrides are installed at
+   render-time (not module-eval), the kernel methods below are still
+   the originals at this point. If window.jobUI is somehow absent,
+   fall back to undefined so the reset is a no-op rather than a throw. */
+const ORIG_LOG_LINE = window.jobUI && window.jobUI.logLine;
+const ORIG_FINISH = window.jobUI && window.jobUI.finish;
+const ORIG_ON_COMPLETE = window.jobUI && window.jobUI.onComplete;
+
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
     { route: '/', active: '/', title: '首页' },
@@ -74,6 +84,13 @@ function setCrumb(title) {
 }
 
 function route(hash) {
+    // jobUI is a singleton; reset its override hooks to the kernel
+    // originals before every render so a prior view's overrides (e.g.
+    // migrate's stage advance) never fire against a different view's DOM.
+    window.jobUI.logLine = ORIG_LOG_LINE;
+    window.jobUI.finish = ORIG_FINISH;
+    window.jobUI.onComplete = ORIG_ON_COMPLETE;
+
     const path = (hash || '').replace(/^#/, '') || '/';
     const viewEl = document.getElementById('view');
     if (!viewEl) return;
