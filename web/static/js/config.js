@@ -197,6 +197,7 @@
 
     // ── DSN structured editing modal ──────────────────────────────────────
     let modal = null; // { overlay, body, raw, data:{side,family,currentDsn} }
+    let modalCache = {}; // side -> last typed field values, so reopening never clears the form
 
     function ensureModal() {
         if (modal) return modal;
@@ -241,7 +242,12 @@
         modal.overlay.querySelector('#dsn-modal-title').textContent = '编辑' + sideLabel + '数据库 DSN';
 
         renderModalBody(modal.body, family, meta);
-        prefillModal(parseDSN(current, family), family);
+        // Prefill from the current DSN; fall back to the last typed field
+        // values so a DSN we cannot parse still never wipes the form.
+        const parsed = parseDSN(current, family);
+        const hasAny = parsed && Object.values(parsed).some(v => v !== undefined && v !== '');
+        const prefill = hasAny ? parsed : (modalCache[side] || {});
+        prefillModal(prefill, family);
         const ta = modal.body.querySelector('[name="modal_dsn_raw"]');
         if (ta) ta.value = current;
         modal.raw.textContent = current || '等待填写…';
@@ -314,9 +320,11 @@
         const meta = dsnFields[modal.data.family] || {};
         if (modal.data.family === 'file') return mval('path');
         if (!meta.builder) return '';
-        // Missing components become editable $placeholders (db is optional), so
-        // the DSN is always generated live and 应用 always writes something.
-        const ph = { user: '$user', password: '$pass', host: '$host', port: '$port', db: '$db', tenant: '$tenant', cluster: '$cluster' };
+        // Only REQUIRED fields get a $placeholder (user/password/host/port).
+        // Optional fields (database, tenant, cluster) are omitted entirely so a
+        // '$db' token never reaches the DSN and breaks the connection.
+        const PH = { user: '$user', password: '$pass', host: '$host', port: '$port' };
+        const OPTIONAL = { db: true, tenant: true, cluster: true };
         let out = meta.builder.replace(/\{(\w+)\}/g, (m, k) => {
             let v;
             // OceanBase MySQL tenant mode: the full OceanBase login is
@@ -324,7 +332,7 @@
             if (k === 'user' && meta.has_tenant) {
                 let u = mval('user');
                 if (!u) {
-                    v = ph.user;
+                    v = PH.user;
                 } else {
                     const t = mval('tenant');
                     const c = mval('cluster');
@@ -334,11 +342,11 @@
                 }
             } else {
                 v = mval(k);
-                if (!v) v = ph[k] || '';
+                if (!v) v = OPTIONAL[k] ? '' : (PH[k] || '');
             }
             // Leave $placeholder tokens unencoded so they stay human-editable.
             const isToken = /^\$[A-Za-z]+$/.test(v);
-            if (meta.url_style && !isToken && (k === 'user' || k === 'password' || k === 'db')) v = encodeURIComponent(v);
+            if (v && meta.url_style && !isToken && (k === 'user' || k === 'password' || k === 'db')) v = encodeURIComponent(v);
             return v;
         });
         if (modal.data.family === 'postgres') {
@@ -353,6 +361,7 @@
     }
 
     function onModalInput() {
+        saveModalCache();
         const assembled = assembleModal();
         const ta = modal.body.querySelector('[name="modal_dsn_raw"]');
         if (ta) ta.value = assembled || modal.data.currentDsn;
@@ -364,8 +373,19 @@
         }
     }
 
+    // Remember the last typed values so reopening the modal never clears them.
+    function saveModalCache() {
+        if (!modal || !modal.data) return;
+        modalCache[modal.data.side] = {
+            host: mval('host'), port: mval('port'), user: mval('user'),
+            password: mval('password'), db: mval('db'),
+            tenant: mval('tenant'), cluster: mval('cluster'), path: mval('path'),
+        };
+    }
+
     // User edits the raw DSN directly: bypass structured assembly.
     function onRawInput() {
+        if (modal && modal.data) modalCache[modal.data.side] = { raw: modal.body.querySelector('[name="modal_dsn_raw"]').value };
         const ta = modal.body.querySelector('[name="modal_dsn_raw"]');
         const v = ta ? ta.value : '';
         modal.raw.textContent = v || '等待填写…';
@@ -497,29 +517,39 @@
             });
             return o;
         }
-        // OceanBase MySQL tenant mode: user@tenant#cluster:pass@tcp(...)/db
-        if (family === 'oceanbase-mysql') {
-            const om = dsn.match(/^(.+?):([^@]*)@tcp\(([^:]+):(\d+)\)\/(.*)$/);
-            if (om) {
-                const u = om[1];
-                let user = u, tenant = '', cluster = '';
-                const h = u.indexOf('#');
-                const at = u.indexOf('@');
-                if (h >= 0) { cluster = u.slice(h + 1); }
-                const base = h >= 0 ? u.slice(0, h) : u;
-                if (at >= 0) { tenant = base.slice(at + 1); user = base.slice(0, at); }
-                o.user = decodeURIComponent(user);
-                o.tenant = tenant;
-                o.cluster = cluster;
-                o.password = decodeURIComponent(om[2]);
-                o.host = om[3]; o.port = om[4]; o.db = om[5];
-                return o;
-            }
-        }
-        const m = dsn.match(/^([A-Za-z0-9_.-]+):([^@]*)@tcp\(([^:]+):(\d+)\)\/(.*)$/);
+        // MySQL wire shaped DSN: [auth]@tcp(host:port)[/db][?params]. Using the
+        // last "@tcp(" lets the password contain special characters.
+        const m = dsn.match(/^(.*)@tcp\(([^)]+)\)(.*)$/);
         if (m) {
-            o.user = m[1]; o.password = decodeURIComponent(m[2]);
-            o.host = m[3]; o.port = m[4]; o.db = m[5];
+            const auth = m[1];
+            const hostport = m[2];
+            let rest = m[3];
+            const colon = auth.indexOf(':');
+            let user = colon >= 0 ? auth.slice(0, colon) : auth;
+            o.password = colon >= 0 ? auth.slice(colon + 1) : '';
+            if (family === 'oceanbase-mysql') {
+                // OceanBase login user@tenant#cluster
+                const h = user.indexOf('#');
+                const at = user.indexOf('@');
+                if (h >= 0) { o.cluster = user.slice(h + 1); }
+                const base = h >= 0 ? user.slice(0, h) : user;
+                if (at >= 0) { o.tenant = base.slice(at + 1); o.user = base.slice(0, at); }
+                else { o.user = base; }
+            } else {
+                o.user = user;
+            }
+            if (rest.indexOf('?') >= 0) {
+                const qi = rest.indexOf('?');
+                const params = new URLSearchParams(rest.slice(qi + 1));
+                rest = rest.slice(0, qi);
+                if (params.get('cluster')) o.cluster = params.get('cluster');
+            }
+            const hp = hostport.split(':');
+            o.host = hp[0];
+            o.port = hp[1] || '';
+            o.db = rest.replace(/^\//, '');
+            try { o.user = decodeURIComponent(o.user); } catch (e) {}
+            try { o.password = decodeURIComponent(o.password); } catch (e) {}
             return o;
         }
         let u;

@@ -86,6 +86,63 @@ func TestE2E_StructuredFill_ConnectsToLiveDB(t *testing.T) {
 	}
 }
 
+// TestE2E_EmptyDatabase_Connects verifies the empty-database edge case: the DSN
+// must remain parseable when database/service is not filled. The modal omits
+// the optional {$db} placeholder entirely but keeps the structure the driver
+// requires — MySQL needs a trailing '/', while Postgres (keyword form) simply
+// drops the empty dbname. Oracle genuinely requires a service so it is skipped
+// here.
+func TestE2E_EmptyDatabase_Connects(t *testing.T) {
+	ts, _, _ := newE2ERig(t)
+	meta := service.DSNComponentMeta()
+	families := service.DSNFamilies()
+
+	cases := []struct {
+		dbType string
+		comps  map[string]string
+		target string // expected assembled DSN
+	}{
+		{
+			dbType: "mysql",
+			comps:  map[string]string{"user": "root", "password": "root123456", "host": "127.0.0.1", "port": "3306", "db": ""},
+			target: "root:root123456@tcp(127.0.0.1:3306)/",
+		},
+		{
+			dbType: "postgres",
+			comps:  map[string]string{"user": "postgres", "password": "postgres123", "host": "127.0.0.1", "port": "5432", "db": ""},
+			target: "host=127.0.0.1 port=5432 user=postgres password=postgres123 sslmode=disable",
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.dbType, func(t *testing.T) {
+			fam := families[c.dbType]
+			m, ok := meta[fam]
+			if !ok {
+				t.Fatalf("%s: no DSN family meta for family %q", c.dbType, fam)
+			}
+			got := applyDSNBuilder(m.Builder, c.comps, m.URLStyle)
+			if got != c.target {
+				t.Fatalf("%s: assembled DSN = %q, want %q", c.dbType, got, c.target)
+			}
+			resp, respBody := e2ePost(t, ts, "/api/v1/conn/test",
+				fmt.Sprintf(`{"type":%q,"dsn":%q}`, c.dbType, got))
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("%s: conn/test status %d, body %v", c.dbType, resp.StatusCode, respBody)
+			}
+			if ok, _ := respBody["ok"].(bool); !ok {
+				t.Fatalf("%s: connect failed with empty database: %v", c.dbType, respBody["error"])
+			}
+			// Connectable with an empty database means we can then pick a schema.
+			if arr, _ := respBody["schemas"].([]any); len(arr) == 0 {
+				t.Errorf("%s: expected a schema list even with empty database", c.dbType)
+			}
+			t.Logf("%s: empty-database DSN %q connected OK (schemas: %v)", c.dbType, got, respBody["schemas"])
+		})
+	}
+}
+
 func containsSchema(raw any, want string) bool {
 	arr, ok := raw.([]any)
 	if !ok {
@@ -102,7 +159,9 @@ func containsSchema(raw any, want string) bool {
 
 // applyDSNBuilder substitutes {key} placeholders in a builder template with the
 // component values, URL-encoding user/password/db for URL-style families,
-// mirroring the structured-fill modal in web/static/js/config.js.
+// mirroring the structured-fill modal in web/static/js/config.js. It also
+// mirrors the modal's postgres cleanup (dropping empty key=value tokens) so the
+// assembled DSN is byte-identical to what the modal produces.
 func applyDSNBuilder(builder string, comps map[string]string, urlStyle bool) string {
 	out := builder
 	for k, v := range comps {
@@ -110,6 +169,17 @@ func applyDSNBuilder(builder string, comps map[string]string, urlStyle bool) str
 			v = encodeURIComponentJS(v)
 		}
 		out = strings.ReplaceAll(out, "{"+k+"}", v)
+	}
+	if strings.HasPrefix(builder, "host=") {
+		tokens := strings.Fields(out)
+		kept := make([]string, 0, len(tokens))
+		for _, t := range tokens {
+			if strings.IndexByte(t, '=') == len(t)-1 {
+				continue // empty token value (e.g. "dbname=")
+			}
+			kept = append(kept, t)
+		}
+		out = strings.Join(kept, " ")
 	}
 	return out
 }
