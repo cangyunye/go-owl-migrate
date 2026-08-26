@@ -550,6 +550,60 @@ button { font-family: inherit; }
   margin-top: 7px;
 }
 
+/* DSN field: structured-editor button */
+.field-actions { margin-top: 7px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.field-actions .btn-sm { font-size: 11.5px; padding: 4px 10px; }
+.field-actions .conn-status { font-size: 11.5px; color: var(--text-3); }
+.conn-status.ok { color: var(--green); }
+.conn-status.fail { color: var(--red); }
+.conn-status.pending { color: var(--text-2); }
+input.dsn-readonly { cursor: pointer; background: var(--bg-inset); }
+
+/* DSN structured editing modal */
+body.modal-open { overflow: hidden; }
+.dsn-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.55); backdrop-filter: blur(2px);
+  padding: 24px;
+}
+.dsn-modal-overlay.open { display: flex; }
+.dsn-modal {
+  width: min(520px, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column;
+  max-height: 90vh;
+  animation: modal-in .18s ease;
+}
+@keyframes modal-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+.dsn-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.dsn-modal-head h3 { margin: 0; font-size: 15px; color: var(--text); }
+.dsn-modal-x { padding: 2px 8px; font-size: 18px; line-height: 1; }
+.dsn-modal-body { padding: 16px 18px; overflow-y: auto; }
+.dsn-modal-body .field { margin-bottom: 14px; }
+.dsn-modal-preview {
+  margin: 0 18px 14px; padding: 10px 12px;
+  background: var(--bg-inset); border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.dsn-modal-preview span { font-size: 11px; color: var(--text-3); letter-spacing: .04em; }
+.dsn-modal-preview pre { margin: 0; white-space: pre-wrap; word-break: break-all; color: var(--cyan); }
+.dsn-modal-actions {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 12px 18px; border-top: 1px solid var(--border);
+}
+.dsn-modal textarea.dsn-raw-input {
+  width: 100%; min-height: 84px; resize: vertical;
+  font-family: var(--font-display); font-size: 12px;
+}
+
 /* checkbox row */
 .check {
   display: flex;

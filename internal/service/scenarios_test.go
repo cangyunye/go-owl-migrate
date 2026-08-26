@@ -2,6 +2,8 @@ package service
 
 import (
 	"testing"
+
+	"github.com/cangyunye/go-owl-migrate/internal/config"
 )
 
 func TestScenarioSchemas_AllPresent(t *testing.T) {
@@ -44,10 +46,53 @@ func TestScenarioSchema_Lookup(t *testing.T) {
 	}
 }
 
+func TestDSNFamilies_AllDialectsMapped(t *testing.T) {
+	families := DSNFamilies()
+	for d := range config.ValidDialects {
+		if families[d] == "" {
+			t.Errorf("dialect %q has no DSN family", d)
+		}
+	}
+	// A few behaviour assertions mirroring DSNExamples().
+	checks := map[string]string{
+		"postgres": familyPostgres, "opengaussdb": familyPostgres,
+		"panweidb": familyPostgres, "panweidb-mysql": familyPostgres, "panweidb-oracle": familyPostgres,
+		"mysql": familyMySQL, "goldendb-mysql": familyMySQL, "oceanbase-mysql": familyMySQL,
+		"oracle": familyOracle, "goldendb-oracle": familyOracle,
+		"oceanbase-oracle": familyOceanBase,
+		"sqlite3":          familyFile, "duckdb": familyFile,
+	}
+	for d, want := range checks {
+		if got := families[d]; got != want {
+			t.Errorf("DSNFamilies[%q] = %q, want %q", d, got, want)
+		}
+	}
+}
+
+func TestDSNComponentMeta_Builders(t *testing.T) {
+	meta := DSNComponentMeta()
+	for _, fam := range []string{familyMySQL, familyOracle, familyPostgres, familyOceanBase} {
+		m, ok := meta[fam]
+		if !ok {
+			t.Errorf("missing meta for family %q", fam)
+			continue
+		}
+		if m.Builder == "" || m.DBLabel == "" || m.DBPlaceholder == "" || m.Port == "" {
+			t.Errorf("family %q has incomplete meta: %+v", fam, m)
+		}
+	}
+	if !meta[familyOceanBase].HasCluster {
+		t.Error("oceanbase family should have cluster support")
+	}
+	if meta[familyFile].Builder != "" {
+		t.Errorf("file family should have no builder, got %q", meta[familyFile].Builder)
+	}
+}
+
 func TestScenarioFields_HaveTypes(t *testing.T) {
 	for _, s := range ScenarioSchemas() {
 		for _, f := range s.Fields {
-			if f.Type != "select" && f.Type != "text" {
+			if f.Type != "select" && f.Type != "text" && f.Type != "password" {
 				t.Errorf("%s.%s has invalid type %q", s.Name, f.Name, f.Type)
 			}
 			if f.Type == "select" && len(f.Options) == 0 {

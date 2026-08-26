@@ -3,6 +3,8 @@
 
     let allScenarios = [];
     let dsnExamples = {};
+    let dsnFamilies = {};   // dialect -> family key (mysql/oracle/postgres/oceanbase/file)
+    let dsnFields = {};     // family key -> {db_label, db_placeholder, port, builder, has_cluster}
     let activeScenario = null;
     let previewTimer = null;
 
@@ -15,6 +17,8 @@
         const data = await api.get('/api/v1/scenarios');
         allScenarios = data.scenarios;
         dsnExamples = data.dsn_examples || {};
+        dsnFamilies = data.dsn_families || {};
+        dsnFields = data.dsn_fields || {};
         renderPills();
         selectScenario(allScenarios.some(s => s.name === initialScenario) ? initialScenario : allScenarios[0].name);
         loadConfigLib();
@@ -62,7 +66,11 @@
         wrap.dataset.name = f.name;
         if (f.show_when) {
             wrap.dataset.condField = f.show_when.field;
-            wrap.dataset.condValue = f.show_when.value;
+            if (f.show_when.values && f.show_when.values.length) {
+                wrap.dataset.condValues = JSON.stringify(f.show_when.values);
+            } else {
+                wrap.dataset.condValue = f.show_when.value;
+            }
         }
 
         const label = document.createElement('label');
@@ -81,8 +89,9 @@
             });
         } else {
             input = document.createElement('input');
-            input.type = 'text';
+            input.type = f.type === 'password' ? 'password' : 'text';
             if (f.default) input.value = f.default;
+            if (f.placeholder) input.placeholder = f.placeholder;
             if (isDSN(f.name)) input.classList.add('mono');
         }
         input.name = f.name;
@@ -90,37 +99,333 @@
         input.addEventListener('change', () => { applyConditions(); updateDSNHint(f, wrap); schedulePreview(); });
         wrap.appendChild(input);
 
-        const help = document.createElement('div');
-        help.className = 'field-help';
-        help.textContent = f.help || '';
-        wrap.appendChild(help);
+        if (f.help) {
+            const help = document.createElement('div');
+            help.className = 'field-help';
+            help.textContent = f.help;
+            wrap.appendChild(help);
+        }
 
-        if (isDSN(f.name)) updateDSNHint(f, wrap);
+        // DSN fields get a structured modal editor that writes back into the
+        // raw DSN input (and so into the live YAML preview), plus a test
+        // connection button. The field itself is read-only display: clicking
+        // it reopens the editor.
+        if (isDSN(f.name)) {
+            const side = f.name === 'source_dsn' ? 'source' : 'target';
+            input.readOnly = true;
+            input.classList.add('dsn-readonly');
+            input.addEventListener('click', () => openDSNModal(side));
+            const actions = document.createElement('div');
+            actions.className = 'field-actions';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-ghost btn-sm';
+            btn.textContent = '结构化填写';
+            btn.addEventListener('click', () => openDSNModal(side));
+            const tbtn = document.createElement('button');
+            tbtn.type = 'button';
+            tbtn.className = 'btn-ghost btn-sm';
+            tbtn.textContent = '测试连接';
+            tbtn.addEventListener('click', () => testConn(side));
+            const status = document.createElement('span');
+            status.className = 'conn-status';
+            status.dataset.side = side;
+            actions.appendChild(btn);
+            actions.appendChild(tbtn);
+            actions.appendChild(status);
+            wrap.appendChild(actions);
+            updateDSNHint(f, wrap);
+        }
         return wrap;
     }
 
     function isDSN(name) { return name === 'source_dsn' || name === 'target_dsn'; }
 
-    // Show a per-dialect DSN format hint under the DSN input, driven by the
-    // neighbouring type dropdown.
+    // Keep the DSN field minimal: a short click-to-edit placeholder and the
+    // field's own help. Per-dialect format examples now live inside the modal.
     function updateDSNHint(f, wrap) {
-        const typeName = f.name === 'source_dsn' ? 'source_type' : 'target_type';
-        const typeField = activeScenario.fields.find(x => x.name === typeName);
         const helpEl = wrap.querySelector('.field-help');
-        if (!typeField) return;
-        const typeInput = document.querySelector(`[name="${typeName}"]`);
-        const dialect = typeInput ? typeInput.value : '';
-        const example = dsnExamples[dialect];
-        helpEl.textContent = example ? '格式示例：' + example : (f.help || '');
-        helpEl.classList.toggle('has-example', !!example);
+        const input = wrap.querySelector('input');
+        if (!input) return;
+        input.placeholder = f.placeholder || '';
+        if (helpEl) helpEl.textContent = f.help || '';
     }
 
     function applyConditions() {
         document.querySelectorAll('#cfg-form .field[data-cond-field]').forEach(wrap => {
             const ctl = document.querySelector(`[name="${wrap.dataset.condField}"]`);
-            const visible = ctl && ctl.value === wrap.dataset.condValue;
+            let visible = false;
+            if (ctl && wrap.dataset.condValues) {
+                const values = JSON.parse(wrap.dataset.condValues);
+                visible = values.indexOf(ctl.value) >= 0;
+            } else if (ctl) {
+                visible = ctl.value === wrap.dataset.condValue;
+            }
             wrap.classList.toggle('hidden', !visible);
         });
+        // Refresh DSN placeholders/help after visibility changes.
+        activeScenario.fields.forEach(f => {
+            if (isDSN(f.name)) {
+                const wrap = document.querySelector(`#cfg-form .field[data-name="${f.name}"]`);
+                if (wrap) updateDSNHint(f, wrap);
+            }
+        });
+    }
+
+    // ── DSN structured editing modal ──────────────────────────────────────
+    let modal = null; // { overlay, body, raw, data:{side,family,currentDsn} }
+
+    function ensureModal() {
+        if (modal) return modal;
+        const overlay = document.createElement('div');
+        overlay.className = 'dsn-modal-overlay';
+        overlay.innerHTML =
+            '<div class="dsn-modal" role="dialog" aria-modal="true">' +
+            '<div class="dsn-modal-head"><h3 id="dsn-modal-title"></h3>' +
+            '<button type="button" class="btn-ghost dsn-modal-x" aria-label="关闭">×</button></div>' +
+            '<div class="dsn-modal-body" id="dsn-modal-body"></div>' +
+            '<div class="dsn-modal-preview"><span>生成中的 DSN</span><pre id="dsn-modal-raw" class="mono"></pre></div>' +
+            '<div class="dsn-modal-actions">' +
+            '<button type="button" class="btn-ghost" id="dsn-modal-cancel">取消</button>' +
+            '<button type="button" class="btn-primary" id="dsn-modal-apply">应用</button>' +
+            '</div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', e => { if (e.target === overlay) revertDSNModal(); });
+        overlay.querySelector('.dsn-modal-x').addEventListener('click', revertDSNModal);
+        overlay.querySelector('#dsn-modal-cancel').addEventListener('click', revertDSNModal);
+        overlay.querySelector('#dsn-modal-apply').addEventListener('click', applyDSNModal);
+        document.addEventListener('keydown', e => { if (e.key === 'Escape' && modal && modal.overlay.classList.contains('open')) revertDSNModal(); });
+        modal = {
+            overlay,
+            body: overlay.querySelector('#dsn-modal-body'),
+            raw: overlay.querySelector('#dsn-modal-raw'),
+            data: null,
+        };
+        return modal;
+    }
+
+    function openDSNModal(side) {
+        ensureModal();
+        const typeInput = document.querySelector(`[name="${side}_type"]`);
+        const dialect = typeInput ? typeInput.value : '';
+        const family = dialect ? (dsnFamilies[dialect] || '') : '';
+        const dsnInput = document.querySelector(`[name="${side}_dsn"]`);
+        const current = dsnInput ? dsnInput.value : '';
+        modal.data = { side, family, currentDsn: current };
+
+        const meta = dsnFields[family] || {};
+        const sideLabel = side === 'source' ? '源' : '目标';
+        modal.overlay.querySelector('#dsn-modal-title').textContent = '编辑' + sideLabel + '数据库 DSN';
+
+        renderModalBody(modal.body, family, meta);
+        prefillModal(parseDSN(current, family), family);
+        const ta = modal.body.querySelector('[name="modal_dsn_raw"]');
+        if (ta) ta.value = current;
+        modal.raw.textContent = current || '等待填写…';
+        modal.overlay.classList.add('open');
+        document.body.classList.add('modal-open');
+        const first = modal.body.querySelector('input');
+        if (first) first.focus();
+    }
+
+    function renderModalBody(body, family, meta) {
+        body.innerHTML = '';
+        if (family === 'file') {
+            body.appendChild(modalField('path', '数据库文件路径', meta.db_placeholder || '例如: /path/to/xxx.db', 'text'));
+            return;
+        }
+        const fields = [
+            ['host', '主机', '例如: 127.0.0.1', 'text'],
+            ['port', '端口', '默认 ' + (meta.port || ''), 'text'],
+            ['user', '用户', '登录用户名', 'text'],
+            ['password', '密码', '数据库登录密码', 'password'],
+            ['db', meta.db_label || '数据库', meta.db_placeholder || '', 'text'],
+        ];
+        fields.forEach(([key, label, ph, type]) => body.appendChild(modalField(key, label, ph, type)));
+        if (meta.has_cluster) {
+            body.appendChild(modalField('cluster', '集群', '例如: obcluster（可选）', 'text'));
+        }
+        // Editable raw DSN: the single source of truth reflected on apply.
+        const rawWrap = document.createElement('div');
+        rawWrap.className = 'field';
+        rawWrap.dataset.key = 'raw';
+        const rl = document.createElement('label');
+        rl.textContent = '原始 DSN（可直接编辑）';
+        rawWrap.appendChild(rl);
+        const ta = document.createElement('textarea');
+        ta.className = 'mono dsn-raw-input';
+        ta.name = 'modal_dsn_raw';
+        ta.addEventListener('input', onRawInput);
+        rawWrap.appendChild(ta);
+        body.appendChild(rawWrap);
+    }
+
+    function modalField(key, label, ph, type) {
+        const wrap = document.createElement('div');
+        wrap.className = 'field';
+        wrap.dataset.key = key;
+        const l = document.createElement('label');
+        l.textContent = label;
+        wrap.appendChild(l);
+        const input = document.createElement('input');
+        input.type = type;
+        input.name = 'modal_dsn_' + key;
+        input.placeholder = ph;
+        if (key === 'host' || key === 'port' || key === 'db' || key === 'path') input.classList.add('mono');
+        input.addEventListener('input', onModalInput);
+        wrap.appendChild(input);
+        return wrap;
+    }
+
+    function mval(key) {
+        const el = modal && modal.body ? modal.body.querySelector(`[data-key="${key}"] input`) : null;
+        return el ? (el.value || '') : '';
+    }
+
+    function assembleModal() {
+        const meta = dsnFields[modal.data.family] || {};
+        if (modal.data.family === 'file') return mval('path');
+        if (!meta.builder) return '';
+        if (!mval('host') || !mval('db')) return '';
+        let out = meta.builder.replace(/\{(\w+)\}/g, (m, k) => {
+            let v = mval(k);
+            if (meta.url_style && (k === 'user' || k === 'password' || k === 'db')) v = encodeURIComponent(v);
+            return v || '';
+        });
+        if (modal.data.family === 'postgres') {
+            out = out.split(/\s+/).filter(t => t && !/^\w+=$/.test(t)).join(' ');
+        }
+        out = out.replace(/\s+/g, ' ').trim();
+        if (meta.has_cluster) {
+            const c = mval('cluster');
+            if (c) out += (out.indexOf('?') >= 0 ? '&' : '?') + 'cluster=' + encodeURIComponent(c);
+        }
+        return out;
+    }
+
+    function onModalInput() {
+        const assembled = assembleModal();
+        const ta = modal.body.querySelector('[name="modal_dsn_raw"]');
+        if (ta) ta.value = assembled || modal.data.currentDsn;
+        modal.raw.textContent = assembled || modal.data.currentDsn || '等待填写…';
+        const dsnInput = document.querySelector(`[name="${modal.data.side}_dsn"]`);
+        if (assembled && dsnInput) {
+            dsnInput.value = assembled;
+            schedulePreview();
+        }
+    }
+
+    // User edits the raw DSN directly: bypass structured assembly.
+    function onRawInput() {
+        const ta = modal.body.querySelector('[name="modal_dsn_raw"]');
+        const v = ta ? ta.value : '';
+        modal.raw.textContent = v || '等待填写…';
+        const dsnInput = document.querySelector(`[name="${modal.data.side}_dsn"]`);
+        if (v && dsnInput) {
+            dsnInput.value = v;
+            schedulePreview();
+        }
+    }
+
+    // Revert the DSN field to its value when the modal was opened.
+    function revertDSNModal() {
+        if (!modal || !modal.data) return;
+        const dsnInput = document.querySelector(`[name="${modal.data.side}_dsn"]`);
+        if (dsnInput) { dsnInput.value = modal.data.currentDsn; schedulePreview(); }
+        closeDSNModal();
+    }
+
+    function applyDSNModal() {
+        if (!modal || !modal.data) return;
+        const assembled = assembleModal();
+        const dsnInput = document.querySelector(`[name="${modal.data.side}_dsn"]`);
+        if (assembled && dsnInput) { dsnInput.value = assembled; schedulePreview(); }
+        closeDSNModal();
+    }
+
+    function closeDSNModal() {
+        if (!modal) return;
+        modal.overlay.classList.remove('open');
+        document.body.classList.remove('modal-open');
+    }
+
+    // Test the connection with the current type + DSN via the backend.
+    async function testConn(side) {
+        const status = document.querySelector(`.conn-status[data-side="${side}"]`);
+        const setStatus = (msg, cls) => {
+            if (!status) return;
+            status.textContent = msg;
+            status.className = 'conn-status ' + cls;
+            setTimeout(() => { status.textContent = ''; }, 6000);
+        };
+        const typeInput = document.querySelector(`[name="${side}_type"]`);
+        const dsnInput = document.querySelector(`[name="${side}_dsn"]`);
+        const schemaInput = document.querySelector(`[name="${side}_schema"]`);
+        const dsn = dsnInput ? dsnInput.value : '';
+        if (!dsn) { setStatus('请先填写 DSN', 'fail'); return; }
+        setStatus('连接中…', 'pending');
+        try {
+            const resp = await api.post('/api/v1/conn/test', {
+                type: typeInput ? typeInput.value : '',
+                dsn,
+                schema: schemaInput ? schemaInput.value : '',
+            });
+            if (resp.error) setStatus('✗ ' + resp.error, 'fail');
+            else setStatus('✓ 连接成功 ' + (resp.latency != null ? resp.latency + 'ms' : ''), 'ok');
+        } catch (e) {
+            setStatus('✗ ' + e.message, 'fail');
+        }
+    }
+
+    // Best-effort parse of an existing DSN back into structured fields so the
+    // modal can prefill. Fills only the recognised pieces; the raw DSN is
+    // always preserved in the live preview and on cancel.
+    function parseDSN(dsn, family) {
+        dsn = (dsn || '').trim();
+        const o = {};
+        if (!dsn) return o;
+        if (family === 'file') { o.path = dsn; return o; }
+        if (family === 'postgres' && !/:\/\//.test(dsn)) {
+            dsn.split(/\s+/).forEach(t => {
+                const i = t.indexOf('=');
+                if (i > 0) {
+                    const k = t.slice(0, i).toLowerCase();
+                    const v = t.slice(i + 1);
+                    if (k === 'dbname') o.db = v; else o[k] = v;
+                }
+            });
+            return o;
+        }
+        const m = dsn.match(/^([A-Za-z0-9_.-]+):([^@]*)@tcp\(([^:]+):(\d+)\)\/(.*)$/);
+        if (m) {
+            o.user = m[1]; o.password = decodeURIComponent(m[2]);
+            o.host = m[3]; o.port = m[4]; o.db = m[5];
+            return o;
+        }
+        let u;
+        try { u = new URL(dsn); } catch (e) { return o; }
+        if (/^(oracle|oboracle|oceanbase-oracle|postgres|postgresql):/.test(u.protocol)) {
+            o.user = u.username || '';
+            o.password = u.password || '';
+            o.host = u.hostname || '';
+            o.port = u.port || '';
+            o.db = (u.pathname || '').replace(/^\//, '');
+            if (u.searchParams.get('cluster')) o.cluster = u.searchParams.get('cluster');
+            return o;
+        }
+        return o;
+    }
+
+    function prefillModal(o, family) {
+        const set = (key, v) => {
+            if (!v) return;
+            const el = modal.body.querySelector(`[data-key="${key}"] input`);
+            if (el) el.value = v;
+        };
+        if (family === 'file') { set('path', o.path || o.db || ''); return; }
+        set('host', o.host); set('port', o.port);
+        set('user', o.user); set('password', o.password);
+        set('db', o.db); set('cluster', o.cluster);
     }
 
     function collectValues() {

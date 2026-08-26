@@ -8,22 +8,26 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 )
 
-// FieldCond makes a field visible only when another field equals a value.
+// FieldCond makes a field visible only when another field equals a value
+// (Value) or is one of several values (Values). Values takes precedence over
+// Value when both are set.
 type FieldCond struct {
-	Field string `json:"field"`
-	Value string `json:"value"`
+	Field  string   `json:"field"`
+	Value  string   `json:"value,omitempty"`
+	Values []string `json:"values,omitempty"`
 }
 
 // Field describes a single form input for a scenario config page.
 type Field struct {
-	Name     string     `json:"name"`
-	Label    string     `json:"label"`
-	Type     string     `json:"type"` // select | text
-	Options  []string   `json:"options,omitempty"`
-	Default  string     `json:"default,omitempty"`
-	Help     string     `json:"help,omitempty"`
-	Required bool       `json:"required,omitempty"`
-	ShowWhen *FieldCond `json:"show_when,omitempty"`
+	Name        string     `json:"name"`
+	Label       string     `json:"label"`
+	Type        string     `json:"type"` // select | text | password
+	Options     []string   `json:"options,omitempty"`
+	Default     string     `json:"default,omitempty"`
+	Help        string     `json:"help,omitempty"`
+	Placeholder string     `json:"placeholder,omitempty"`
+	Required    bool       `json:"required,omitempty"`
+	ShowWhen    *FieldCond `json:"show_when,omitempty"`
 }
 
 // Scenario is a config template matching one `owl-migrate init --scenario`.
@@ -44,11 +48,35 @@ func dialectOptions() []string {
 	return keys
 }
 
+// DSN family keys classify dialects by connection shape, not wire protocol:
+// they decide which structured login fields are offered and how the DSN is
+// assembled in the UI.
+const (
+	familyMySQL     = "mysql"
+	familyOracle    = "oracle"
+	familyPostgres  = "postgres"
+	familyOceanBase = "oceanbase"
+	familyFile      = "file"
+)
+
+// DSNFamilyMeta describes the structured connection fields for a DSN family,
+// plus the template used to assemble a DSN from those fields. {key} tokens in
+// Builder are replaced by the corresponding connection field value.
+type DSNFamilyMeta struct {
+	DBLabel       string `json:"db_label"`              // label for the database component (dbname/service/tenant)
+	DBPlaceholder string `json:"db_placeholder"`        // placeholder for the database component
+	Port          string `json:"port"`                  // default port shown as placeholder
+	Builder       string `json:"builder"`               // DSN assembly template
+	HasCluster    bool   `json:"has_cluster,omitempty"` // OceanBase optional cluster param
+	URLStyle      bool   `json:"url_style"`             // assemble as URL (user/password/db need encoding)
+}
+
 func srcType() Field {
 	return Field{Name: "source_type", Label: "源数据库类型", Type: "select", Options: dialectOptions(), Required: true}
 }
 func srcDSN() Field {
-	return Field{Name: "source_dsn", Label: "源数据库 DSN", Type: "text", Required: true, Help: "连接串，格式随数据库类型变化"}
+	return Field{Name: "source_dsn", Label: "源数据库 DSN", Type: "text", Required: true,
+		Placeholder: "点击「结构化填写」或粘贴连接串"}
 }
 func srcSchema() Field {
 	return Field{Name: "source_schema", Label: "源 schema", Type: "text", Help: "Oracle: 用户名；MySQL: 库名；PG: schema 名"}
@@ -57,7 +85,81 @@ func tgtType() Field {
 	return Field{Name: "target_type", Label: "目标数据库类型", Type: "select", Options: dialectOptions(), Default: "postgres", Required: true}
 }
 func tgtDSN() Field {
-	return Field{Name: "target_dsn", Label: "目标数据库 DSN", Type: "text"}
+	return Field{Name: "target_dsn", Label: "目标数据库 DSN", Type: "text", Placeholder: "点击「结构化填写」或粘贴连接串"}
+}
+
+// dsnFamily returns the connection family for a dialect, mirroring what the
+// DSN format example in DSNExamples() implies.
+func dsnFamily(dialect string) string {
+	switch strings.ToLower(dialect) {
+	case "oracle", "goldendb-oracle":
+		return familyOracle
+	case "goldendb", "goldendb-mysql", "oceanbase", "oceanbase-mysql", "mysql", "mariadb":
+		return familyMySQL
+	case "oceanbase-oracle":
+		return familyOceanBase
+	case "postgres", "postgresql", "opengaussdb", "panweidb", "panweidb-mysql", "panweidb-oracle":
+		return familyPostgres
+	case "sqlite3", "duckdb":
+		return familyFile
+	default:
+		return ""
+	}
+}
+
+// dsnFamilyMeta returns per-family connection metadata, ordered for stable
+// display. The database/Build labels mirror DSNExamples() and cmd/init.go.
+func dsnFamilyMeta() map[string]DSNFamilyMeta {
+	return map[string]DSNFamilyMeta{
+		familyMySQL: {
+			DBLabel:       "数据库名",
+			DBPlaceholder: "例如: mydb",
+			Port:          "3306",
+			Builder:       "{user}:{password}@tcp({host}:{port})/{db}",
+			URLStyle:      true,
+		},
+		familyOracle: {
+			DBLabel:       "服务名",
+			DBPlaceholder: "例如: XEPDB1（或 ORCL）",
+			Port:          "1521",
+			Builder:       "oracle://{user}:{password}@{host}:{port}/{db}",
+			URLStyle:      true,
+		},
+		familyPostgres: {
+			DBLabel:       "数据库名",
+			DBPlaceholder: "例如: mydb",
+			Port:          "5432",
+			Builder:       "host={host} port={port} user={user} password={password} dbname={db} sslmode=disable",
+		},
+		familyOceanBase: {
+			DBLabel:       "租户",
+			DBPlaceholder: "例如: oracle_tenant",
+			Port:          "2881",
+			Builder:       "oceanbase-oracle://{user}:{password}@{host}:{port}/{db}",
+			HasCluster:    true,
+			URLStyle:      true,
+		},
+		familyFile: {
+			DBLabel:       "数据库文件",
+			DBPlaceholder: "例如: /path/to/database.db",
+		},
+	}
+}
+
+// DSNFamilies maps each dialect to its connection family.
+func DSNFamilies() map[string]string {
+	out := map[string]string{}
+	for k := range config.ValidDialects {
+		if f := dsnFamily(k); f != "" {
+			out[k] = f
+		}
+	}
+	return out
+}
+
+// DSNComponentMeta returns per-family structured connection metadata.
+func DSNComponentMeta() map[string]DSNFamilyMeta {
+	return dsnFamilyMeta()
 }
 func tgtSchema() Field {
 	return Field{Name: "target_schema", Label: "目标 schema", Type: "text", Help: "留空则与源 schema 相同"}
@@ -73,10 +175,10 @@ func schemaMappingField() Field {
 		Help: "源 schema 重命名到目标 schema，格式 源:目标，多个用逗号分隔，如 SCOTT:public,HR:hr。留空则不改名"}
 }
 func csvPath() Field {
-	return Field{Name: "csv_path", Label: "CSV 元数据目录", Type: "text", Default: "./testdata/csv/", ShowWhen: &FieldCond{"metadata_type", "csv"}}
+	return Field{Name: "csv_path", Label: "CSV 元数据目录", Type: "text", Default: "./testdata/csv/", ShowWhen: &FieldCond{Field: "metadata_type", Value: "csv"}}
 }
 func xlsxPath() Field {
-	return Field{Name: "xlsx_path", Label: "XLSX 文件路径", Type: "text", Default: "./metadata/schema.xlsx", ShowWhen: &FieldCond{"metadata_type", "xlsx"}}
+	return Field{Name: "xlsx_path", Label: "XLSX 文件路径", Type: "text", Default: "./metadata/schema.xlsx", ShowWhen: &FieldCond{Field: "metadata_type", Value: "xlsx"}}
 }
 func dbSourceFields() []Field {
 	return []Field{
@@ -134,7 +236,7 @@ func ScenarioSchemas() []Scenario {
 			Fields: []Field{
 				{Name: "metadata_type", Label: "数据来源", Type: "select", Options: []string{"csv", "xlsx"}, Default: "csv", Required: true},
 				xlsxPath(),
-				{Name: "data_output_dir", Label: "数据输出目录", Type: "text", Default: "./output/data/", ShowWhen: &FieldCond{"metadata_type", "xlsx"}},
+				{Name: "data_output_dir", Label: "数据输出目录", Type: "text", Default: "./output/data/", ShowWhen: &FieldCond{Field: "metadata_type", Value: "xlsx"}},
 				tgtType(),
 			},
 		},

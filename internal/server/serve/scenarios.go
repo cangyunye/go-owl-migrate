@@ -12,6 +12,8 @@ func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"scenarios":    service.ScenarioSchemas(),
 		"dsn_examples": service.DSNExamples(),
+		"dsn_families": service.DSNFamilies(),
+		"dsn_fields":   service.DSNComponentMeta(),
 	})
 }
 
