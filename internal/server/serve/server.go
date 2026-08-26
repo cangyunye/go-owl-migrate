@@ -106,13 +106,18 @@ func (s *Server) Handler() http.Handler {
 }
 
 // withAuth enforces a Bearer token on every /api/v1/* route except health,
-// so the admin UI cannot be hit by unauthenticated clients. Static assets,
-// the SPA shell, and docs pages are exempt (they are served for the browser
-// that must first present the token).
+// so the admin UI cannot be hit by unauthenticated clients. WebSocket routes
+// (paths ending in /ws) are exempt from the header check because browsers
+// cannot set an Authorization header on a WebSocket handshake; instead they
+// authenticate via the ?token= query param inside handleWebSocket. Static
+// assets, the SPA shell, and docs pages are exempt (they are served for the
+// browser that must first present the token).
 func withAuth(next http.Handler, token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if strings.HasPrefix(p, "/api/v1/") && p != "/api/v1/health" {
+		isAPI := strings.HasPrefix(p, "/api/v1/")
+		isWS := strings.HasSuffix(p, "/ws")
+		if isAPI && !isWS && p != "/api/v1/health" {
 			auth := r.Header.Get("Authorization")
 			if auth != "Bearer "+token {
 				writeError(w, http.StatusUnauthorized, "unauthorized")

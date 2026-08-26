@@ -374,6 +374,29 @@ func TestAuth_RequiresToken(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestAuth_AllowsWebSocketWithToken(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	srv := NewServer(Config{Store: store, Token: "s3cret"})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/api/v1/jobs/j1/ws?token=s3cret"
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket.Dial(%s) got 401/rejected handshake: %v", wsURL, err)
+	}
+	// Handshake succeeded under a configured token (no 401). Keep the
+	// connection open to prove the WS is reachable before closing.
+	conn.Close(websocket.StatusNormalClosure, "")
+}
+
 func TestAuth_DisabledWhenNoToken(t *testing.T) {
 	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {
