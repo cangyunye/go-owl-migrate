@@ -14,6 +14,11 @@ import (
 const wsPollInterval = 500 * time.Millisecond
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	if s.token != "" && r.URL.Query().Get("token") != s.token {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	jobID := r.PathValue("id")
 
 	conn, err := websocket.Accept(w, r, nil)

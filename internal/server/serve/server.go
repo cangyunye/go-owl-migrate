@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -31,6 +32,7 @@ type Server struct {
 	configPath string
 	tempDir    string
 	configDir  string
+	token      string
 
 	mu          sync.RWMutex
 	cfg         *config.Config
@@ -44,6 +46,7 @@ func NewServer(cfg Config) *Server {
 		configPath: cfg.ConfigPath,
 		tempDir:    cfg.TempDir,
 		configDir:  cfg.ConfigDir,
+		token:      cfg.Token,
 		cfg:        &config.Config{},
 	}
 }
@@ -96,7 +99,28 @@ func (s *Server) Handler() http.Handler {
 	s.registerPages(mux)
 	s.registerDocs(mux)
 
+	if s.token != "" {
+		return withAuth(mux, s.token)
+	}
 	return mux
+}
+
+// withAuth enforces a Bearer token on every /api/v1/* route except health,
+// so the admin UI cannot be hit by unauthenticated clients. Static assets,
+// the SPA shell, and docs pages are exempt (they are served for the browser
+// that must first present the token).
+func withAuth(next http.Handler, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasPrefix(p, "/api/v1/") && p != "/api/v1/health" {
+			auth := r.Header.Get("Authorization")
+			if auth != "Bearer "+token {
+				writeError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
