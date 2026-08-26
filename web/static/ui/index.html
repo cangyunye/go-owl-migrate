@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>owl-migrate · console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+    /* apply saved theme before first paint to avoid flash */
+    (function () {
+        try {
+            var t = localStorage.getItem('owl-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+        } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
+        try {
+            if (localStorage.getItem('owl-nav') === 'collapsed') document.documentElement.classList.add('pre-collapsed');
+        } catch (e) {}
+    })();
+    </script>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <span class="brand-mark">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8.5" cy="10" r="2.4"/><circle cx="15.5" cy="10" r="2.4"/><path d="M12 2.5a7.5 7.5 0 0 0-7.5 7.5v5a7.5 7.5 0 0 0 15 0v-5A7.5 7.5 0 0 0 12 2.5z"/><path d="M12 12.6l-1.4 2.8h2.8z"/></svg>
+            </span>
+            <div>
+                <span class="brand-name">owl<em>·</em>migrate</span>
+                <span class="brand-sub">db migration console</span>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav" id="spa-nav">
+            <div class="nav-group">
+                <a href="#/" data-route="/" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                    <span class="nav-text">首页</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-label">准备 · Prepare</div>
+                <a href="#/config" data-route="/config" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span class="nav-text">配置</span>
+                </a>
+                <a href="#/metadata" data-route="/metadata" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+                    <span class="nav-text">元数据</span>
+                </a>
+                <a href="#/export-metadata" data-route="/export-metadata" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 9 3"/><path d="M21 5v6"/><path d="m16 19 2 2 4-4"/></svg>
+                    <span class="nav-text">元数据导出</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-label">生成 · Generate</div>
+                <a href="#/ddl" data-route="/ddl" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 12-2 2 2 2"/><path d="m14 12 2 2-2 2"/></svg>
+                    <span class="nav-text">DDL</span>
+                </a>
+                <a href="#/select" data-route="/select" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+                    <span class="nav-text">SELECT</span>
+                </a>
+                <a href="#/insert" data-route="/insert" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/></svg>
+                    <span class="nav-text">INSERT</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-label">执行 · Execute</div>
+                <a href="#/migrate" data-route="/migrate" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg>
+                    <span class="nav-text">迁移</span>
+                </a>
+                <a href="#/export" data-route="/export" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    <span class="nav-text">导出</span>
+                </a>
+                <a href="#/import" data-route="/import" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                    <span class="nav-text">导入</span>
+                </a>
+            </div>
+
+            <div class="nav-group">
+                <div class="nav-label">监控 · Monitor</div>
+                <a href="#/jobs" data-route="/jobs" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    <span class="nav-text">任务</span>
+                </a>
+                <a href="#/docs" data-route="/docs" class="nav-link">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+                    <span class="nav-text">文档</span>
+                </a>
+            </div>
+        </nav>
+
+        <div class="sidebar-foot">
+            <span class="sidebar-ver">v0.3.0 · console</span>
+            <button class="collapse-btn" id="collapse-btn" title="折叠导航" aria-label="折叠导航">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>
+            </button>
+        </div>
+    </aside>
+
+    <div class="main">
+        <header class="topbar">
+            <div class="crumb">
+                <span>owl-migrate</span>
+                <span class="crumb-sep">/</span>
+                <b id="crumb-current">首页</b>
+            </div>
+            <div class="topbar-right" id="config-bar"></div>
+            <button class="theme-btn" id="theme-btn" title="切换主题" aria-label="切换主题">
+                <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+            </button>
+        </header>
+
+        <main class="content" id="view"></main>
+    </div>
+
+    <div class="toast-root" id="toast-root"></div>
+
+    <script src="/static/js/app.js"></script>
+    <script type="module" src="/static/ui/router.js"></script>
+</body>
+</html>

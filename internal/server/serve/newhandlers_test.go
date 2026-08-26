@@ -397,6 +397,31 @@ func TestAuth_AllowsWebSocketWithToken(t *testing.T) {
 	conn.Close(websocket.StatusNormalClosure, "")
 }
 
+func TestSPA_UIShellServed(t *testing.T) {
+	srv := NewServer(Config{})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	resp, err := ts.Client().Get(ts.URL + "/ui")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /ui status = %d, want 200", resp.StatusCode)
+	}
+
+	// index asset within /ui/static/ or /static/ui/
+	r2, err := ts.Client().Get(ts.URL + "/static/ui/router.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2.Body.Close()
+	if r2.StatusCode != http.StatusOK {
+		t.Fatalf("GET /static/ui/router.js status = %d, want 200", r2.StatusCode)
+	}
+}
+
 func TestAuth_DisabledWhenNoToken(t *testing.T) {
 	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "t.db"))
 	if err != nil {
