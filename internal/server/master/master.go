@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -229,37 +229,23 @@ func writeConfigYAML(rawJSON json.RawMessage, path string) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// killGrace is how long a cancelled worker gets to finish persisting its
+// checkpoint after SIGTERM before SIGKILL. Package var so tests can shorten it.
+var killGrace = 5 * time.Second
+
+// killProcess asks the worker to terminate, escalating to SIGKILL after the
+// grace period. A signal to an already-exited process fails silently.
 func killProcess(pid int) {
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return
 	}
-	proc.Signal(os.Kill)
-}
-
-func selectPort(preferred []int, ranges [][2]int) (int, error) {
-	for _, port := range preferred {
-		if isPortFree(port) {
-			return port, nil
-		}
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		return
 	}
-	for _, r := range ranges {
-		for port := r[0]; port <= r[1]; port++ {
-			if isPortFree(port) {
-				return port, nil
-			}
-		}
-	}
-	return 0, fmt.Errorf("no available port found in ranges %v", ranges)
-}
-
-func isPortFree(port int) bool {
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		return false
-	}
-	ln.Close()
-	return true
+	time.AfterFunc(killGrace, func() {
+		proc.Signal(syscall.SIGKILL)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -30,7 +30,6 @@ type Server struct {
 	configPath string
 	tempDir    string
 	configDir  string
-	hub        *Hub
 
 	mu          sync.RWMutex
 	cfg         *config.Config
@@ -44,7 +43,6 @@ func NewServer(cfg Config) *Server {
 		configPath: cfg.ConfigPath,
 		tempDir:    cfg.TempDir,
 		configDir:  cfg.ConfigDir,
-		hub:        NewHub(cfg.Store),
 		cfg:        &config.Config{},
 	}
 }
