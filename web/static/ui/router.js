@@ -16,6 +16,7 @@ import { render as renderMigrate } from './views/migrate.js';
 import { render as renderExport } from './views/export.js';
 import { render as renderImport } from './views/import.js';
 import { render as renderExportMetadata } from './views/exportMetadata.js';
+import { render as renderMetadata } from './views/metadata.js';
 
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
@@ -36,6 +37,7 @@ const NAV = [
 /* ── route table: ordered; first match wins ───────────────── */
 const routes = [
     { re: /^\/$/, render: renderHome, active: '/', title: '首页' },
+    { re: /^\/metadata$/, render: renderMetadata, active: '/metadata', title: '元数据' },
     { re: /^\/jobs$/, render: renderJobs, active: '/jobs', title: '任务' },
     { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' },
     { re: /^\/ddl$/, render: renderDDL, active: '/ddl', title: 'DDL' },
