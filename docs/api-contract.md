@@ -24,12 +24,14 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 ## Security notes
 
 - `GET /api/v1/config` masks DSN passwords (`config.MaskDSN`), for both the
-  `source` and `target` DSN values. Explicit file operations —
-  `GET /api/v1/config/download`, `GET /api/v1/configs/{name}` (download), and
-  `POST /api/v1/configs/{name}/load` — return YAML verbatim because they are
-  file-equivalent operations and masking would break save round-trips. The
-  legacy `POST /api/v1/config/upload` echoes the submitted `yaml` verbatim in
-  its response as well.
+  `source` and `target` DSN values. The active-config download
+  (`GET /api/v1/config/download`) and the saved-config library operations
+  (`GET /api/v1/configs/{name}` download, `POST /api/v1/configs/{name}/load`)
+  are all unmasked. The saved configs are returned byte-for-byte verbatim
+  because they are file-equivalent operations and masking would break save
+  round-trips; the active-config download instead re-serializes the in-memory
+  config. The legacy `POST /api/v1/config/upload` echoes the submitted `yaml`
+  verbatim in its response as well.
 - Every generation run (DDL/SELECT/INSERT/metadata/export/offline export) is
   recorded in the job database; the `*/download` endpoints resolve the newest
   recorded output for their kind and survive server restarts. Ten outputs per
@@ -50,7 +52,7 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/dialects | Returns the sorted list of valid dialect names. |
 | GET /api/v1/config | Returns the active config as JSON map; DSN passwords of `source`/`target` are masked. |
 | PUT /api/v1/config | Replaces the active config from a JSON object and persists it. |
-| GET /api/v1/config/download | Downloads the active config as `migrate.yaml` (YAML verbatim, unmasked). |
+| GET /api/v1/config/download | Downloads the active config as `migrate.yaml` (re-serialized YAML, unmasked). |
 | GET /api/v1/config/status | Reports the config path, on-disk status, dialect/type, and metadata-loaded state. |
 | POST /api/v1/config/upload | Legacy config upload: parses submitted YAML, makes it active, persists verbatim, echoes scenario + form values. |
 | GET /api/v1/configs | Lists the saved config library (name, size, modified, scenario, source/target types). |
@@ -74,7 +76,7 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/select/download | Downloads the newest recorded SELECT output as a zip. |
 | POST /api/v1/insert/generate | Generates INSERT SQL from CSV data; optional `batch_size`, `truncate`, `no_quote_identifiers`. |
 | GET /api/v1/insert/download | Downloads the newest recorded INSERT output as a zip. |
-| GET /api/v1/metadata/validate | Writes CVS-format validation errors/severities for the loaded metadata. |
+| GET /api/v1/metadata/validate | Validates loaded metadata and returns JSON `{"count": N, "errors": [{"severity": ..., "message": ...}]}`. |
 | GET /api/v1/metadata/tables/{schema}/{table} | Returns one table's columns, PKs, and indexes. 404 if unknown. |
 | POST /api/v1/metadata/export | Extracts live metadata from `source` to `csv`/`xlsx`/`sql` files with an optional `scope` filter. |
 | GET /api/v1/metadata/export/download | Downloads the newest recorded metadata export as a zip. |
