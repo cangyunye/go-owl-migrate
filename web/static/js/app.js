@@ -272,3 +272,9 @@ function renderGenFiles(files, listEl, previewEl) {
     });
     previewEl.innerHTML = highlightSQL(files[0].content || '');
 }
+
+/* expose kernel globals to window so strict ES modules can use them */
+window.api = api;
+window.theme = theme;
+window.toast = toast;
+window.jobUI = jobUI;
