@@ -9,6 +9,9 @@
 import { render as renderHome } from './views/home.js';
 import { render as renderJobs } from './views/jobs.js';
 import { render as renderJobDetail } from './views/jobDetail.js';
+import { render as renderDDL } from './views/ddl.js';
+import { render as renderSelect } from './views/select.js';
+import { render as renderInsert } from './views/insert.js';
 
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
@@ -30,7 +33,10 @@ const NAV = [
 const routes = [
     { re: /^\/$/, render: renderHome, active: '/', title: '首页' },
     { re: /^\/jobs$/, render: renderJobs, active: '/jobs', title: '任务' },
-    { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' }
+    { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' },
+    { re: /^\/ddl$/, render: renderDDL, active: '/ddl', title: 'DDL' },
+    { re: /^\/select$/, render: renderSelect, active: '/select', title: 'SELECT' },
+    { re: /^\/insert$/, render: renderInsert, active: '/insert', title: 'INSERT' }
 ];
 
 function renderComingSoon(root, params, route) {
