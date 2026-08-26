@@ -37,6 +37,17 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
   recorded output for their kind and survive server restarts. Ten outputs per
   kind are retained (`genOutputKeep`); older output directories are pruned
   from disk.
+- Data sources are a **web-only** feature (reusable connection profiles). A
+  stored DSN is **encrypted at rest** with AES-256-GCM. The key comes from the
+  `OWL_MIGRATE_DS_KEY` environment variable, else a generated
+  `~/.owl/migrate/.ds_key` file (`0600`). The key never leaves the server and
+  is never returned by any endpoint. `GET /api/v1/datasources` and
+  `POST /api/v1/datasources/{name}/pick` never include the DSN — nor its
+  ciphertext. The config form stores a `datasource:<name>` reference in the
+  DSN field instead; `POST /api/v1/scenarios/{name}/build` resolves that
+  reference server-side and **masks** the resolved DSN in the returned
+  preview (`config` map and `yaml`), while the persisted config keeps the
+  real DSN so it stays offline-usable.
 
 ## Endpoints
 
@@ -69,7 +80,12 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | DELETE /api/v1/jobs/{id} | Cancels a running job (relayed to the master IPC server). |
 | GET /api/v1/scenarios | Returns the available scenarios and DSN examples. |
 | GET /api/v1/scenarios/{name} | Returns the schema for one scenario. 404 if unknown. |
-| POST /api/v1/scenarios/{name}/build | Builds a config from submitted form values; optional `save` makes it the active config. |
+| POST /api/v1/scenarios/{name}/build | Builds a config from submitted form values; optional `save` makes it the active config. Resolves `datasource:<name>` references server-side. |
+| GET /api/v1/datasources | Lists reusable data sources (name, type, schema, remark, updated). Never returns the DSN. |
+| POST /api/v1/datasources | Creates/replaces a data source; the DSN is encrypted at rest. |
+| PUT /api/v1/datasources/{name} | Updates a data source; an empty `dsn` keeps the stored secret. |
+| DELETE /api/v1/datasources/{name} | Removes a data source. |
+| POST /api/v1/datasources/{name}/pick | Returns a data source's type + schema and its `datasource:<name>` ref for filling a config form. Never returns the DSN. |
 | POST /api/v1/ddl/generate | Generates DDL files from the loaded metadata; optional `no_quote_identifiers`. Returns files + output dir. |
 | GET /api/v1/ddl/download | Downloads the newest recorded DDL output as a zip. |
 | POST /api/v1/select/generate | Generates paginated SELECT files; optional `batch_method`, `page_size`, `no_quote_identifiers`. |
@@ -99,7 +115,8 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 `{id}`, `{name}`, `{schema}`, and `{table}` are path segments. `{name}` is
 sanitized before use (path components and YAML/JSON extensions stripped) and
 resolved strictly inside the config library directory; attempts outside it
-return 400 `invalid config name`.
+return 400 `invalid config name`. For data sources the same `{name}` rule
+applies, resolved strictly inside `~/.owl/migrate/datasources/`.
 
 ## Job lifecycle
 

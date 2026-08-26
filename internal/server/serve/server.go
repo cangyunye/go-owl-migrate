@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,7 +14,10 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/datasource"
+	"github.com/cangyunye/go-owl-migrate/internal/dscrypto"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/paths"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -23,32 +27,59 @@ type Config struct {
 	ConfigPath string
 	TempDir    string
 	ConfigDir  string
-	Token      string
+	// DataSourcesDir is where reusable data-source profiles live
+	// (~/.owl/migrate/datasources). Empty defaults to paths.DataSourcesDir.
+	DataSourcesDir string
+	Token          string
 }
 
 type Server struct {
-	store      *service.JobStore
-	masterURL  string
-	configPath string
-	tempDir    string
-	configDir  string
-	token      string
+	store          *service.JobStore
+	masterURL      string
+	configPath     string
+	tempDir        string
+	configDir      string
+	dataSourcesDir string
+	token          string
 
 	mu          sync.RWMutex
 	cfg         *config.Config
 	schemaModel *md.SchemaModel
+
+	dsOnce sync.Once
+	dsErr  error
+	ds     *datasource.Store
 }
 
 func NewServer(cfg Config) *Server {
 	return &Server{
-		store:      cfg.Store,
-		masterURL:  cfg.MasterURL,
-		configPath: cfg.ConfigPath,
-		tempDir:    cfg.TempDir,
-		configDir:  cfg.ConfigDir,
-		token:      cfg.Token,
-		cfg:        &config.Config{},
+		store:          cfg.Store,
+		masterURL:      cfg.MasterURL,
+		configPath:     cfg.ConfigPath,
+		tempDir:        cfg.TempDir,
+		configDir:      cfg.ConfigDir,
+		dataSourcesDir: cfg.DataSourcesDir,
+		token:          cfg.Token,
+		cfg:            &config.Config{},
 	}
+}
+
+// dsStore lazily builds the encrypted data-source store. The key file is only
+// created on first use so servers that never touch data sources stay hermetic.
+func (s *Server) dsStore() (*datasource.Store, error) {
+	s.dsOnce.Do(func() {
+		dir := s.dataSourcesDir
+		if dir == "" {
+			dir = paths.DataSourcesDir()
+		}
+		vault, err := dscrypto.New(filepath.Dir(dir))
+		if err != nil {
+			s.dsErr = err
+			return
+		}
+		s.ds = datasource.Open(dir, vault)
+	})
+	return s.ds, s.dsErr
 }
 
 func (s *Server) Handler() http.Handler {
@@ -83,6 +114,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/scenarios", s.handleListScenarios)
 	mux.HandleFunc("GET /api/v1/scenarios/{name}", s.handleGetScenario)
 	mux.HandleFunc("POST /api/v1/scenarios/{name}/build", s.handleBuildScenarioConfig)
+	mux.HandleFunc("GET /api/v1/datasources", s.handleListDataSources)
+	mux.HandleFunc("POST /api/v1/datasources", s.handleCreateDataSource)
+	mux.HandleFunc("PUT /api/v1/datasources/{name}", s.handleUpdateDataSource)
+	mux.HandleFunc("DELETE /api/v1/datasources/{name}", s.handleDeleteDataSource)
+	mux.HandleFunc("POST /api/v1/datasources/{name}/pick", s.handlePickDataSource)
 	mux.HandleFunc("POST /api/v1/ddl/generate", s.handleGenerateDDL)
 	mux.HandleFunc("GET /api/v1/ddl/download", s.handleDownloadGen("ddl"))
 	mux.HandleFunc("POST /api/v1/select/generate", s.handleGenerateSelect)

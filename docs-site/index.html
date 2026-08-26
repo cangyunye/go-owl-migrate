@@ -362,7 +362,8 @@ const CATEGORIES = {
   metadata: { name: "元数据查询", color: "#eb2f96" },
   dev:      { name: "开发测试",   color: "#f5222d" },
   design:   { name: "设计文档",   color: "#13c2c2" },
-  testplan: { name: "测试计划",   color: "#fa8c16" }
+  testplan: { name: "测试计划",   color: "#fa8c16" },
+  web:      { name: "Web 服务",   color: "#36cfc9" }
 };
 
 const DOCS = [
@@ -391,6 +392,8 @@ const DOCS = [
   { path:"plans/unit-test-design.md", en:"Unit Test Design", zh:"单元测试设计", cat:"design", desc:"Web 服务各模块单元测试规范与用例设计" },
   { path:"plans/2026-07-26-remaining-work.md", en:"Remaining Work", zh:"剩余工作实施计划", cat:"design", desc:"清理死配置、补齐方言特性与测试缺口" },
   { path:"serve-cli-coverage-report.md", en:"CLI ↔ Serve Coverage", zh:"CLI 与 serve 覆盖对照", cat:"dev", desc:"owl-migrate serve Web 服务对 CLI 命令/功能的覆盖对照" },
+  { path:"data-sources.md", en:"Data Sources", zh:"数据源", cat:"web", desc:"Web UI 可复用连接档案（数据源）：DSN 静态加密、配置表单选择器、开发与 API 说明" },
+  { path:"api-contract.md", en:"Web API Contract", zh:"Web API 契约", cat:"web", desc:"owl-migrate serve /api/v1 HTTP API 冻结契约与安全行为说明" },
   { path:"test-plans/goldendb-mysql.md", en:"GoldenDB MySQL", zh:"GoldenDB MySQL 租户测试", cat:"testplan", desc:"GoldenDB MySQL 租户方言继承关系与 E2E 测试" },
   { path:"test-plans/goldendb-oracle.md", en:"GoldenDB Oracle", zh:"GoldenDB Oracle 租户测试", cat:"testplan", desc:"GoldenDB Oracle 租户方言继承关系与 E2E 测试" },
   { path:"test-plans/oceanbase-mysql.md", en:"OceanBase MySQL", zh:"OceanBase MySQL 租户测试", cat:"testplan", desc:"OceanBase MySQL 租户方言差异与 E2E 测试方案" },

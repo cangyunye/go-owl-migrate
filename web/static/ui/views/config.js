@@ -204,6 +204,18 @@ export async function render(root /*Element*/, params) {
         input.addEventListener('change', () => { applyConditions(); refreshDSNHints(); schedulePreview(); });
         wrap.appendChild(input);
 
+        if (isDSN(f.name)) {
+            const actions = document.createElement('div');
+            actions.className = 'field-actions';
+            const pickBtn = document.createElement('button');
+            pickBtn.type = 'button';
+            pickBtn.className = 'btn-ghost btn-sm';
+            pickBtn.textContent = '从数据源选择';
+            pickBtn.addEventListener('click', () => openDataSourcePicker(f.name));
+            actions.appendChild(pickBtn);
+            wrap.appendChild(actions);
+        }
+
         const help = document.createElement('div');
         help.className = 'field-help';
         help.textContent = f.help || '';
@@ -240,6 +252,84 @@ export async function render(root /*Element*/, params) {
             const ctl = formEl.querySelector(`[name="${wrap.dataset.condField}"]`);
             const visible = ctl && ctl.value === wrap.dataset.condValue;
             wrap.classList.toggle('hidden', !visible);
+        });
+    }
+
+    /* ── data-source picker (web-only: reusable connection profiles) ────── */
+    async function openDataSourcePicker(dsnFieldName) {
+        const side = dsnFieldName === 'source_dsn' ? 'source' : 'target';
+        const typeName = side + '_type';
+        const schemaName = side + '_schema';
+
+        let list;
+        try {
+            list = await window.api.get('/api/v1/datasources') || [];
+        } catch (e) {
+            window.toast.warn('数据源加载失败', (e && e.message) || String(e));
+            return;
+        }
+        if (!list.length) {
+            window.toast.warn('暂无数据源', '请先在「数据源」页新建一个');
+            return;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'dsn-modal-overlay';
+        overlay.innerHTML = ''
+            + '<div class="dsn-modal" role="dialog" aria-modal="true">'
+            +   '<div class="dsn-modal-head"><h3>选择数据源</h3>'
+            +     '<button type="button" class="btn-ghost dsn-modal-x" aria-label="关闭">×</button></div>'
+            +   '<div class="dsn-modal-body">'
+            +     '<div class="field"><label>数据源</label><select name="ds-pick" class="mono"></select>'
+            +       '<div class="field-help">选中后自动填充类型、schema，DSN 由服务端加密解析。</div></div>'
+            +     '<p class="field-note">数据源列表与详情不回显 DSN；密码仅在服务端解密。</p>'
+            +   '</div>'
+            +   '<div class="dsn-modal-actions">'
+            +     '<button type="button" class="btn-ghost" id="ds-pick-cancel">取消</button>'
+            +     '<button type="button" class="btn-primary" id="ds-pick-apply">应用</button>'
+            +   '</div>'
+            + '</div>';
+        document.body.appendChild(overlay);
+        document.body.classList.add('modal-open');
+        overlay.classList.add('open');
+
+        const sel = overlay.querySelector('[name="ds-pick"]');
+        list.forEach(ds => {
+            const o = document.createElement('option');
+            o.value = ds.name;
+            o.textContent = ds.name + ' · ' + (ds.type || '?') + (ds.schema ? ' · ' + ds.schema : '');
+            sel.appendChild(o);
+        });
+
+        function close() {
+            overlay.classList.remove('open');
+            document.body.classList.remove('modal-open');
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }
+        overlay.querySelector('.dsn-modal-x').addEventListener('click', close);
+        overlay.querySelector('#ds-pick-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+
+        overlay.querySelector('#ds-pick-apply').addEventListener('click', async () => {
+            const name = sel.value;
+            if (!name) { window.toast.warn('请选择数据源', ''); return; }
+            try {
+                const resp = await window.api.post('/api/v1/datasources/' + encodeURIComponent(name) + '/pick', {});
+                const typeInput = formEl.querySelector(`[name="${typeName}"]`);
+                const schemaInput = formEl.querySelector(`[name="${schemaName}"]`);
+                const dsnInput = formEl.querySelector(`[name="${dsnFieldName}"]`);
+                if (typeInput && resp.type) typeInput.value = resp.type;
+                if (schemaInput && resp.schema) schemaInput.value = resp.schema;
+                if (dsnInput) dsnInput.value = resp.ref || ('datasource:' + name);
+                applyConditions();
+                refreshDSNHints();
+                schedulePreview();
+                window.toast.ok('已选用数据源：' + name, '');
+                close();
+            } catch (e) {
+                window.toast.err('应用数据源失败', (e && e.message) || String(e));
+            }
         });
     }
 

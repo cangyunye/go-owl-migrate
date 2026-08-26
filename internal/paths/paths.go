@@ -53,6 +53,10 @@ func ConfigLibraryDir() string {
 	return filepath.Join(Home(), "configs", "library")
 }
 
+func DataSourcesDir() string {
+	return filepath.Join(Home(), "datasources")
+}
+
 func TempDir() string {
 	return filepath.Join(Home(), "temp")
 }

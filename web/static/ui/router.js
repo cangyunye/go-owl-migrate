@@ -18,6 +18,7 @@ import { render as renderImport } from './views/import.js';
 import { render as renderExportMetadata } from './views/exportMetadata.js';
 import { render as renderMetadata } from './views/metadata.js';
 import { render as renderConfig } from './views/config.js';
+import { render as renderDataSources } from './views/datasources.js';
 
 /* ── jobUI singleton originals ────────────────────────────────
    jobUI is created by app.js (classic script, runs before these
@@ -33,6 +34,7 @@ const ORIG_ON_COMPLETE = window.jobUI && window.jobUI.onComplete;
 const NAV = [
     { route: '/', active: '/', title: '首页' },
     { route: '/config', active: '/config', title: '配置' },
+    { route: '/datasources', active: '/datasources', title: '数据源' },
     { route: '/metadata', active: '/metadata', title: '元数据' },
     { route: '/export-metadata', active: '/export-metadata', title: '元数据导出' },
     { route: '/ddl', active: '/ddl', title: 'DDL' },
@@ -48,6 +50,7 @@ const NAV = [
 const routes = [
     { re: /^\/$/, render: renderHome, active: '/', title: '首页' },
     { re: /^\/config$/, render: renderConfig, active: '/config', title: '配置' },
+    { re: /^\/datasources$/, render: renderDataSources, active: '/datasources', title: '数据源' },
     { re: /^\/metadata$/, render: renderMetadata, active: '/metadata', title: '元数据' },
     { re: /^\/jobs$/, render: renderJobs, active: '/jobs', title: '任务' },
     { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' },

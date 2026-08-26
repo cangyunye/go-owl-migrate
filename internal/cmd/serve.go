@@ -108,12 +108,13 @@ No authentication is required — intended for local or trusted-network use.`,
 			}()
 
 			srv := serve.NewServer(serve.Config{
-				Store:      store,
-				MasterURL:  fmt.Sprintf("http://%s", ipcAddr),
-				ConfigPath: configOut,
-				TempDir:    tempDir,
-				ConfigDir:  configDir,
-				Token:      token,
+				Store:          store,
+				MasterURL:      fmt.Sprintf("http://%s", ipcAddr),
+				ConfigPath:     configOut,
+				TempDir:        tempDir,
+				ConfigDir:      configDir,
+				DataSourcesDir: paths.DataSourcesDir(),
+				Token:          token,
 			})
 
 			serveAddr := fmt.Sprintf("%s:%d", host, port)
