@@ -12,6 +12,7 @@ import { render as renderJobDetail } from './views/jobDetail.js';
 import { render as renderDDL } from './views/ddl.js';
 import { render as renderSelect } from './views/select.js';
 import { render as renderInsert } from './views/insert.js';
+import { render as renderMigrate } from './views/migrate.js';
 
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
@@ -36,7 +37,8 @@ const routes = [
     { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' },
     { re: /^\/ddl$/, render: renderDDL, active: '/ddl', title: 'DDL' },
     { re: /^\/select$/, render: renderSelect, active: '/select', title: 'SELECT' },
-    { re: /^\/insert$/, render: renderInsert, active: '/insert', title: 'INSERT' }
+    { re: /^\/insert$/, render: renderInsert, active: '/insert', title: 'INSERT' },
+    { re: /^\/migrate$/, render: renderMigrate, active: '/migrate', title: '迁移' }
 ];
 
 function renderComingSoon(root, params, route) {
