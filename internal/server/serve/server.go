@@ -22,6 +22,7 @@ type Config struct {
 	ConfigPath string
 	TempDir    string
 	ConfigDir  string
+	Token      string
 }
 
 type Server struct {
