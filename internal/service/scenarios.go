@@ -52,11 +52,12 @@ func dialectOptions() []string {
 // they decide which structured login fields are offered and how the DSN is
 // assembled in the UI.
 const (
-	familyMySQL     = "mysql"
-	familyOracle    = "oracle"
-	familyPostgres  = "postgres"
-	familyOceanBase = "oceanbase"
-	familyFile      = "file"
+	familyMySQL           = "mysql"
+	familyOracle          = "oracle"
+	familyPostgres        = "postgres"
+	familyOceanBaseMySQL  = "oceanbase-mysql"
+	familyOceanBaseOracle = "oceanbase-oracle"
+	familyFile            = "file"
 )
 
 // DSNFamilyMeta describes the structured connection fields for a DSN family,
@@ -67,7 +68,8 @@ type DSNFamilyMeta struct {
 	DBPlaceholder string `json:"db_placeholder"`        // placeholder for the database component
 	Port          string `json:"port"`                  // default port shown as placeholder
 	Builder       string `json:"builder"`               // DSN assembly template
-	HasCluster    bool   `json:"has_cluster,omitempty"` // OceanBase optional cluster param
+	HasCluster    bool   `json:"has_cluster,omitempty"` // OceanBase optional cluster
+	HasTenant     bool   `json:"has_tenant,omitempty"`  // OceanBase MySQL: tenant/cluster fold into the username
 	URLStyle      bool   `json:"url_style"`             // assemble as URL (user/password/db need encoding)
 }
 
@@ -94,10 +96,12 @@ func dsnFamily(dialect string) string {
 	switch strings.ToLower(dialect) {
 	case "oracle", "goldendb-oracle":
 		return familyOracle
-	case "goldendb", "goldendb-mysql", "oceanbase", "oceanbase-mysql", "mysql", "mariadb":
+	case "goldendb", "goldendb-mysql", "mysql", "mariadb":
 		return familyMySQL
 	case "oceanbase-oracle":
-		return familyOceanBase
+		return familyOceanBaseOracle
+	case "oceanbase", "oceanbase-mysql":
+		return familyOceanBaseMySQL
 	case "postgres", "postgresql", "opengaussdb", "panweidb", "panweidb-mysql", "panweidb-oracle":
 		return familyPostgres
 	case "sqlite3", "duckdb":
@@ -131,7 +135,16 @@ func dsnFamilyMeta() map[string]DSNFamilyMeta {
 			Port:          "5432",
 			Builder:       "host={host} port={port} user={user} password={password} dbname={db} sslmode=disable",
 		},
-		familyOceanBase: {
+		familyOceanBaseMySQL: {
+			DBLabel:       "数据库名（租户库）",
+			DBPlaceholder: "例如: test_db（租户内库名）",
+			Port:          "2881",
+			Builder:       "{user}:{password}@tcp({host}:{port})/{db}",
+			HasCluster:    true,
+			HasTenant:     true,
+			URLStyle:      true,
+		},
+		familyOceanBaseOracle: {
 			DBLabel:       "租户",
 			DBPlaceholder: "例如: oracle_tenant",
 			Port:          "2881",

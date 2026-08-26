@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -57,8 +58,13 @@ func (s *Server) handleTestConn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Listing existing schemas is best-effort: a failure here must not turn a
+	// successful connection into a failure, it just means no schema list.
+	schemas, _ := extractor.ListSchemas(db, req.Type)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"latency": time.Since(start).Milliseconds(),
+		"schemas": schemas,
 	})
 }

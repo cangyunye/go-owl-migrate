@@ -57,9 +57,10 @@ func TestDSNFamilies_AllDialectsMapped(t *testing.T) {
 	checks := map[string]string{
 		"postgres": familyPostgres, "opengaussdb": familyPostgres,
 		"panweidb": familyPostgres, "panweidb-mysql": familyPostgres, "panweidb-oracle": familyPostgres,
-		"mysql": familyMySQL, "goldendb-mysql": familyMySQL, "oceanbase-mysql": familyMySQL,
-		"oracle": familyOracle, "goldendb-oracle": familyOracle,
-		"oceanbase-oracle": familyOceanBase,
+		"mysql": familyMySQL, "goldendb-mysql": familyMySQL,
+		"oceanbase-mysql": familyOceanBaseMySQL,
+		"oracle":          familyOracle, "goldendb-oracle": familyOracle,
+		"oceanbase-oracle": familyOceanBaseOracle,
 		"sqlite3":          familyFile, "duckdb": familyFile,
 	}
 	for d, want := range checks {
@@ -71,7 +72,7 @@ func TestDSNFamilies_AllDialectsMapped(t *testing.T) {
 
 func TestDSNComponentMeta_Builders(t *testing.T) {
 	meta := DSNComponentMeta()
-	for _, fam := range []string{familyMySQL, familyOracle, familyPostgres, familyOceanBase} {
+	for _, fam := range []string{familyMySQL, familyOracle, familyPostgres, familyOceanBaseMySQL, familyOceanBaseOracle} {
 		m, ok := meta[fam]
 		if !ok {
 			t.Errorf("missing meta for family %q", fam)
@@ -81,8 +82,14 @@ func TestDSNComponentMeta_Builders(t *testing.T) {
 			t.Errorf("family %q has incomplete meta: %+v", fam, m)
 		}
 	}
-	if !meta[familyOceanBase].HasCluster {
-		t.Error("oceanbase family should have cluster support")
+	if !meta[familyOceanBaseMySQL].HasCluster {
+		t.Error("oceanbase-mysql family should have cluster support")
+	}
+	if !meta[familyOceanBaseMySQL].HasTenant {
+		t.Error("oceanbase-mysql family should have tenant (folded into username)")
+	}
+	if !meta[familyOceanBaseOracle].HasCluster {
+		t.Error("oceanbase-oracle family should have cluster support")
 	}
 	if meta[familyFile].Builder != "" {
 		t.Errorf("file family should have no builder, got %q", meta[familyFile].Builder)

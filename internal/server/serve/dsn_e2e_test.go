@@ -28,24 +28,28 @@ func TestE2E_StructuredFill_ConnectsToLiveDB(t *testing.T) {
 	families := service.DSNFamilies()
 
 	cases := []struct {
-		dbType string
-		want   string
-		comps  map[string]string
+		dbType       string
+		want         string
+		comps        map[string]string
+		expectSchema string
 	}{
 		{
-			dbType: "mysql",
-			want:   "root:root123456@tcp(127.0.0.1:3306)/default_db",
-			comps:  map[string]string{"user": "root", "password": "root123456", "host": "127.0.0.1", "port": "3306", "db": "default_db"},
+			dbType:       "mysql",
+			want:         "root:root123456@tcp(127.0.0.1:3306)/default_db",
+			comps:        map[string]string{"user": "root", "password": "root123456", "host": "127.0.0.1", "port": "3306", "db": "default_db"},
+			expectSchema: "default_db",
 		},
 		{
-			dbType: "postgres",
-			want:   "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable",
-			comps:  map[string]string{"user": "postgres", "password": "postgres123", "host": "127.0.0.1", "port": "5432", "db": "postgres_db"},
+			dbType:       "postgres",
+			want:         "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable",
+			comps:        map[string]string{"user": "postgres", "password": "postgres123", "host": "127.0.0.1", "port": "5432", "db": "postgres_db"},
+			expectSchema: "public",
 		},
 		{
-			dbType: "oracle",
-			want:   "oracle://scott:tiger@127.0.0.1:1521/XEPDB1",
-			comps:  map[string]string{"user": "scott", "password": "tiger", "host": "127.0.0.1", "port": "1521", "db": "XEPDB1"},
+			dbType:       "oracle",
+			want:         "oracle://scott:tiger@127.0.0.1:1521/XEPDB1",
+			comps:        map[string]string{"user": "scott", "password": "tiger", "host": "127.0.0.1", "port": "1521", "db": "XEPDB1"},
+			expectSchema: "SCOTT",
 		},
 	}
 
@@ -73,9 +77,27 @@ func TestE2E_StructuredFill_ConnectsToLiveDB(t *testing.T) {
 			if ok, _ := respBody["ok"].(bool); !ok {
 				t.Fatalf("%s: connect failed: %v", c.dbType, respBody["error"])
 			}
-			t.Logf("%s: connected OK via assembled DSN", c.dbType)
+			// The schema dropdown source must list an existing schema.
+			if !containsSchema(respBody["schemas"], c.expectSchema) {
+				t.Errorf("%s: schemas %v does not contain %q", c.dbType, respBody["schemas"], c.expectSchema)
+			}
+			t.Logf("%s: connected OK via assembled DSN (schema list: %v)", c.dbType, respBody["schemas"])
 		})
 	}
+}
+
+func containsSchema(raw any, want string) bool {
+	arr, ok := raw.([]any)
+	if !ok {
+		return false
+	}
+	for _, v := range arr {
+		s, _ := v.(string)
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // applyDSNBuilder substitutes {key} placeholders in a builder template with the

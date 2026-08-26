@@ -80,6 +80,95 @@ func normalizeDBType(t string) string {
 	}
 }
 
+// ListSchemas returns the existing schemas (PG namespaces, MySQL databases or
+// Oracle table owners) for a connected database, using the same base-type
+// normalization as Extract. The queries carry no bind parameters, so they work
+// across both ":"- and "?"-style placeholder dialects.
+func ListSchemas(db *sql.DB, dbType string) ([]string, error) {
+	base := normalizeDBType(dbType)
+	switch base {
+	case "postgres":
+		return listPGSchemas(db)
+	case "mysql":
+		return listMySQLSchemas(db)
+	case "oracle":
+		return listOracleSchemas(db)
+	case "sqlite3", "duckdb":
+		// Embedded databases are their own single schema.
+		return []string{"main"}, nil
+	default:
+		return nil, fmt.Errorf("unsupported database type %q", dbType)
+	}
+}
+
+func listPGSchemas(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT schema_name FROM information_schema.schemata
+		WHERE schema_name !~ '^pg_' AND schema_name <> 'information_schema'
+		ORDER BY schema_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, rows.Err()
+}
+
+func listMySQLSchemas(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT schema_name FROM information_schema.schemata
+		WHERE schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+		ORDER BY schema_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, rows.Err()
+}
+
+func listOracleSchemas(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(`
+		SELECT username FROM all_users
+		WHERE username NOT IN ('SYS','SYSTEM','OUTLN','XDB','PUBLIC','ANONYMOUS','WMSYS','MDSYS','CTXSYS',
+			'LBACSYS','DVSYS','AUDSYS','OJVMSYS','DBSNMP','APPQOSSYS','GSMADMIN_INTERNAL',
+			'REMOTE_SCHEDULER_AGENT','SYSBACKUP','SYSDG','SYSKM','SYSRAC','OLAPSYS')
+		ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, rows.Err()
+}
+
 // Extract connects to the database and retrieves full schema metadata.
 // Returns a fully populated SchemaModel with table definitions, columns,
 // primary keys, indexes, foreign keys, views, sequences, and triggers.

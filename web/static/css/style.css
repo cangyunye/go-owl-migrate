@@ -558,6 +558,13 @@ button { font-family: inherit; }
 .conn-status.fail { color: var(--red); }
 .conn-status.pending { color: var(--text-2); }
 input.dsn-readonly { cursor: pointer; background: var(--bg-inset); }
+.field-note {
+  font-size: 11.5px; margin-top: 7px; line-height: 1.5;
+  color: var(--amber, #fbbf24);
+  background: rgba(251, 191, 36, .09);
+  border-left: 2px solid var(--amber, #fbbf24);
+  padding: 5px 9px; border-radius: 0 5px 5px 0;
+}
 
 /* DSN structured editing modal */
 body.modal-open { overflow: hidden; }

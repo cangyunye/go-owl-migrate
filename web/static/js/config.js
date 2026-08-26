@@ -170,6 +170,29 @@
                 if (wrap) updateDSNHint(f, wrap);
             }
         });
+        updateSourceDBHint();
+    }
+
+    // In the migrate flow the source database is always required: even when the
+    // structure comes from CSV/XLSX, the data rows are still exported from the
+    // source DB. Show a clarifying note on the source DSN field whenever
+    // metadata_type is not "database".
+    function updateSourceDBHint() {
+        const mt = document.querySelector(`#cfg-form [name="metadata_type"]`);
+        const dsnWrap = document.querySelector(`#cfg-form .field[data-name="source_dsn"]`);
+        if (!dsnWrap) return;
+        let note = dsnWrap.querySelector('.source-dsn-note');
+        if (mt && mt.value !== 'database') {
+            if (!note) {
+                note = document.createElement('div');
+                note.className = 'field-note source-dsn-note';
+                note.textContent = '提示：此流程仍会从源库导出数据。即使表结构由 CSV/XLSX 定义，也需要按源库类型填写 DSN。';
+                dsnWrap.appendChild(note);
+            }
+            note.style.display = '';
+        } else if (note) {
+            note.style.display = 'none';
+        }
     }
 
     // ── DSN structured editing modal ──────────────────────────────────────
@@ -238,13 +261,18 @@
             ['host', '主机', '例如: 127.0.0.1', 'text'],
             ['port', '端口', '默认 ' + (meta.port || ''), 'text'],
             ['user', '用户', '登录用户名', 'text'],
-            ['password', '密码', '数据库登录密码', 'password'],
-            ['db', meta.db_label || '数据库', meta.db_placeholder || '', 'text'],
         ];
-        fields.forEach(([key, label, ph, type]) => body.appendChild(modalField(key, label, ph, type)));
-        if (meta.has_cluster) {
-            body.appendChild(modalField('cluster', '集群', '例如: obcluster（可选）', 'text'));
+        // OceanBase MySQL tenant mode: tenant/cluster fold into the username.
+        if (meta.has_tenant) {
+            fields.push(['tenant', '租户', 'OceanBase 租户（可选）', 'text']);
+            fields.push(['cluster', '集群', 'OceanBase 集群（可选）', 'text']);
         }
+        fields.push(['password', '密码', '数据库登录密码', 'password']);
+        fields.push(['db', meta.db_label || '数据库', meta.db_placeholder || '', 'text']);
+        if (!meta.has_tenant && meta.has_cluster) {
+            fields.push(['cluster', '集群', '例如: obcluster（可选）', 'text']);
+        }
+        fields.forEach(([key, label, ph, type]) => body.appendChild(modalField(key, label, ph, type)));
         // Editable raw DSN: the single source of truth reflected on apply.
         const rawWrap = document.createElement('div');
         rawWrap.className = 'field';
@@ -286,17 +314,38 @@
         const meta = dsnFields[modal.data.family] || {};
         if (modal.data.family === 'file') return mval('path');
         if (!meta.builder) return '';
-        if (!mval('host') || !mval('db')) return '';
+        // Missing components become editable $placeholders (db is optional), so
+        // the DSN is always generated live and 应用 always writes something.
+        const ph = { user: '$user', password: '$pass', host: '$host', port: '$port', db: '$db', tenant: '$tenant', cluster: '$cluster' };
         let out = meta.builder.replace(/\{(\w+)\}/g, (m, k) => {
-            let v = mval(k);
-            if (meta.url_style && (k === 'user' || k === 'password' || k === 'db')) v = encodeURIComponent(v);
-            return v || '';
+            let v;
+            // OceanBase MySQL tenant mode: the full OceanBase login is
+            // user@tenant#cluster, folded into the {user} token.
+            if (k === 'user' && meta.has_tenant) {
+                let u = mval('user');
+                if (!u) {
+                    v = ph.user;
+                } else {
+                    const t = mval('tenant');
+                    const c = mval('cluster');
+                    if (t) u += '@' + t;
+                    if (c) u += '#' + c;
+                    v = u;
+                }
+            } else {
+                v = mval(k);
+                if (!v) v = ph[k] || '';
+            }
+            // Leave $placeholder tokens unencoded so they stay human-editable.
+            const isToken = /^\$[A-Za-z]+$/.test(v);
+            if (meta.url_style && !isToken && (k === 'user' || k === 'password' || k === 'db')) v = encodeURIComponent(v);
+            return v;
         });
         if (modal.data.family === 'postgres') {
             out = out.split(/\s+/).filter(t => t && !/^\w+=$/.test(t)).join(' ');
         }
         out = out.replace(/\s+/g, ' ').trim();
-        if (meta.has_cluster) {
+        if (meta.has_cluster && !meta.has_tenant) {
             const c = mval('cluster');
             if (c) out += (out.indexOf('?') >= 0 ? '&' : '?') + 'cluster=' + encodeURIComponent(c);
         }
@@ -370,10 +419,62 @@
                 dsn,
                 schema: schemaInput ? schemaInput.value : '',
             });
-            if (resp.error) setStatus('✗ ' + resp.error, 'fail');
-            else setStatus('✓ 连接成功 ' + (resp.latency != null ? resp.latency + 'ms' : ''), 'ok');
+            if (resp.error) {
+                setStatus('✗ ' + resp.error, 'fail');
+            } else {
+                setStatus('✓ 连接成功 ' + (resp.latency != null ? resp.latency + 'ms' : ''), 'ok');
+                // On a passing connection, offer the existing schemas as a
+                // dropdown so the schema can be picked instead of typed.
+                enableSchemaSelect(side, resp.schemas || []);
+            }
         } catch (e) {
             setStatus('✗ ' + e.message, 'fail');
+        }
+    }
+
+    // Replace the plain schema text input with a dropdown of existing schemas
+    // discovered on the live connection. Re-running a successful test refreshes
+    // the options; a refresh button is added for convenience.
+    function enableSchemaSelect(side, schemas) {
+        if (!Array.isArray(schemas) || !schemas.length) return;
+        const wrap = document.querySelector(`#cfg-form .field[data-name="${side}_schema"]`);
+        if (!wrap) return;
+        let select = wrap.querySelector(`select[name="${side}_schema"]`);
+        let input = wrap.querySelector(`input[name="${side}_schema"]`);
+        const current = select ? select.value : (input ? input.value : '');
+
+        if (!select) {
+            select = document.createElement('select');
+            select.name = side + '_schema';
+            select.addEventListener('change', schedulePreview);
+            if (input) input.replaceWith(select);
+            else wrap.appendChild(select);
+        }
+
+        select.innerHTML = '';
+        if (current === '') {
+            const ph = document.createElement('option');
+            ph.value = '';
+            ph.selected = true;
+            ph.textContent = '— 请选择 schema —';
+            select.appendChild(ph);
+        }
+        schemas.forEach(s => {
+            const o = document.createElement('option');
+            o.value = s;
+            o.textContent = s;
+            if (s === current) o.selected = true;
+            select.appendChild(o);
+        });
+
+        let refresh = wrap.querySelector('.schema-refresh');
+        if (!refresh) {
+            refresh = document.createElement('button');
+            refresh.type = 'button';
+            refresh.className = 'btn-ghost btn-sm schema-refresh';
+            refresh.textContent = '刷新';
+            refresh.addEventListener('click', () => testConn(side));
+            wrap.appendChild(refresh);
         }
     }
 
@@ -395,6 +496,25 @@
                 }
             });
             return o;
+        }
+        // OceanBase MySQL tenant mode: user@tenant#cluster:pass@tcp(...)/db
+        if (family === 'oceanbase-mysql') {
+            const om = dsn.match(/^(.+?):([^@]*)@tcp\(([^:]+):(\d+)\)\/(.*)$/);
+            if (om) {
+                const u = om[1];
+                let user = u, tenant = '', cluster = '';
+                const h = u.indexOf('#');
+                const at = u.indexOf('@');
+                if (h >= 0) { cluster = u.slice(h + 1); }
+                const base = h >= 0 ? u.slice(0, h) : u;
+                if (at >= 0) { tenant = base.slice(at + 1); user = base.slice(0, at); }
+                o.user = decodeURIComponent(user);
+                o.tenant = tenant;
+                o.cluster = cluster;
+                o.password = decodeURIComponent(om[2]);
+                o.host = om[3]; o.port = om[4]; o.db = om[5];
+                return o;
+            }
         }
         const m = dsn.match(/^([A-Za-z0-9_.-]+):([^@]*)@tcp\(([^:]+):(\d+)\)\/(.*)$/);
         if (m) {
@@ -425,6 +545,7 @@
         if (family === 'file') { set('path', o.path || o.db || ''); return; }
         set('host', o.host); set('port', o.port);
         set('user', o.user); set('password', o.password);
+        set('tenant', o.tenant);
         set('db', o.db); set('cluster', o.cluster);
     }
 
