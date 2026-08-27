@@ -253,7 +253,7 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) 
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
 		return 0, nil, fmt.Errorf("start worker: %w", err)
