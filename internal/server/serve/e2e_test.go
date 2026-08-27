@@ -173,28 +173,35 @@ func TestE2E_CancelJob(t *testing.T) {
 	}
 }
 
-func TestE2E_PagesRenderDistinctContent(t *testing.T) {
+func TestE2E_SpaShellServedAndSSRRoutesRemoved(t *testing.T) {
 	ts, _, _ := newE2ERig(t)
 
-	pages := map[string]string{
-		"/":        "数据库迁移工作台",
-		"/config":  "配置",
-		"/migrate": "数据迁移",
-		"/jobs":    "任务历史",
-	}
-	for path, wantTitle := range pages {
+	// Since the Phase-3 cutover, / and /ui serve the SPA shell; the
+	// server-side-rendered page set was removed.
+	for _, path := range []string{"/", "/ui"} {
 		resp, err := http.Get(ts.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
 		}
 		data, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("GET %s status = %d, want 200", path, resp.StatusCode)
 		}
-		if !strings.Contains(string(data), "<h1>"+wantTitle+"</h1>") {
-			t.Errorf("GET %s missing title %q", path, wantTitle)
+		if !strings.Contains(string(data), `id="spa-nav"`) {
+			t.Errorf("GET %s missing SPA shell marker (id=spa-nav)", path)
+		}
+	}
+
+	// Former SSR page paths are no longer served (the SPA uses hash routing).
+	for _, path := range []string{"/config", "/migrate", "/jobs"} {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s status = %d, want 404 (SSR page removed)", path, resp.StatusCode)
 		}
 	}
 }

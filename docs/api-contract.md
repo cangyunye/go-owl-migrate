@@ -104,9 +104,9 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 
 | Method & path | Purpose |
 |---|---|
-| GET / | SPA home page (the `/` handler is registered as `GET /{$}`). |
-| GET /config, /metadata, /ddl, /select, /insert, /migrate, /export, /export-metadata, /import, /jobs, /jobs/{id} | Server-rendered HTML pages for each tool. |
-| GET /static/ | Static assets. |
+| GET / | The SPA shell (since the Phase-3 cutover; the SSR page set was removed). |
+| GET /ui | Same SPA shell (alias). |
+| GET /static/ | Static assets (app.js kernel, style.css, SPA views). |
 | GET /docs | Redirects to `/docs/`. |
 | GET /docs/ | The docs portal (from `docs-site/` or embedded). |
 
