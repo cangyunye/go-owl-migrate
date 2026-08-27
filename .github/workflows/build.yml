@@ -1,0 +1,139 @@
+# Build owl-migrate for all supported platforms.
+#
+# On every push/PR this compiles the full matrix (a cross-compile smoke test).
+# On tag pushes (v*) it additionally packages each binary and publishes a
+# GitHub Release with the artifacts attached.
+#
+# The default build is CGO-free (oracle/postgres/mysql + compound dialects),
+# so everything is cross-compiled from a single Linux runner.
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # release job publishes binaries
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: arm
+            goarm: "7"
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      # go:embed bundles web/docsite/, but the staged markdown is gitignored.
+      # Regenerate it from docs/ + docs-site/ (mirrors `task docsite`).
+      - name: Stage docs portal for go:embed
+        run: |
+          set -euo pipefail
+          rm -rf web/docsite
+          mkdir -p web/docsite/docs
+          cp docs-site/index.html web/docsite/
+          cp -R docs-site/vendor web/docsite/vendor
+          cp docs/*.md web/docsite/docs/
+
+      # Tag build -> version from the tag (v0.4.0 -> 0.4.0); otherwise fall
+      # back to the version hardcoded in internal/cmd/root.go.
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            v="$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/cmd/root.go | head -n1)"
+            echo "version=${v:-dev}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse --short HEAD)"
+          build_time="$(date -u '+%Y-%m-%d %H:%M:%S')"
+          bin="owl-migrate"
+          [[ "$GOOS" == "windows" ]] && bin="owl-migrate.exe"
+          # Single-quoted -X values keep the space in buildTime intact through
+          # the double-quoted -ldflags argument (same trick as the Makefile).
+          ldflags="-s -w \
+            -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.version=${{ steps.version.outputs.version }}' \
+            -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.commitID=${commit}' \
+            -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime=${build_time}'"
+          mkdir -p dist
+          go build -trimpath -ldflags "${ldflags}" -o "dist/${bin}" ./cmd/migrate/main.go
+
+      - name: Package
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          set -euo pipefail
+          name="owl-migrate_${GOOS}_${GOARCH}"
+          if [[ "$GOOS" == "windows" ]]; then
+            (cd dist && zip -9 "../${name}.zip" owl-migrate.exe)
+          else
+            (cd dist && tar -czf "../${name}.tar.gz" owl-migrate)
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: owl-migrate-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            owl-migrate_*.tar.gz
+            owl-migrate_*.zip
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
