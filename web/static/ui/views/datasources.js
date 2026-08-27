@@ -8,9 +8,11 @@ import { escapeHtml } from '../util.js';
 
 /* Module-level cache so re-renders reuse the dialect list without refetching. */
 let dialects = null;
+let dsnExamples = {}; // dialect -> format example, from /api/v1/scenarios
 
 export async function render(root /*Element*/, params) {
     await ensureDialects();
+    await ensureDsnExamples();
 
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
@@ -60,6 +62,18 @@ async function ensureDialects() {
         dialects = [];
     }
     return dialects;
+}
+
+/* Per-dialect DSN format examples (mirrors the config page hint). */
+async function ensureDsnExamples() {
+    if (dsnExamples && Object.keys(dsnExamples).length) return dsnExamples;
+    try {
+        const data = await window.api.get('/api/v1/scenarios');
+        dsnExamples = data.dsn_examples || {};
+    } catch (e) {
+        dsnExamples = {};
+    }
+    return dsnExamples;
 }
 
 function renderList(tbody, list, root) {
@@ -142,6 +156,7 @@ function dsModal(root, record, onChange) {
         +     '<div class="field"><label>Schema</label><input name="ds-schema" type="text" spellcheck="false" placeholder="Oracle: 用户名; MySQL: 库名; PG: schema 名"></div>'
         +     '<div class="field"><label>DSN ' + (record ? '(留空保持不变)' : '*') + '</label>'
         +       '<input name="ds-dsn" type="text" spellcheck="false" autocomplete="off" class="mono">'
+        +       '<div class="field-help" id="ds-dsn-example"></div>'
         +       '<div class="field-help">服务端加密保存；列表与详情不回显。</div>'
         +     '</div>'
         +     '<div class="field"><label>备注</label><input name="ds-remark" type="text" spellcheck="false" placeholder="可选"></div>'
@@ -175,6 +190,17 @@ function dsModal(root, record, onChange) {
         schemaEl.value = record.schema || '';
         remarkEl.value = record.remark || '';
     }
+
+    /* Show a per-dialect DSN format example, like the config page. */
+    const exampleEl = overlay.querySelector('#ds-dsn-example');
+    function updateDsnExample() {
+        if (!exampleEl) return;
+        const ex = dsnExamples[typeEl.value] || '';
+        exampleEl.textContent = ex ? '格式示例：' + ex : '';
+        exampleEl.classList.toggle('has-example', !!ex);
+    }
+    typeEl.addEventListener('change', updateDsnExample);
+    updateDsnExample();
 
     function close() {
         overlay.classList.remove('open');

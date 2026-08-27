@@ -25,6 +25,9 @@ Two levels of re-use coexist:
 1. Open the **数据源** menu (sidebar → Prepare → 数据源) and click **新建数据源**.
 2. Fill `名称`, `类型`, `Schema`, `DSN`, optional `备注`, then **保存**.
    The DSN is **encrypted at rest**; the list and detail never show it.
+   A per-type DSN format example appears under the DSN field and updates as
+   you change `类型` (same hints as the config page, e.g.
+   `格式示例：oracle://user:pass@host:1521/service_name`).
 3. Go to the **配置** page. Next to any 源/目标 DSN field click **从数据源选择**.
 4. In the modal pick a data source and click **应用**. The form fills the
    `类型` + `Schema` and places a `datasource:<name>` reference into the DSN
@@ -40,6 +43,10 @@ Two levels of re-use coexist:
 >   config.
 > - `名称` is the reference key. Rename = create a new profile and delete the old.
 > - Editing a profile with an empty DSN keeps the previously stored secret.
+> - On the config page you can also save a filled connection directly as a data
+>   source: click **存为数据源** next to a DSN field, type a name, and confirm.
+>   A DSN that already came from a data source (a `datasource:<name>` reference)
+>   is skipped to avoid saving a literal reference.
 
 ## Developer guide
 

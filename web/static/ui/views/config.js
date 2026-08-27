@@ -236,12 +236,18 @@ export async function render(root /*Element*/, params) {
             pickBtn.className = 'btn-ghost btn-sm';
             pickBtn.textContent = '从数据源选择';
             pickBtn.addEventListener('click', () => openDataSourcePicker(f.name));
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.className = 'btn-ghost btn-sm';
+            saveBtn.textContent = '存为数据源';
+            saveBtn.addEventListener('click', () => openSaveAsDataSource(side));
             const status = document.createElement('span');
             status.className = 'conn-status';
             status.dataset.side = side;
             actions.appendChild(structBtn);
             actions.appendChild(testBtn);
             actions.appendChild(pickBtn);
+            actions.appendChild(saveBtn);
             actions.appendChild(status);
             wrap.appendChild(actions);
         }
@@ -359,6 +365,74 @@ export async function render(root /*Element*/, params) {
                 close();
             } catch (e) {
                 window.toast.err('应用数据源失败', (e && e.message) || String(e));
+            }
+        });
+    }
+
+    /* ── save the current side's connection as a reusable data source ────── */
+    function openSaveAsDataSource(side) {
+        const typeInput = formEl.querySelector(`[name="${side}_type"]`);
+        const dsnInput = formEl.querySelector(`[name="${side}_dsn"]`);
+        const schemaInput = formEl.querySelector(`[name="${side}_schema"]`);
+        const type = typeInput ? typeInput.value : '';
+        const dsn = dsnInput ? dsnInput.value : '';
+        const schema = schemaInput ? schemaInput.value : '';
+        if (!dsn) { window.toast.warn('请先填写 DSN', ''); return; }
+        if (dsn.indexOf('datasource:') === 0) {
+            window.toast.warn('当前 DSN 来自数据源', '无需重复保存，改名请直接在「数据源」页操作');
+            return;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'dsn-modal-overlay';
+        overlay.innerHTML = ''
+            + '<div class="dsn-modal" role="dialog" aria-modal="true">'
+            +   '<div class="dsn-modal-head"><h3>保存为数据源</h3>'
+            +     '<button type="button" class="btn-ghost dsn-modal-x" aria-label="关闭">×</button></div>'
+            +   '<div class="dsn-modal-body">'
+            +     '<div class="field"><label>名称 *</label><input name="ds-name" type="text" spellcheck="false" autocomplete="off" placeholder="例如: prod-oracle"></div>'
+            +     '<div class="field"><label>类型</label><input readonly type="text" class="mono" value="' + escapeHtml(type) + '"></div>'
+            +     '<div class="field"><label>Schema</label><input name="ds-schema" type="text" spellcheck="false" value="' + escapeHtml(schema) + '"></div>'
+            +     '<div class="field"><label>DSN</label><input readonly type="text" class="mono" value="' + escapeHtml(dsn) + '"></div>'
+            +     '<p class="field-note">将保存为可复用的数据源（DSN 服务端加密存储）。</p>'
+            +   '</div>'
+            +   '<div class="dsn-modal-actions">'
+            +     '<button type="button" class="btn-ghost" id="ds-saveas-cancel">取消</button>'
+            +     '<button type="button" class="btn-primary" id="ds-saveas-save">保存</button>'
+            +   '</div>'
+            + '</div>';
+        document.body.appendChild(overlay);
+        document.body.classList.add('modal-open');
+        overlay.classList.add('open');
+
+        const nameEl = overlay.querySelector('[name="ds-name"]');
+        const schemaEl = overlay.querySelector('[name="ds-schema"]');
+
+        function close() {
+            overlay.classList.remove('open');
+            document.body.classList.remove('modal-open');
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        }
+        overlay.querySelector('.dsn-modal-x').addEventListener('click', close);
+        overlay.querySelector('#ds-saveas-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+        overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+
+        overlay.querySelector('#ds-saveas-save').addEventListener('click', async () => {
+            const name = (nameEl.value || '').trim();
+            if (!name) { window.toast.warn('请填写名称', ''); return; }
+            const save = overlay.querySelector('#ds-saveas-save');
+            save.disabled = true;
+            try {
+                await window.api.post('/api/v1/datasources', {
+                    name, type, schema: schemaEl.value.trim(), dsn, remark: ''
+                });
+                window.toast.ok('已保存数据源：' + name, '');
+                close();
+            } catch (e) {
+                window.toast.err('保存失败', (e && e.message) || String(e));
+            } finally {
+                save.disabled = false;
             }
         });
     }
