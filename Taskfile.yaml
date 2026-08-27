@@ -1,0 +1,272 @@
+# go-owl-migrate Taskfile — cross-platform replacement for the Makefile.
+#
+# Usage:
+#   task                  # alias for `task build`
+#   task build            # default build (all dialects, current platform)
+#   task build/windows    # cross-compile for Windows AMD64
+#   task test             # go test -v ./...
+#   task run -- --help    # extra args after `--` are forwarded to the binary
+#   task --list           # list all tasks
+#
+# Install Task:  https://taskfile.dev/installation
+#   go install github.com/go-task/task/v3/cmd/task@latest
+#
+# Windows note: Task uses Git Bash when available (recommended); the POSIX
+# commands below (`mkdir -p`, `rm -rf`, `cp -R`) require Git Bash / WSL.
+
+version: '3'
+
+vars:
+  BINARY_NAME: owl-migrate
+  MAIN_PATH: ./cmd/migrate/main.go
+  BUILD_DIR: build
+
+  # Version is read from internal/cmd/root.go so it never drifts from the
+  # compiled-in value (the Makefile hardcoded this and could get out of sync).
+  VERSION:
+    sh: |
+      sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/cmd/root.go | head -n1
+  COMMIT_ID:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  BUILD_TIME:
+    sh: date "+%Y-%m-%d %H:%M:%S"
+
+  # Single-quoted -X values so the embedded space in buildTime survives the
+  # double-quoted -ldflags argument (same trick the Makefile used).
+  LDFLAGS: >-
+    -s -w
+    -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.version={{.VERSION}}'
+    -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.commitID={{.COMMIT_ID}}'
+    -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime={{.BUILD_TIME}}'
+
+# Build tags for optional dialects:
+#   sqlite3    — include SQLite3 support (CGo, requires gcc)
+#   duckdb     — include DuckDB support (CGo, requires libduckdb)
+#
+# Compound dialects (goldendb, oceanbase, panweidb, opengaussdb) are included
+# by default. Exclude with:
+#   go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb"
+
+tasks:
+  # `task` with no arguments builds the current platform.
+  default:
+    desc: Alias for `task build`
+    deps: [build]
+
+  # Stage the docs portal + markdown into web/docsite/ so go:embed can bundle
+  # them (go:embed cannot reference parent directories). Always regenerated.
+  docsite:
+    desc: Stage docs portal into web/docsite/ for go:embed (internal)
+    internal: true
+    run: once
+    silent: true
+    cmds:
+      - rm -rf web/docsite
+      - mkdir -p web/docsite/docs
+      - cp docs-site/index.html web/docsite/
+      - cp -R docs-site/vendor web/docsite/vendor
+      - cp docs/*.md web/docsite/docs/
+      - echo "Docs staged into web/docsite/ (git restore web/docsite/ before committing)"
+
+  # Default build: all dialects (core + compound + optional with tags).
+  build:
+    desc: Build all dialects for the current platform
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}} {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}"'
+
+  # Build with SQLite3 support (CGo required).
+  build/sqlite3:
+    desc: Build with SQLite3 support (CGo)
+    deps: [docsite]
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -tags sqlite3 -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-sqlite3 {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-sqlite3"'
+
+  # Build with DuckDB support (CGo + libduckdb required).
+  # Uses prebuilt libduckdb bundled with go-duckdb driver (static link, default).
+  build/duckdb:
+    desc: Build with DuckDB support (CGo)
+    deps: [docsite]
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -tags duckdb -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-duckdb {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-duckdb"'
+
+  # Build with DuckDB using system libduckdb (-tags duckdb_use_lib).
+  # Requires libduckdb installed or downloaded (task duckdb/download),
+  # and CGO_LDFLAGS="-L./lib" exported in your shell.
+  build/duckdb-lib:
+    desc: Build with DuckDB using system libduckdb
+    deps: [docsite]
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -tags "duckdb,duckdb_use_lib" -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-duckdb-lib {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-duckdb-lib (system libduckdb)"'
+
+  # Download prebuilt libduckdb from GitHub releases into ./lib/.
+  duckdb/download:
+    desc: Download prebuilt libduckdb v1.7.0 into ./lib/
+    vars:
+      DUCKDB_VERSION: v1.7.0
+      DUCKDB_OS:
+        sh: uname -s | tr '[:upper:]' '[:lower:]'
+      DUCKDB_ARCH:
+        sh: uname -m
+    silent: true
+    cmds:
+      - mkdir -p ./lib
+      - echo "Downloading libduckdb {{.DUCKDB_VERSION}} for {{.DUCKDB_OS}}-{{.DUCKDB_ARCH}}..."
+      - curl -sL "https://github.com/duckdb/duckdb/releases/download/{{.DUCKDB_VERSION}}/libduckdb-{{.DUCKDB_OS}}-{{.DUCKDB_ARCH}}.zip" -o /tmp/libduckdb.zip
+      - unzip -o /tmp/libduckdb.zip -d ./lib/ > /dev/null 2>&1
+      - rm -f /tmp/libduckdb.zip
+      - echo "libduckdb extracted to ./lib/"
+      - 'echo "Build with: CGO_LDFLAGS=\"-L./lib\" task build/duckdb-lib"'
+
+  # Core-only: 3 dialects (oracle, postgres, mysql) + compound dialects.
+  # (Same tags as the default build; distinguished only by output name.)
+  build/core:
+    desc: Build core (3 dialects + compound), separate -core binary
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-core {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-core"'
+
+  # Minimal: only oracle, postgres, mysql (no compound dialects).
+  build/minimal:
+    desc: Build minimal (3 dialects, no compound dialects)
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-minimal {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-minimal"'
+
+  # Oracle-only: single dialect build.
+  build/oracle:
+    desc: Build Oracle-only binary
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-oracle {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-oracle"'
+
+  # Cross-compile: Linux AMD64.
+  build/linux:
+    desc: Cross-compile for Linux AMD64
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+      GOOS: linux
+      GOARCH: amd64
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/linux-amd64
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/linux-amd64/{{.BINARY_NAME}} {{.MAIN_PATH}}
+
+  # Cross-compile: macOS ARM64.
+  build/darwin-arm64:
+    desc: Cross-compile for macOS ARM64
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+      GOOS: darwin
+      GOARCH: arm64
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/darwin-arm64
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/darwin-arm64/{{.BINARY_NAME}} {{.MAIN_PATH}}
+
+  # Cross-compile: Windows AMD64.
+  build/windows:
+    desc: Cross-compile for Windows AMD64
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+      GOARCH: amd64
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/windows-amd64
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/windows-amd64/{{.BINARY_NAME}}.exe {{.MAIN_PATH}}
+
+  # Build current + linux + windows in parallel.
+  build/all:
+    desc: Build current platform + Linux + Windows
+    deps: [build, build/linux, build/windows]
+
+  test:
+    desc: Run all tests (verbose)
+    cmds:
+      - go test -v ./...
+
+  # Run tests including optional dialects (SQLite3 + DuckDB).
+  test/full:
+    desc: Run tests including SQLite3 + DuckDB
+    cmds:
+      - go test -tags "sqlite3 duckdb" -v ./...
+
+  # Run E2E tests against docker-compose databases (requires: docker compose up).
+  test/e2e:
+    desc: Run E2E tests (requires docker compose up)
+    cmds:
+      - go test -tags e2e -v -count=1 ./internal/cmd/ ./internal/transfer/importer/ ./internal/transfer/exporter/ ./internal/metadata/extractor/
+
+  test-quick:
+    desc: Run all tests without verbose output
+    cmds:
+      - go test ./...
+
+  fmt:
+    desc: Format all Go source files
+    cmds:
+      - go fmt ./...
+
+  lint:
+    desc: Run golangci-lint (skips if not installed)
+    cmds:
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run ./...
+        else
+          echo "golangci-lint not installed, skipping"
+        fi
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  deps:
+    desc: Download and tidy Go modules
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  clean:
+    desc: Remove the build directory
+    cmds:
+      - rm -rf {{.BUILD_DIR}}
+
+  run:
+    desc: Run the CLI (pass args after `--`)
+    cmds:
+      - go run {{.MAIN_PATH}} {{.CLI_ARGS}}
