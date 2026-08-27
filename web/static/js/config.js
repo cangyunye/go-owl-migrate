@@ -14,7 +14,13 @@
     init();
 
     async function init() {
-        const data = await api.get('/api/v1/scenarios');
+        let data;
+        try {
+            data = await api.get('/api/v1/scenarios');
+        } catch (e) {
+            showInitError(e);
+            return;
+        }
         allScenarios = data.scenarios;
         dsnExamples = data.dsn_examples || {};
         dsnFamilies = data.dsn_families || {};
@@ -22,6 +28,22 @@
         renderPills();
         selectScenario(allScenarios.some(s => s.name === initialScenario) ? initialScenario : allScenarios[0].name);
         loadConfigLib();
+    }
+
+    // Surface a load failure (e.g. a 401 from token auth) instead of leaving
+    // the configuration form silently empty. The shared 'owl-auth-required'
+    // event already triggers the token prompt; this adds a visible hint.
+    function showInitError(e) {
+        const label = document.getElementById('scenario-label');
+        const desc = document.getElementById('scenario-desc');
+        const form = document.getElementById('cfg-form');
+        const msg = (e && e.message) || String(e);
+        if (label) label.textContent = '加载场景失败';
+        if (desc) desc.textContent = msg === 'unauthorized'
+            ? '服务已启用令牌鉴权，请输入访问令牌后重试。'
+            : msg;
+        if (form) form.innerHTML = '<p class="field-note">配置加载失败：' + msg + '</p>';
+        if (window.toast && msg === 'unauthorized') window.toast.warn('需要访问令牌', '');
     }
 
     function renderPills() {

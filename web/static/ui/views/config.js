@@ -548,8 +548,11 @@ export async function render(root /*Element*/, params) {
         selectScenario(resolveInitialScenario());
     } catch (e) {
         if (root.isConnected) {
+            const msg = ((e && e.message) || String(e)) === 'unauthorized'
+                ? '服务已启用令牌鉴权，请输入访问令牌后重试。'
+                : ((e && e.message) || String(e));
             labelEl.textContent = '加载场景失败';
-            descEl.textContent = ((e && e.message) || String(e));
+            descEl.textContent = msg;
         }
         return;
     }

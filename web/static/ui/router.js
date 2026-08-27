@@ -116,77 +116,8 @@ function route(hash) {
     renderComingSoon(viewEl, null, path);
 }
 
-/* ── token prompt overlay ─────────────────────────────────── */
-const tokenPrompt = {
-    overlay: null,
-    _mount() {
-        if (this.overlay) return this.overlay;
-        const overlay = document.createElement('div');
-        // Layout only — visual styling reuses existing .panel / .btn-* CSS.
-        const os = overlay.style;
-        os.position = 'fixed';
-        os.inset = '0';
-        os.display = 'none';
-        os.alignItems = 'center';
-        os.justifyContent = 'center';
-        os.background = 'rgba(0, 0, 0, 0.55)';
-        os.zIndex = '1000';
-        os.padding = '16px';
-        overlay.innerHTML = ''
-            + '<div class="panel auth-panel">'
-            +   '<h2>需要访问令牌</h2>'
-            +   '<p>请在下方输入访问令牌以继续。</p>'
-            +   '<input class="auth-input" type="password" placeholder="Bearer 令牌" spellcheck="false" autocomplete="off">'
-            +   '<div class="auth-actions">'
-            +     '<button class="btn-ghost auth-cancel" type="button">取消</button>'
-            +     '<button class="btn-primary auth-submit" type="button">确定</button>'
-            +   '</div>'
-            + '</div>';
-        const input = overlay.querySelector('.auth-input');
-        const is = input.style;
-        is.display = 'block';
-        is.width = '100%';
-        is.boxSizing = 'border-box';
-        is.margin = '12px 0';
-        is.padding = '10px 12px';
-        const actions = overlay.querySelector('.auth-actions');
-        actions.style.display = 'flex';
-        actions.style.justifyContent = 'flex-end';
-        actions.style.gap = '10px';
-        document.body.appendChild(overlay);
-
-        const submit = overlay.querySelector('.auth-submit');
-        const cancel = overlay.querySelector('.auth-cancel');
-        submit.addEventListener('click', () => this._submit(input.value));
-        cancel.addEventListener('click', () => this.hide());
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') this._submit(input.value);
-            if (e.key === 'Escape') this.hide();
-        });
-        this.overlay = overlay;
-        return overlay;
-    },
-    _submit(token) {
-        token = (token || '').trim();
-        if (!token) {
-            if (window.toast) window.toast.warn('请输入访问令牌', '');
-            return;
-        }
-        if (window.api) window.api.setToken(token);
-        this.hide();
-        window.location.reload();
-    },
-    show() {
-        const overlay = this._mount();
-        overlay.style.display = 'flex';
-        const input = overlay.querySelector('.auth-input');
-        if (input) { input.value = ''; setTimeout(() => input.focus(), 0); }
-    },
-    hide() {
-        if (this.overlay) this.overlay.style.display = 'none';
-    }
-};
-window.authPrompt = tokenPrompt;
+/* ── token prompt: provided globally by app.js (window.authPrompt),
+   shared by SSR pages and the SPA. No local definition here. ──── */
 
 /* ── register hashchange + first render ───────────────────── */
 window.addEventListener('hashchange', () => route(location.hash));
