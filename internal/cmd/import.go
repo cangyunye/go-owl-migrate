@@ -226,14 +226,19 @@ func indexDropRecreate(tbl *md.TableDef, dialectName string, opts dialect.BuildO
 	}
 	byName := make(map[string][]*md.IndexDef)
 	var order []string
+	opts.PreserveIdentifierCase = true
+	isMySQL := strings.Contains(d.Name(), "mysql")
 	for _, idx := range tbl.GetIndexes() {
+		// MySQL primary keys are inline table constraints; DROP INDEX
+		// PRIMARY / CREATE UNIQUE INDEX PRIMARY are invalid statements.
+		if isMySQL && strings.EqualFold(idx.IndexName, "PRIMARY") {
+			continue
+		}
 		if _, ok := byName[idx.IndexName]; !ok {
 			order = append(order, idx.IndexName)
 		}
 		byName[idx.IndexName] = append(byName[idx.IndexName], idx)
 	}
-	opts.PreserveIdentifierCase = true
-	isMySQL := strings.Contains(d.Name(), "mysql")
 	quote := func(s string) string {
 		if opts.NoQuoteIdentifiers {
 			return s

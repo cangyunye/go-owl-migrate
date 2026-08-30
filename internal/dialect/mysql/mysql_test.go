@@ -140,3 +140,88 @@ func TestMySQL_BuildCreateTable_BooleanMapping(t *testing.T) {
 		t.Errorf("expected DEFAULT 1 for MySQL numeric boolean, got:\n%s", ddl)
 	}
 }
+
+func TestMySQL_BuildCreateTable_KeysIdentityComments(t *testing.T) {
+	d := New()
+	tbl, _ := md.NewTableDef("db", "t_emp")
+	tbl.Engine = "InnoDB"
+	tbl.TableComment = "员工表"
+
+	id, _ := md.NewColumnDef("db", "t_emp", "emp_id", 1, "INT")
+	id.Nullable = "NO"
+	id.IsIdentity = "YES"
+	tbl.AddColumn(id)
+	name, _ := md.NewColumnDef("db", "t_emp", "emp_name", 2, "VARCHAR(50)")
+	name.Nullable = "NO"
+	name.ColumnComment = "员工姓名"
+	tbl.AddColumn(name)
+
+	// PRIMARY from information_schema.statistics (index_name = "PRIMARY")
+	tbl.AddIndex(&md.IndexDef{TableSchema: "db", TableName: "t_emp", IndexName: "PRIMARY",
+		IndexType: "BTREE", Uniqueness: "UNIQUE", ColumnName: "emp_id", OrdinalPosition: 1})
+	tbl.AddIndex(&md.IndexDef{TableSchema: "db", TableName: "t_emp", IndexName: "PRIMARY",
+		IndexType: "BTREE", Uniqueness: "UNIQUE", ColumnName: "dept_id", OrdinalPosition: 2})
+	dept, _ := md.NewColumnDef("db", "t_emp", "dept_id", 3, "INT")
+	dept.Nullable = "NO"
+	tbl.AddColumn(dept)
+
+	ddl, err := d.BuildCreateTable(tbl, dialect.BuildOptions{IncludeComments: true})
+	if err != nil {
+		t.Fatalf("BuildCreateTable: %v", err)
+	}
+	for _, want := range []string{
+		"`emp_id` INT NOT NULL AUTO_INCREMENT",
+		"`emp_name` VARCHAR(50) NOT NULL COMMENT '员工姓名'",
+		"`dept_id` INT NOT NULL",
+		"PRIMARY KEY (`emp_id`, `dept_id`)",
+		"ENGINE=InnoDB",
+		"COMMENT='员工表'",
+	} {
+		if !strings.Contains(ddl, want) {
+			t.Errorf("DDL missing %q:\n%s", want, ddl)
+		}
+	}
+	if strings.HasPrefix(ddl, "CREATE TABLE IF NOT EXISTS") {
+		t.Errorf("IF NOT EXISTS should be off by default:\n%s", ddl)
+	}
+}
+
+func TestMySQL_BuildCreateTable_CommentEscaping(t *testing.T) {
+	d := New()
+	tbl, _ := md.NewTableDef("db", "t")
+	tbl.TableComment = "it's a table"
+	col, _ := md.NewColumnDef("db", "t", "c", 1, "VARCHAR")
+	col.ColumnComment = "user's note"
+	tbl.AddColumn(col)
+
+	ddl, _ := d.BuildCreateTable(tbl, dialect.BuildOptions{IncludeComments: true})
+	if !strings.Contains(ddl, "COMMENT='it''s a table'") {
+		t.Errorf("table comment not escaped:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "COMMENT 'user''s note'") {
+		t.Errorf("column comment not escaped:\n%s", ddl)
+	}
+}
+
+func TestMySQL_BuildCreateIndex_SkipsPrimary(t *testing.T) {
+	d := New()
+	pk := &md.IndexDef{TableSchema: "db", TableName: "t", IndexName: "PRIMARY",
+		Uniqueness: "UNIQUE", ColumnName: "id", OrdinalPosition: 1}
+	ddl, err := d.BuildCreateIndex([]*md.IndexDef{pk}, dialect.BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildCreateIndex: %v", err)
+	}
+	if ddl != "" {
+		t.Errorf("PRIMARY index should be skipped (inline in CREATE TABLE), got:\n%s", ddl)
+	}
+
+	idx := &md.IndexDef{TableSchema: "db", TableName: "t", IndexName: "idx_dept",
+		Uniqueness: "NONUNIQUE", ColumnName: "dept_id", OrdinalPosition: 1}
+	ddl, err = d.BuildCreateIndex([]*md.IndexDef{idx}, dialect.BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildCreateIndex: %v", err)
+	}
+	if !strings.Contains(ddl, "CREATE INDEX `idx_dept` ON `db`.`t` (`dept_id`)") {
+		t.Errorf("non-PK index should still be emitted, got:\n%s", ddl)
+	}
+}

@@ -42,6 +42,11 @@ func (b obMySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOp
 	} else {
 		sql += " ENGINE=InnoDB"
 	}
+	// The engine splice above cuts any trailing table options (e.g. the
+	// table comment rendered after ENGINE by the MySQL builder); re-append it.
+	if opts.IncludeComments && t.TableComment != "" {
+		sql += " COMMENT='" + strings.ReplaceAll(t.TableComment, "'", "''") + "'"
+	}
 	return sql + dialect.PartitionClause(t, opts), nil
 }
 

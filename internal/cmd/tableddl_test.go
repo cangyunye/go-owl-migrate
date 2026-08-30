@@ -11,6 +11,7 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
 func empTable(t *testing.T) *md.TableDef {
@@ -131,8 +132,115 @@ func TestBuildCreateTableViaDialect_SourceDialectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(sql, `"EMPNO" SMALLINT NOT NULL`) {
-		t.Errorf("ddl.source_dialect should drive conversion:\n%s", sql)
+	if !strings.Contains(sql, `"ENAME" VARCHAR(10)`) {
+		t.Errorf("source_dialect should drive conversion:\n%s", sql)
+	}
+}
+
+func TestConvertSchemaModelForDDL(t *testing.T) {
+	// Build a live-extraction style model: bare data_type with length/precision
+	// in separate fields (what information_schema returns).
+	tbl, _ := md.NewTableDef("test", "t")
+	name, _ := md.NewColumnDef("test", "t", "name", 1, "VARCHAR")
+	name.DataLength = 50
+	tbl.AddColumn(name)
+	sal, _ := md.NewColumnDef("test", "t", "sal", 2, "DECIMAL")
+	sal.DataPrecision, sal.DataScale = 12, 2
+	tbl.AddColumn(sal)
+	txt, _ := md.NewColumnDef("test", "t", "note", 3, "TEXT")
+	tbl.AddColumn(txt)
+	sm := md.NewSchemaModel()
+	_ = sm.AddTable(tbl)
+
+	t.Run("same dialect qualifies", func(t *testing.T) {
+		cfg := &config.Config{}
+		cfg.Source.Type = "oceanbase-mysql"
+		cfg.DDL.TargetDialect = "oceanbase-mysql"
+		tgt, _ := registry.Get("oceanbase-mysql")
+		out := convertSchemaModelForDDL(sm, cfg, tgt, dialect.BuildOptions{})
+		if out == sm {
+			t.Fatal("expected a converted model")
+		}
+		got := out.GetTables()[0].GetColumns()
+		if got[0].DataType != "VARCHAR(50)" {
+			t.Errorf("name type = %q, want VARCHAR(50)", got[0].DataType)
+		}
+		if got[1].DataType != "DECIMAL(12,2)" {
+			t.Errorf("sal type = %q, want DECIMAL(12,2)", got[1].DataType)
+		}
+		if got[2].DataType != "TEXT" {
+			t.Errorf("note type = %q, want TEXT", got[2].DataType)
+		}
+	})
+
+	t.Run("cross dialect converts via LogicalType IR", func(t *testing.T) {
+		cfg := &config.Config{}
+		cfg.Source.Type = "mysql"
+		cfg.DDL.TargetDialect = "postgres"
+		tgt, _ := registry.Get("postgres")
+		out := convertSchemaModelForDDL(sm, cfg, tgt, dialect.BuildOptions{})
+		if out == sm {
+			t.Fatal("expected a converted model")
+		}
+		got := out.GetTables()[0].GetColumns()
+		if got[0].DataType != "VARCHAR(50)" {
+			t.Errorf("name type = %q, want VARCHAR(50)", got[0].DataType)
+		}
+		if got[1].DataType != "NUMERIC(12,2)" {
+			t.Errorf("sal type = %q, want NUMERIC(12,2)", got[1].DataType)
+		}
+	})
+
+	t.Run("no source dialect leaves model untouched", func(t *testing.T) {
+		cfg := &config.Config{}
+		cfg.DDL.TargetDialect = "postgres"
+		tgt, _ := registry.Get("postgres")
+		if out := convertSchemaModelForDDL(sm, cfg, tgt, dialect.BuildOptions{}); out != sm {
+			t.Error("model should be returned unchanged when no source dialect is known")
+		}
+	})
+}
+
+func TestBuildCreateTableViaDialect_SameFamilyPreservesDefaults(t *testing.T) {
+	// oceanbase-mysql → mysql are distinct dialect names but the same type
+	// family: source types and DEFAULTs must be preserved verbatim, not run
+	// through the LogicalType IR (which would drop defaults and widen types).
+	cfg := &config.Config{}
+	cfg.Target.Type = "mysql"
+	cfg.Source.Type = "oceanbase-mysql"
+
+	tbl, _ := md.NewTableDef("test", "t_item")
+	code, _ := md.NewColumnDef("test", "t_item", "item_code", 1, "VARCHAR")
+	code.DataLength = 32
+	code.Nullable = "NO"
+	tbl.AddColumn(code)
+	price, _ := md.NewColumnDef("test", "t_item", "price", 2, "DECIMAL")
+	price.DataPrecision, price.DataScale = 10, 2
+	price.Nullable = "NO"
+	price.DefaultValue = "0.00"
+	tbl.AddColumn(price)
+	active, _ := md.NewColumnDef("test", "t_item", "active", 3, "TINYINT")
+	active.DataLength = 1
+	active.Nullable = "NO"
+	active.DefaultValue = "1"
+	tbl.AddColumn(active)
+	note, _ := md.NewColumnDef("test", "t_item", "note", 4, "TEXT")
+	tbl.AddColumn(note)
+	tbl.AddIndex(&md.IndexDef{TableSchema: "test", TableName: "t_item", IndexName: "PRIMARY",
+		Uniqueness: "UNIQUE", ColumnName: "item_code", OrdinalPosition: 1})
+
+	sql, err := buildCreateTableViaDialect(tbl, cfg)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	for _, want := range []string{
+		"`price` DECIMAL(10,2) NOT NULL DEFAULT 0.00",
+		"`active` TINYINT NOT NULL DEFAULT 1",
+		"`note` TEXT",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("DDL missing %q:\n%s", want, sql)
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package mysql
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
@@ -155,6 +156,21 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 	b.WriteString(fmt.Sprintf("%s.%s", quote(schema), quote(t.TableName)))
 	b.WriteString(" (\n")
 	cols := t.GetColumns()
+	// MySQL primary keys are inline table constraints, not standalone
+	// CREATE INDEX objects (information_schema reports them under the
+	// reserved name "PRIMARY").
+	var pkCols []string
+	ord := make(map[string]int)
+	for _, idx := range t.GetIndexes() {
+		if strings.EqualFold(idx.IndexName, "PRIMARY") {
+			pkCols = append(pkCols, idx.ColumnName)
+			ord[idx.ColumnName] = idx.OrdinalPosition
+		}
+	}
+	sort.Slice(pkCols, func(i, j int) bool {
+		// Preserve key-column order from ordinal positions.
+		return ord[pkCols[i]] < ord[pkCols[j]]
+	})
 	for i, col := range cols {
 		b.WriteString("  ")
 		b.WriteString(quote(col.ColumnName))
@@ -170,17 +186,38 @@ func (MySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOption
 		if hasDef, defVal := col.HasDefault(); hasDef {
 			b.WriteString(dialect.RenderDefault(col.DataType, defVal, opts, true))
 		}
-		if i < len(cols)-1 {
+		if col.IsIdentityColumn() {
+			b.WriteString(" AUTO_INCREMENT")
+		}
+		if opts.IncludeComments && col.ColumnComment != "" {
+			b.WriteString(" COMMENT '" + escapeSQLString(col.ColumnComment) + "'")
+		}
+		if i < len(cols)-1 || len(pkCols) > 0 {
 			b.WriteString(",")
 		}
 		b.WriteString("\n")
+	}
+	if len(pkCols) > 0 {
+		quoted := make([]string, len(pkCols))
+		for i, c := range pkCols {
+			quoted[i] = quote(c)
+		}
+		b.WriteString("  PRIMARY KEY (" + strings.Join(quoted, ", ") + ")\n")
 	}
 	b.WriteString(")")
 	if t.Engine != "" {
 		b.WriteString(" ENGINE=" + t.Engine)
 	}
+	if opts.IncludeComments && t.TableComment != "" {
+		b.WriteString(" COMMENT='" + escapeSQLString(t.TableComment) + "'")
+	}
 	b.WriteString(dialect.PartitionClause(t, opts))
 	return b.String(), nil
+}
+
+// escapeSQLString doubles single quotes for embedding inside a quoted literal.
+func escapeSQLString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }
 
 func (MySQLDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildOptions) (string, error) {
@@ -188,6 +225,12 @@ func (MySQLDDLBuilder) BuildCreateIndex(idxs []*md.IndexDef, opts dialect.BuildO
 		return "", nil
 	}
 	first := idxs[0]
+
+	// Primary keys are rendered inline in CREATE TABLE (see BuildCreateTable);
+	// a standalone `CREATE UNIQUE INDEX PRIMARY` is invalid MySQL DDL.
+	if strings.EqualFold(first.IndexName, "PRIMARY") {
+		return "", nil
+	}
 
 	// Apply schema mapping
 	schema := first.TableSchema

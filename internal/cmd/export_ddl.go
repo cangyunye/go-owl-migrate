@@ -43,6 +43,10 @@ func exportDDLCmd() *cobra.Command {
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			opts.NoQuoteIdentifiers = noQuote
 		}
+		// Qualify (same-dialect) or convert (cross-dialect) column types so
+		// bare live-extracted types (e.g. varchar, decimal) become valid
+		// target DDL instead of being emitted verbatim.
+		sm = convertSchemaModelForDDL(sm, cfg, d, opts)
 		gen := generator.NewDDLGenerator(d, opts, outputDir)
 
 		files, err := gen.GenerateTables(sm)

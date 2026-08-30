@@ -100,7 +100,7 @@ func buildCreateTableViaDialect(tbl *md.TableDef, cfg *config.Config) (string, e
 	converted := tbl
 	if srcName := resolveSourceDialect(cfg); srcName != "" {
 		srcNorm := registry.Normalize(strings.ToLower(srcName))
-		if srcNorm != targetName {
+		if srcNorm != targetName && targetTypeFamily(srcNorm) != targetTypeFamily(targetName) {
 			if src, serr := registry.Get(srcNorm); serr == nil {
 				converted = convertTableTypes(tbl, src, target, opts)
 			} else {
@@ -156,6 +156,47 @@ func qualifyTableTypes(tbl *md.TableDef, opts dialect.BuildOptions) *md.TableDef
 	cp := *tbl
 	cp.Columns = newCols
 	return &cp
+}
+
+// convertSchemaModelForDDL returns a copy of sm whose table columns are
+// qualified (same-dialect) or converted (cross-dialect) for the target
+// dialect. Live-extracted metadata carries bare data_type values (e.g.
+// "varchar", "decimal") with length/precision in separate fields, so without
+// this the generator would emit invalid target DDL. Returns the input model
+// unchanged when no source dialect can be resolved.
+func convertSchemaModelForDDL(sm *md.SchemaModel, cfg *config.Config, tgt dialect.Dialect, opts dialect.BuildOptions) *md.SchemaModel {
+	srcName := resolveSourceDialect(cfg)
+	if srcName == "" {
+		return sm
+	}
+	srcNorm := registry.Normalize(strings.ToLower(srcName))
+	tgtNorm := registry.Normalize(strings.ToLower(cfg.DDL.TargetDialect))
+	// Same type family (e.g. oceanbase-mysql → mysql) keeps source types and
+	// DEFAULTs verbatim, only adding length/precision qualifiers; the LogicalType
+	// IR conversion is reserved for genuinely different families (mysql ↔ pg ↔
+	// oracle) where defaults are not portable anyway.
+	cross := srcNorm != tgtNorm && targetTypeFamily(srcNorm) != targetTypeFamily(tgtNorm)
+
+	var src dialect.Dialect
+	if cross {
+		s, err := registry.Get(srcNorm)
+		if err != nil {
+			return sm
+		}
+		src = s
+	}
+
+	converted := md.NewSchemaModel()
+	for _, tbl := range sm.GetTables() {
+		var out *md.TableDef
+		if cross {
+			out = convertTableTypes(tbl, src, tgt, opts)
+		} else {
+			out = qualifyTableTypes(tbl, opts)
+		}
+		_ = converted.AddTable(out) // GetTables() yields unique keys
+	}
+	return converted
 }
 
 func qualifyColumnType(col *md.ColumnDef, opts dialect.BuildOptions) string {

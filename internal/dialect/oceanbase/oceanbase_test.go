@@ -262,3 +262,22 @@ func TestOBMySQL_PartitionPreservedWithInnoDB(t *testing.T) {
 		t.Errorf("expected partition preserved, got:\n%s", ddl)
 	}
 }
+
+func TestOBMySQL_TableCommentSurvivesEngineSplice(t *testing.T) {
+	d := NewMySQL()
+	tbl, _ := md.NewTableDef("db", "t_emp")
+	col, _ := md.NewColumnDef("db", "t_emp", "id", 1, "INT")
+	tbl.AddColumn(col)
+	tbl.Engine = "MyISAM"
+	tbl.TableComment = "员工表"
+	ddl, err := d.BuildCreateTable(tbl, dialect.BuildOptions{IncludeComments: true})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.Contains(ddl, "ENGINE=InnoDB") {
+		t.Errorf("expected ENGINE=InnoDB, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "COMMENT='员工表'") {
+		t.Errorf("table comment must survive the engine splice, got:\n%s", ddl)
+	}
+}

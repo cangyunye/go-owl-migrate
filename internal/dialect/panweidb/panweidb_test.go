@@ -178,16 +178,20 @@ func TestPDBMySQL_EngineClause(t *testing.T) {
 	d := NewMySQL()
 	tbl, _ := md.NewTableDef("testdb", "orders")
 	tbl.Engine = "InnoDB"
+	tbl.TableComment = "订单表"
 	col, _ := md.NewColumnDef("testdb", "orders", "id", 1, "INT")
 	col.Nullable = "NO"
 	tbl.AddColumn(col)
 
-	sql, err := d.BuildCreateTable(tbl, dialect.BuildOptions{SkipPartitions: true})
+	sql, err := d.BuildCreateTable(tbl, dialect.BuildOptions{SkipPartitions: true, IncludeComments: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if strings.Contains(sql, "ENGINE=") {
 		t.Errorf("panweidb-mysql should omit ENGINE clause, got: %s", sql)
+	}
+	if !strings.Contains(sql, "COMMENT='订单表'") {
+		t.Errorf("table comment must survive ENGINE removal, got: %s", sql)
 	}
 }
 

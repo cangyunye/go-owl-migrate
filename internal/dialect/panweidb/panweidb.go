@@ -51,6 +51,11 @@ func (b pdbMySQLDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildO
 	if idx := strings.LastIndex(sql, " ENGINE="); idx >= 0 {
 		sql = sql[:idx]
 	}
+	// The ENGINE-clause removal above also cuts the table comment rendered
+	// after it by the MySQL builder; re-append it.
+	if opts.IncludeComments && t.TableComment != "" {
+		sql += " COMMENT='" + strings.ReplaceAll(t.TableComment, "'", "''") + "'"
+	}
 	return sql + partition, nil
 }
 
