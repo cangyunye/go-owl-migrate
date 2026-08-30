@@ -363,7 +363,8 @@ const CATEGORIES = {
   dev:      { name: "开发测试",   color: "#f5222d" },
   design:   { name: "设计文档",   color: "#13c2c2" },
   testplan: { name: "测试计划",   color: "#fa8c16" },
-  web:      { name: "Web 服务",   color: "#36cfc9" }
+  web:      { name: "Web 服务",   color: "#36cfc9" },
+  qa:       { name: "QA 问答",     color: "#8c8c8c" }
 };
 
 const DOCS = [
@@ -402,7 +403,8 @@ const DOCS = [
   { path:"test-plans/opengaussdb.md", en:"OpenGaussDB", zh:"OpenGaussDB 测试", cat:"testplan", desc:"OpenGaussDB 方言继承关系、差异与 E2E 测试" },
   { path:"test-plans/panweidb.md", en:"PanWeiDB PG", zh:"PanWeiDB PG 模式测试", cat:"testplan", desc:"PanWeiDB PG 模式方言继承关系与 E2E 测试方案" },
   { path:"test-plans/panweidb-mysql.md", en:"PanWeiDB MySQL (B)", zh:"PanWeiDB B 模式测试", cat:"testplan", desc:"PanWeiDB B 模式 MySQL 兼容方言 E2E 测试方案" },
-  { path:"test-plans/panweidb-oracle.md", en:"PanWeiDB Oracle (A)", zh:"PanWeiDB A 模式测试", cat:"testplan", desc:"PanWeiDB A 模式 Oracle 兼容方言 E2E 测试方案" }
+  { path:"test-plans/panweidb-oracle.md", en:"PanWeiDB Oracle (A)", zh:"PanWeiDB A 模式测试", cat:"testplan", desc:"PanWeiDB A 模式 Oracle 兼容方言 E2E 测试方案" },
+  { path:"qa/unknown-database-export.md", en:"QA: Unknown DB Export", zh:"QA：陌生数据库数据导出", cat:"qa", desc:"陌生数据库导出数据的输入清单、DELETE/INSERT/CSV 导出能力与操作流程" }
 ];
 
 const BASE_CANDIDATES = ["../docs", "docs", "/docs"];
