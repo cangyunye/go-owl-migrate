@@ -168,7 +168,7 @@ func dsnExample(dialect string) string {
 	case "mysql", "goldendb", "goldendb-mysql":
 		return "user:pass@tcp(host:3306)/dbname?charset=utf8mb4"
 	case "oceanbase", "oceanbase-mysql":
-		return "user:pass@tcp(host:2881)/dbname (OceanBase MySQL mode; Oracle tenants: use type oceanbase-oracle)"
+		return "user@tenant:pass@tcp(host:2881)/dbname (OceanBase MySQL mode; 用户名须带租户, 如 root@test; Oracle tenants: use type oceanbase-oracle)"
 	case "postgres", "postgresql", "opengaussdb", "panweidb", "panweidb-mysql", "panweidb-oracle":
 		return "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable"
 	case "sqlite3", "duckdb":

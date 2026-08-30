@@ -573,7 +573,12 @@ export async function render(root /*Element*/, params) {
                 if (!v) v = OPTIONAL[k] ? '' : (PH[k] || '');
             }
             const isToken = /^\$[A-Za-z]+$/.test(v);
-            if (v && meta.url_style && !isToken && (k === 'user' || k === 'password' || k === 'db')) v = encodeURIComponent(v);
+            // go-sql-driver parses `user:pass@tcp(host:port)/db` verbatim (no
+            // percent-decoding), so URL-encoding @ etc. in user/password/db
+            // breaks authentication. Only scheme:// DSNs (oracle://, …)
+            // percent-encode their userinfo.
+            const urlEncode = meta.url_style && meta.builder && meta.builder.indexOf('@tcp(') < 0;
+            if (v && urlEncode && !isToken && (k === 'user' || k === 'password' || k === 'db')) v = encodeURIComponent(v);
             return v;
         });
         if (dsnModal.data.family === 'postgres') {
