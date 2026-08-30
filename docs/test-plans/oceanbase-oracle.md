@@ -9,7 +9,7 @@
 | 数据库驱动 | go-ora |
 | 元数据提取器 | Oracle (`normalizeDBType` → `oracle`) |
 | 端口 | 2881 (OceanBase Oracle 默认) |
-| 连接串示例 | `oceanbase-oracle://user:pass@host:2881/db`（MySQL 线协议直连）或 `oracle://user:pass@host:2883/service_name`（OBProxy TNS） |
+| 连接串示例 | 直连 OBServer(2881):`oceanbase-oracle://sys@tenant:pass@host:2881/db`（无需集群）；OBProxy(2883) 多集群:用户名 `sys@tenant#cluster`；TNS:`oracle://user:pass@host:2883/service_name` |
 
 ## 已覆盖的 Override
 

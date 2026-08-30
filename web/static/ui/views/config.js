@@ -506,7 +506,7 @@ export async function render(root /*Element*/, params) {
         ];
         if (meta.has_tenant) {
             fields.push(['tenant', '租户', 'OceanBase 租户（可选）', 'text']);
-            fields.push(['cluster', '集群', 'OceanBase 集群（可选）', 'text']);
+            fields.push(['cluster', '集群', 'OBProxy(2883) 多集群必填；直连 OBServer(2881) 无需', 'text']);
         }
         fields.push(['password', '密码', '数据库登录密码', 'password']);
         fields.push(['db', meta.db_label || '数据库', meta.db_placeholder || '', 'text']);
@@ -694,10 +694,21 @@ export async function render(root /*Element*/, params) {
         if (/^(oracle|oboracle|oceanbase-oracle|postgres|postgresql):/.test(u.protocol)) {
             o.user = u.username || '';
             o.password = u.password || '';
+            // WHATWG URL returns the userinfo percent-encoded; decode so
+            // user@tenant#cluster splitting below sees raw characters.
+            try { o.user = decodeURIComponent(o.user); } catch (e) {}
+            try { o.password = decodeURIComponent(o.password); } catch (e) {}
             o.host = u.hostname || '';
             o.port = u.port || '';
             o.db = (u.pathname || '').replace(/^\//, '');
             if (u.searchParams.get('cluster')) o.cluster = u.searchParams.get('cluster');
+            if (family === 'oceanbase-oracle') {
+                // obconnector-go format: user@tenant#cluster inside the URL userinfo.
+                const h = o.user.indexOf('#');
+                const at = o.user.indexOf('@');
+                if (h >= 0) { o.cluster = o.cluster || o.user.slice(h + 1); o.user = o.user.slice(0, h); }
+                if (at >= 0) { o.tenant = o.user.slice(at + 1); o.user = o.user.slice(0, at); }
+            }
             return o;
         }
         return o;

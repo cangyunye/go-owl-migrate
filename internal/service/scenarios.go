@@ -145,11 +145,12 @@ func dsnFamilyMeta() map[string]DSNFamilyMeta {
 			URLStyle:      true,
 		},
 		familyOceanBaseOracle: {
-			DBLabel:       "租户",
-			DBPlaceholder: "例如: oracle_tenant",
+			DBLabel:       "库/Schema",
+			DBPlaceholder: "例如: oracle_tenant（或租户内 schema）",
 			Port:          "2881",
 			Builder:       "oceanbase-oracle://{user}:{password}@{host}:{port}/{db}",
 			HasCluster:    true,
+			HasTenant:     true,
 			URLStyle:      true,
 		},
 		familyFile: {
@@ -290,7 +291,7 @@ func DSNExamples() map[string]string {
 	return map[string]string{
 		"oracle":           "oracle://user:pass@host:1521/service_name",
 		"goldendb-oracle":  "oracle://user:pass@host:1521/service_name",
-		"oceanbase-oracle": "oceanbase-oracle://user:pass@host:2881/db (or oracle://user:pass@host:2883/service via OBProxy TNS)",
+		"oceanbase-oracle": "oceanbase-oracle://sys@tenant:pass@host:2881/db (直连 OBServer 无需集群) or oceanbase-oracle://sys@tenant#cluster:pass@host:2883/db (OBProxy 多集群必填) or oracle://user:pass@host:2883/service (TNS)",
 		"panweidb-oracle":  "host=127.0.0.1 port=5432 user=postgres password=secret dbname=mydb sslmode=disable",
 		"mysql":            "user:pass@tcp(host:3306)/dbname?charset=utf8mb4",
 		"goldendb":         "user:pass@tcp(host:3306)/dbname?charset=utf8mb4",

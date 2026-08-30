@@ -47,8 +47,32 @@ func resolveOceanBaseOracleDriver(cfg config.DBConfig) (string, string, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return "", "", fmt.Errorf("target DSN must be a URL like oceanbase-oracle://user:pass@host:2881/db or oracle://user:pass@host:port/service: %q", cfg.DSN)
 	}
+	// Cluster semantics differ by endpoint:
+	//   - 2881 (or unset) = direct OBServer: no cluster is needed; a cluster
+	//     name folded into the username may even be rejected by the server.
+	//   - 2883 (OBProxy) = multi-cluster routing: the cluster must travel in
+	//     the username as `user@tenant#cluster` (obconnector-go / go-ora
+	//     decode the percent-encoded URL userinfo).
+	// A bare `cluster` query parameter is silently ignored by both drivers,
+	// so fold it into the username where the drivers actually read it.
+	if cluster := strings.TrimSpace(u.Query().Get("cluster")); cluster != "" {
+		user, pass := "", ""
+		if u.User != nil {
+			user = u.User.Username()
+			pass, _ = u.User.Password()
+		}
+		q := u.Query()
+		q.Del("cluster")
+		if p := u.Port(); p != "" && p != "2881" {
+			if !strings.Contains(user, "#") {
+				user += "#" + cluster
+			}
+			u.User = url.UserPassword(user, pass)
+		}
+		u.RawQuery = q.Encode()
+	}
 	if u.Scheme == "oracle" {
-		return "oracle", InjectOracleParams(dsn), nil
+		return "oracle", InjectOracleParams(u.String()), nil
 	}
 
 	if u.Scheme != "oboracle" {

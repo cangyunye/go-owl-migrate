@@ -164,7 +164,7 @@ func dsnExample(dialect string) string {
 	case "oracle", "goldendb-oracle":
 		return "oracle://user:pass@host:1521/service_name"
 	case "oceanbase-oracle":
-		return "oceanbase-oracle://user:pass@host:2881/db (or oracle://user:pass@host:2883/service via OBProxy TNS)"
+		return "oceanbase-oracle://sys@tenant:pass@host:2881/db (直连 OBServer 无需集群) or oceanbase-oracle://sys@tenant#cluster:pass@host:2883/db (OBProxy 多集群必填) or oracle://user:pass@host:2883/service (TNS)"
 	case "mysql", "goldendb", "goldendb-mysql":
 		return "user:pass@tcp(host:3306)/dbname?charset=utf8mb4"
 	case "oceanbase", "oceanbase-mysql":

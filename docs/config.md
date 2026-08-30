@@ -231,7 +231,7 @@ Requires:
 | `goldendb` / `goldendb-mysql` | `user:pass@tcp(host:3306)/dbname?charset=utf8mb4`（MySQL 兼容模式） |
 | `goldendb-oracle` | `oracle://user:pass@host:1521/service_name`（Oracle 兼容模式） |
 | `oceanbase` / `oceanbase-mysql` | `user@tenant:pass@tcp(host:2881)/dbname`（MySQL 兼容模式；用户名须带租户，如 `root@test`；2881 直连 OBServer，2883 走 OBProxy） |
-| `oceanbase-oracle` | `oceanbase-oracle://user:pass@host:2881/db`（MySQL 线协议直连）或 `oracle://user:pass@host:2883/service_name`（OBProxy TNS） |
+| `oceanbase-oracle` | 直连 OBServer(2881):`oceanbase-oracle://sys@tenant:pass@host:2881/db`（**无需集群**）；OBProxy(2883) 多集群:用户名须带集群 `user@tenant#cluster`（`#` 由工具自动编码），如 `oceanbase-oracle://sys@tenant#cluster:pass@host:2883/db`；TNS:`oracle://user:pass@host:2883/service_name` |
 | `panweidb` / `panweidb-mysql` / `panweidb-oracle` | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable`（始终走 PG 协议） |
 | `opengaussdb` | `host=127.0.0.1 port=5432 user=gaussdb password=pass dbname=postgres sslmode=disable`（默认用户 `gaussdb`；testdata/db 测试环境端口映射为 **5433**） |
 
