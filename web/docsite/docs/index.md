@@ -17,6 +17,7 @@ Offline-first database migration tool for Oracle, PostgreSQL, MySQL, and derivat
 | [Online Incremental Migration](online-migration.md) | Design for `owl-migrate online` (trigger CDC, replay, file-batch fallback) — status: draft |
 | [Web API Contract](api-contract.md) | Frozen `/api/v1` HTTP API for the `owl-migrate serve` web mode, including security behavior |
 | [Data Sources](data-sources.md) | Reusable connection profiles for the web UI (数据源): at-rest encrypted DSNs, config-form picker, dev/API notes |
+| [QA: 陌生数据库数据导出](qa/unknown-database-export.md) | 陌生数据库导出数据的输入清单（连接串/元数据/映射）、DELETE/INSERT/CSV 导出能力与操作流程 |
 
 ## Quick Start
 
