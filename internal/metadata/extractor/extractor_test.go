@@ -1,6 +1,9 @@
 package extractor
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeDBType(t *testing.T) {
 	tests := []struct{ in, want string }{
@@ -8,6 +11,7 @@ func TestNormalizeDBType(t *testing.T) {
 		{"goldendb-oracle", "oracle"},
 		{"oceanbase-mysql", "mysql"},
 		{"oceanbase-oracle", "oracle"},
+		{"oceanbase-oracle-wire", "oracle"},
 		{"goldendb", "mysql"},
 		{"oceanbase", "mysql"},
 		{"panweidb", "postgres"},
@@ -35,7 +39,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestGetQuerySQL(t *testing.T) {
-	for _, dbType := range []string{"postgres", "mysql", "oracle"} {
+	for _, dbType := range []string{"postgres", "mysql", "oracle", "oceanbase-oracle", "oceanbase-oracle-wire"} {
 		for _, obj := range []string{"tables", "columns", "pk", "indexes", "views"} {
 			if sql := GetQuerySQL(dbType, obj); sql == "" {
 				t.Errorf("GetQuerySQL(%q, %q) = empty", dbType, obj)
@@ -44,6 +48,26 @@ func TestGetQuerySQL(t *testing.T) {
 	}
 	if sql := GetQuerySQL("postgres", "bogus"); sql != "" {
 		t.Errorf("GetQuerySQL(postgres, bogus) = %q, want empty", sql)
+	}
+	// OceanBase Oracle tenant columns query must omit collation and identity.
+	if sql := GetQuerySQL("oceanbase-oracle-wire", "columns"); strings.Contains(sql, "collation") || strings.Contains(sql, "identity") {
+		t.Errorf("oceanbase-oracle-wire columns SQL must omit collation/identity, got: %s", sql)
+	}
+	if sql := GetQuerySQL("oracle", "columns"); !strings.Contains(sql, "collation") {
+		t.Errorf("native oracle columns SQL should keep collation, got: %s", sql)
+	}
+}
+
+func TestIsOceanBaseOracle(t *testing.T) {
+	for _, in := range []string{"oceanbase-oracle", "oceanbase-oracle-wire"} {
+		if !isOceanBaseOracle(in) {
+			t.Errorf("isOceanBaseOracle(%q) = false, want true", in)
+		}
+	}
+	for _, in := range []string{"oracle", "oceanbase", "oceanbase-mysql", "postgres"} {
+		if isOceanBaseOracle(in) {
+			t.Errorf("isOceanBaseOracle(%q) = true, want false", in)
+		}
 	}
 }
 

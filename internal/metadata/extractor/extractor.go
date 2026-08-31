@@ -38,7 +38,7 @@ func init() {
 	Register(&PGMetadataQuerier{})
 	Register(&MySQLMetadataQuerier{})
 	Register(&OracleMetadataQuerier{})
-	Register(OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?"}})
+	Register(OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}})
 }
 
 // Register adds a querier to the global registry.
@@ -69,6 +69,8 @@ func normalizeDBType(t string) string {
 	switch {
 	case strings.HasSuffix(t, "-mysql"):
 		return "mysql"
+	case t == "oceanbase-oracle-wire":
+		return "oracle"
 	case strings.HasSuffix(t, "-oracle"):
 		return "oracle"
 	case t == "goldendb", t == "oceanbase":
@@ -78,6 +80,13 @@ func normalizeDBType(t string) string {
 	default:
 		return t
 	}
+}
+
+// isOceanBaseOracle reports whether the dbType string identifies an
+// OceanBase Oracle-compatible tenant, whose dictionary views omit fields that
+// native Oracle exposes (collation, identity metadata).
+func isOceanBaseOracle(dbType string) bool {
+	return dbType == "oceanbase-oracle" || dbType == "oceanbase-oracle-wire"
 }
 
 // ListSchemas returns the existing schemas (PG namespaces, MySQL databases or
@@ -326,6 +335,9 @@ func GetQuerySQL(dbType, objectType string) string {
 		case "tables":
 			return queryOracleTables
 		case "columns":
+			if isOceanBaseOracle(dbType) {
+				return queryOracleColumnsOceanBase
+			}
 			return queryOracleColumns
 		case "pk", "primary_keys":
 			return queryOraclePrimaryKeys

@@ -561,6 +561,13 @@ export async function render(root /*Element*/, params) {
             if (k === 'user' && meta.has_tenant) {
                 let u = mval('user');
                 if (!u) { v = PH.user; }
+                else if (u.indexOf('@') >= 0 || u.indexOf('#') >= 0) {
+                    // User already contains a full user@tenant#cluster (or a
+                    // partial user@tenant / user#cluster) — treat it verbatim
+                    // instead of re-appending tenant/cluster, which would
+                    // double them up (e.g. gzmonitor@sit#ngbossjf@sit#ngbossjf).
+                    v = u;
+                }
                 else {
                     const t = mval('tenant');
                     const c = mval('cluster');
@@ -709,7 +716,6 @@ export async function render(root /*Element*/, params) {
                 if (h >= 0) { o.cluster = o.cluster || o.user.slice(h + 1); o.user = o.user.slice(0, h); }
                 if (at >= 0) { o.tenant = o.user.slice(at + 1); o.user = o.user.slice(0, at); }
             }
-            return o;
         }
         return o;
     }

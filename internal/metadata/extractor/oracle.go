@@ -34,18 +34,31 @@ const queryOracleColumns = `SELECT
 	cc.comments AS comments,
 	COALESCE(c.char_used, '') AS char_used,
 	COALESCE(c.character_set_name, '') AS charset,
-	COALESCE(c.collation, '') AS collation,
-	c.identity_column,
-	ic.generation_type AS identity_generation,
-	seq.last_number AS identity_start,
-	seq.increment_by AS identity_increment
+	COALESCE(c.collation, '') AS collation
 FROM all_tab_columns c
 LEFT JOIN all_col_comments cc
 	ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
-LEFT JOIN all_tab_identity_cols ic
-	ON ic.owner = c.owner AND ic.table_name = c.table_name AND ic.column_name = c.column_name
-LEFT JOIN all_sequences seq
-	ON seq.sequence_owner = ic.owner AND seq.sequence_name = ic.sequence_name
+WHERE c.owner = UPPER(:1)
+ORDER BY c.table_name, c.column_id`
+
+// queryOracleColumnsOceanBase is the OceanBase Oracle-compatible variant:
+// all_tab_columns.collation does not exist there, so it is omitted.
+const queryOracleColumnsOceanBase = `SELECT
+	c.table_name,
+	c.column_name,
+	c.column_id AS ordinal_position,
+	c.data_type,
+	COALESCE(c.data_length, 0) AS data_length,
+	COALESCE(c.data_precision, 0) AS data_precision,
+	COALESCE(c.data_scale, 0) AS data_scale,
+	c.nullable,
+	c.data_default,
+	cc.comments AS comments,
+	COALESCE(c.char_used, '') AS char_used,
+	COALESCE(c.character_set_name, '') AS charset
+FROM all_tab_columns c
+LEFT JOIN all_col_comments cc
+	ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
 WHERE c.owner = UPPER(:1)
 ORDER BY c.table_name, c.column_id`
 
@@ -153,6 +166,13 @@ ORDER BY synonym_name`
 // them for drivers speaking the MySQL wire protocol (OceanBase Oracle tenants).
 type OracleMetadataQuerier struct {
 	Placeholder string
+	// OceanBase marks an Oracle-compatible OceanBase tenant, whose ALL_* dictionary
+	// views expose a narrower column set than native Oracle:
+	//   - all_tab_columns.collation does not exist (<21c) or is always NULL (OB);
+	//   - all_tab_identity_cols does not exist in OceanBase at all.
+	// When set, the columns query omits COLLATION and drops identity extraction,
+	// which relies on all_tab_identity_cols / all_sequences (no reliable source in OB).
+	OceanBase bool
 }
 
 func (OracleMetadataQuerier) Type() string { return "oracle" }
@@ -189,7 +209,10 @@ func (q OracleMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.Tab
 
 	var tables []*md.TableDef
 	for rows.Next() {
-		var tableName, tablespace, temporary string
+		var tableName string
+		// OceanBase Oracle-compatible tenants return NULL for these even though
+		// native Oracle exposes a non-null value, so scan into NullString.
+		var tablespace, temporary sql.NullString
 		var numRows sql.NullInt64
 		var comment sql.NullString
 		if err := rows.Scan(&tableName, &tablespace, &numRows, &comment, &temporary); err != nil {
@@ -201,9 +224,9 @@ func (q OracleMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.Tab
 		}
 		tbl.Owner = schema
 		tbl.TableType = "TABLE"
-		tbl.Tablespace = tablespace
+		tbl.Tablespace = tablespace.String
 		tbl.TableComment = comment.String
-		tbl.Temporary = temporary
+		tbl.Temporary = temporary.String
 		if numRows.Valid {
 			tbl.RowCount = int(numRows.Int64)
 		}
@@ -307,34 +330,40 @@ func buildOraclePartitionClause(db *sql.DB, schema string, q OracleMetadataQueri
 }
 
 func (q OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDef, error) {
-	rows, err := db.Query(q.bind(`
+	// Native Oracle (21c+) exposes all_tab_columns.collation; OceanBase Oracle
+	// tenants do not (ORA-00904 / always NULL), so drop the column there.
+	defs := []string{
+		"c.table_name",
+		"c.column_name",
+		"c.column_id AS ordinal_position",
+		"c.data_type",
+		"COALESCE(c.data_length, 0) AS data_length",
+		"COALESCE(c.data_precision, 0) AS data_precision",
+		"COALESCE(c.data_scale, 0) AS data_scale",
+		"c.nullable",
+		"c.data_default",
+		"cc.comments AS comments",
+		"COALESCE(c.char_used, '') AS char_used",
+		"COALESCE(c.character_set_name, '') AS charset",
+	}
+	if !q.OceanBase {
+		defs = append(defs, "COALESCE(c.collation, '') AS collation")
+	}
+	var joins strings.Builder
+	joins.WriteString("LEFT JOIN all_col_comments cc\n\t\t\tON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name")
+	if !q.OceanBase {
+		// OceanBase has no all_tab_identity_cols view; identity metadata is
+		// unavailable there, so only enrich for native Oracle.
+		joins.WriteString("\n\t\tLEFT JOIN all_tab_identity_cols ic\n\t\t\tON ic.owner = c.owner AND ic.table_name = c.table_name AND ic.column_name = c.column_name")
+		joins.WriteString("\n\t\tLEFT JOIN all_sequences seq\n\t\t\tON seq.sequence_owner = ic.owner AND seq.sequence_name = ic.sequence_name")
+	}
+	rows, err := db.Query(q.bind(fmt.Sprintf(`
 		SELECT
-			c.table_name,
-			c.column_name,
-			c.column_id AS ordinal_position,
-			c.data_type,
-			COALESCE(c.data_length, 0) AS data_length,
-			COALESCE(c.data_precision, 0) AS data_precision,
-			COALESCE(c.data_scale, 0) AS data_scale,
-			c.nullable,
-			c.data_default,
-			cc.comments AS comments,
-			COALESCE(c.char_used, '') AS char_used,
-			COALESCE(c.character_set_name, '') AS charset,
-			COALESCE(c.collation, '') AS collation,
-			c.identity_column,
-			ic.generation_type AS identity_generation,
-			seq.last_number AS identity_start,
-			seq.increment_by AS identity_increment
+			%s
 		FROM all_tab_columns c
-		LEFT JOIN all_col_comments cc
-			ON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name
-		LEFT JOIN all_tab_identity_cols ic
-			ON ic.owner = c.owner AND ic.table_name = c.table_name AND ic.column_name = c.column_name
-		LEFT JOIN all_sequences seq
-			ON seq.sequence_owner = ic.owner AND seq.sequence_name = ic.sequence_name
+		%s
 		WHERE c.owner = UPPER(:1)
-		ORDER BY c.table_name, c.column_id`), schema)
+		ORDER BY c.table_name, c.column_id`, strings.Join(defs, ",\n\t\t\t"), joins.String())), schema)
 	if err != nil {
 		return nil, err
 	}
@@ -347,10 +376,18 @@ func (q OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Co
 		var defaultVal, comments, charUsed, charset, collation sql.NullString
 		var identGen sql.NullString
 		var identStart, identIncr sql.NullInt64
-		if err := rows.Scan(&tableName, &colName, &ordinal, &dataType,
+		scanArgs := []any{
+			&tableName, &colName, &ordinal, &dataType,
 			&dataLen, &dataPrec, &dataScale, &nullable, &defaultVal, &comments,
-			&charUsed, &charset, &collation, &identityCol,
-			&identGen, &identStart, &identIncr); err != nil {
+			&charUsed, &charset,
+		}
+		if !q.OceanBase {
+			scanArgs = append(scanArgs, &collation)
+		}
+		if !q.OceanBase {
+			scanArgs = append(scanArgs, &identityCol, &identGen, &identStart, &identIncr)
+		}
+		if err := rows.Scan(scanArgs...); err != nil {
 			return nil, err
 		}
 
@@ -372,7 +409,9 @@ func (q OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Co
 		col.ColumnComment = comments.String
 		col.CharUsed = charUsed.String
 		col.CharacterSet = charset.String
-		col.Collation = collation.String
+		if !q.OceanBase {
+			col.Collation = collation.String
+		}
 
 		if identityCol == "YES" {
 			col.IsIdentity = "YES"
