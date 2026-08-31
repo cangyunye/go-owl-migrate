@@ -124,7 +124,7 @@ CREATE SCHEMA IF NOT EXISTS "schema_name"
 | 对象 | Oracle | PostgreSQL | MySQL |
 |---|---|---|---|
 | 表（含注释、临时表标志） | `all_tables` + `all_tab_comments` | `information_schema.tables` + `obj_description`（含分区父表检测 `relkind='p'`） | `information_schema.tables` |
-| 列（含 identity 起始/步长） | `all_tab_columns` + `all_tab_identity_cols` + `all_sequences` | `information_schema.columns` + `pg_get_serial_sequence`/`pg_sequences` | `information_schema.columns` |
+| 列（含 identity 起始/步长） | `all_tab_columns` + `all_tab_identity_cols` + `all_sequences`（OB Oracle 租户不做 identity 提取：`all_tab_identity_cols` 不存在） | `information_schema.columns` + `pg_get_serial_sequence`/`pg_sequences` | `information_schema.columns` |
 | 序列（START WITH = last_number，避免迁移后主键冲突） | `all_sequences` | `pg_sequences` | —（OB MySQL 模式由方言生成） |
 | 分区（重建 `PARTITION BY` 文本） | `all_part_tables` + `all_part_key_columns` + `all_tab_partitions` | `pg_get_partkeydef` | `information_schema.partitions` |
 | 函数/存储过程 | `all_objects` + `DBMS_METADATA.GET_DDL`（回退 `all_source`） | `pg_proc` + `pg_get_functiondef`（PG11+ `prokind`，旧版回退） | `information_schema.routines` |

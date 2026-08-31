@@ -68,6 +68,10 @@ MySQL 线协议路径下：
 - DSN 自动改写为 `oboracle://` 并注入 `preset=oboracle`
 - 元数据提取使用 `oceanbase-oracle-wire` 提取器（Oracle SQL + `?` 占位符，
   `internal/dbconn.MetadataSourceType` 自动路由）
+- 该提取器为 OceanBase 兼容模式：列查询去掉 `all_tab_columns.collation`
+  （OB 中没有该列，报 ORA-00904），并**不做 identity 列提取**——
+  `all_tab_identity_cols` 视图在 OceanBase 中不存在（v3.2.4 / v4.4 均无），
+  依赖它的 identity 元数据无法从 `ALL_*` 字典视图可靠获取
 - 数据导入/导出通过 `PlaceholderFamily: "qmark"` 覆盖方言占位符
 
 > 教训（来自 GoNavi 实践）：直连 OBServer/OBProxy 的 MySQL 协议端口时，

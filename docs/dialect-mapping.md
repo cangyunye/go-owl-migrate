@@ -41,7 +41,7 @@ Serverless, in-process databases:
 When extracting metadata from a live database (`metadata.type: database`), the pipeline queries:
 
 1. **Tables** — via `information_schema.tables` (PG/MySQL) or `all_tables` (Oracle); table comments via `obj_description`/`all_tab_comments`; temporary-table / partitioned-parent flags where available
-2. **Columns** — via `information_schema.columns` or `all_tab_columns`; identity start/increment via `pg_get_serial_sequence`/`all_tab_identity_cols`
+2. **Columns** — via `information_schema.columns` or `all_tab_columns`; identity start/increment via `pg_get_serial_sequence`/`all_tab_identity_cols` (native Oracle only — the OceanBase Oracle tenant has no `all_tab_identity_cols` view)
 3. **Primary Keys** — via `information_schema.table_constraints` or `all_constraints`
 4. **Indexes** — via `information_schema.statistics` / `pg_index` or `all_indexes`
 5. **Foreign Keys** — via `information_schema.key_column_usage` or `all_cons_columns`
