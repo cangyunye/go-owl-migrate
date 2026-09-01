@@ -1275,3 +1275,10 @@ body.modal-open { overflow: hidden; }
 .gen-row .gen-size { min-width: 70px; text-align: right; color: var(--text-dim, #999); }
 .gen-row .gen-actions { display: flex; gap: 10px; }
 .gen-row .gen-actions a { color: var(--accent, #4da3ff); }
+
+/* ── metadata table list: toolbar & pager ────────────────── */
+.meta-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.meta-toolbar input { max-width: 320px; }
+.pager { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.pager .field-help { margin: 0; flex: 1; }
+.pager button { min-width: 72px; }
