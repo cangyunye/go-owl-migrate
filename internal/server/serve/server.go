@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -52,7 +53,7 @@ type Server struct {
 }
 
 func NewServer(cfg Config) *Server {
-	return &Server{
+	s := &Server{
 		store:          cfg.Store,
 		masterURL:      cfg.MasterURL,
 		configPath:     cfg.ConfigPath,
@@ -62,6 +63,16 @@ func NewServer(cfg Config) *Server {
 		token:          cfg.Token,
 		cfg:            &config.Config{},
 	}
+	// Restore the last active config so it survives a server restart.
+	if cfg.ConfigPath != "" {
+		if data, err := os.ReadFile(cfg.ConfigPath); err == nil {
+			var loaded config.Config
+			if yaml.Unmarshal(data, &loaded) == nil {
+				s.cfg = &loaded
+			}
+		}
+	}
+	return s
 }
 
 // dsStore lazily builds the encrypted data-source store. The key file is only
@@ -95,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/dialects", s.handleGetDialects)
 	mux.HandleFunc("POST /api/v1/conn/test", s.handleTestConn)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
+	mux.HandleFunc("GET /api/v1/config/current", s.handleGetCurrentConfig)
 	mux.HandleFunc("PUT /api/v1/config", s.handlePutConfig)
 	mux.HandleFunc("GET /api/v1/config/download", s.handleGetConfigDownload)
 	mux.HandleFunc("GET /api/v1/config/status", s.handleGetConfigStatus)

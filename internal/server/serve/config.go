@@ -3,6 +3,7 @@ package serve
 import (
 	"net/http"
 	"os"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 
@@ -30,6 +31,26 @@ func (s *Server) persistConfig() (string, error) {
 		return "", err
 	}
 	return path, nil
+}
+
+// handleGetCurrentConfig returns the active config in the shape the scenario
+// form consumes: detected scenario + reverse-mapped form values + YAML.
+func (s *Server) handleGetCurrentConfig(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scenario": service.DetectScenario(cfg),
+		"values":   service.ExtractFormValues(cfg),
+		"yaml":     string(data),
+		"empty":    reflect.DeepEqual(cfg, &config.Config{}),
+	})
 }
 
 func (s *Server) handleGetConfigDownload(w http.ResponseWriter, r *http.Request) {

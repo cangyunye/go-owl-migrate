@@ -842,6 +842,7 @@ export async function render(root /*Element*/, params) {
             saveStatus.textContent = '✓ 已保存为当前配置';
             saveStatus.className = 'save-status ok';
             savedPath.textContent = (resp && resp.path) ? '已写入文件：' + resp.path : '';
+            if (window.refreshConfigBar) window.refreshConfigBar();
         } catch (e) {
             saveStatus.textContent = '✗ ' + ((e && e.message) || String(e));
             saveStatus.className = 'save-status fail';
@@ -949,6 +950,7 @@ export async function render(root /*Element*/, params) {
         try {
             const resp = await window.api.post('/api/v1/configs/' + encodeURIComponent(name) + '/load', {});
             applyConfigResp(resp);
+            if (window.refreshConfigBar) window.refreshConfigBar();
             setUploadStatus('✓ 已加载配置：' + name, 'ok');
         } catch (e) {
             setUploadStatus('✗ ' + ((e && e.message) || String(e)), 'fail');
@@ -982,6 +984,7 @@ export async function render(root /*Element*/, params) {
         try {
             const resp = await window.api.post('/api/v1/configs', { name: file.name, yaml: text });
             applyConfigResp(resp);
+            if (window.refreshConfigBar) window.refreshConfigBar();
             loadConfigLib();
             setUploadStatus('✓ 已存入配置库并填入表单：' + ((resp && resp.name) || file.name), 'ok');
             clearFilePicker();
@@ -1031,6 +1034,12 @@ export async function render(root /*Element*/, params) {
         return;
     }
     loadConfigLib();
+
+    /* restore the server's current config into the form */
+    try {
+        const cur = await window.api.get('/api/v1/config/current');
+        if (root.isConnected && cur && !cur.empty) applyConfigResp(cur);
+    } catch (e) {}
 
     function resolveInitialScenario() {
         const fromHash = scenarioFromHash();

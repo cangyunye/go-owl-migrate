@@ -235,6 +235,57 @@ tasks:
     cmds:
       - go test ./...
 
+  # One-command web UI test flow: ensure Playwright browsers (via fast mirror) →
+  # build + start a local serve server → run the web test command.
+  #
+  #   task web-test                                       # default curl smoke test
+  #   task web-test -- python3 scripts/my_web_test.py     # custom (Playwright) test
+  #
+  # The default smoke test verifies the SPA shell, core assets and key API
+  # routes respond. Playwright install is idempotent — it only downloads the
+  # browser revision the installed playwright package pins, and reuses the
+  # cached copy once present.
+  web-test:
+    desc: Ensure Playwright + serve + run web tests (test cmd after `--`)
+    deps: [build]
+    vars:
+      PORT: "18099"
+      BINARY: '{{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}'
+      TEST_CMD: '{{.CLI_ARGS}}'
+    cmds:
+      - |
+        PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright python3 -m playwright install chromium
+      - |
+        set -e
+        HOME_DIR=$(mktemp -d /tmp/owl-web-test.XXXXXX)
+        export OWL_MIGRATE_HOME="$HOME_DIR"
+        {{.BINARY}} serve --port {{.PORT}} >/tmp/owl-web-test.srv.log 2>&1 & SRV=$!
+        trap 'kill $SRV 2>/dev/null; rm -rf "$HOME_DIR"' EXIT
+        for i in $(seq 1 50); do
+          curl -sf http://127.0.0.1:{{.PORT}}/api/v1/health >/dev/null 2>&1 && break
+          sleep 0.2
+        done
+        if ! curl -sf http://127.0.0.1:{{.PORT}}/api/v1/health >/dev/null 2>&1; then
+          echo "serve failed to start" >&2; exit 1
+        fi
+        {{if .TEST_CMD}}{{.TEST_CMD}}{{else}}python3 -c '
+        import sys, urllib.request
+        base = "http://127.0.0.1:{{.PORT}}"
+        checks = [
+            ("/api/v1/health", "ok"),
+            ("/", "id=\"spa-nav\""),
+            ("/static/js/app.js", "window.api"),
+            ("/static/ui/router.js", "hashchange"),
+            ("/api/v1/scenarios", "scenarios"),
+        ]
+        for path, needle in checks:
+            body = urllib.request.urlopen(base + path, timeout=5).read().decode("utf-8", "replace")
+            if needle not in body:
+                print("FAIL", path, "missing", needle); sys.exit(1)
+            print("OK  ", path)
+        print("smoke test passed")
+        '{{end}}
+
   fmt:
     desc: Format all Go source files
     cmds:

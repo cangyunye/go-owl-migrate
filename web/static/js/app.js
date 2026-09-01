@@ -126,7 +126,7 @@ const highlightYAML = (function () {
 })();
 
 /* ── global config status bar (topbar chips) ─────────────── */
-(async function renderConfigBar() {
+async function renderConfigBar() {
     const bar = document.getElementById('config-bar');
     if (!bar) return;
     try {
@@ -141,10 +141,11 @@ const highlightYAML = (function () {
         if (st.source_type) {
             chips.push('<span class="cfg-chip hide-sm">源 <b>' + escapeHtml(st.source_type) + '</b></span>');
         }
-        chips.push('<a class="cfg-bar-link" href="/config">编辑配置</a>');
+        chips.push('<a class="cfg-bar-link" href="#/config">编辑配置</a>');
         bar.innerHTML = chips.join('');
     } catch (e) { /* best-effort */ }
-})();
+}
+renderConfigBar();
 
 /* ── sidebar collapse + theme toggle wiring ──────────────── */
 (function () {
@@ -353,3 +354,4 @@ window.highlightYAML = highlightYAML;
 window.humanSize = humanSize;
 window.escapeHtml = escapeHtml;
 window.renderGenFiles = renderGenFiles;
+window.refreshConfigBar = renderConfigBar;
