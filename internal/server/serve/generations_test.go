@@ -270,4 +270,15 @@ func TestDownloadGen_ByIDAndLatest(t *testing.T) {
 	if resp4.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown id status = %d, want 404", resp4.StatusCode)
 	}
+	// 记录存在但磁盘目录已被清理 → 404
+	gone := t.TempDir()
+	os.WriteFile(filepath.Join(gone, "gone.sql"), []byte("GONE"), 0644)
+	store.RecordGeneration("ddl", gone, service.GenerationMeta{})
+	os.RemoveAll(gone)
+	recs, _ = store.ListGenerations("ddl")
+	resp5, _ := http.Get(fmt.Sprintf("%s/api/v1/ddl/download?id=%d", ts.URL, recs[0].ID))
+	resp5.Body.Close()
+	if resp5.StatusCode != http.StatusNotFound {
+		t.Fatalf("missing-dir status = %d, want 404", resp5.StatusCode)
+	}
 }

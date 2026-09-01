@@ -478,7 +478,7 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeError(w, http.StatusNotFound, "generation files no longer exist")
 			return
 		}
 		w.Header().Set("Content-Type", "application/zip")
