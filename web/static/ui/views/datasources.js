@@ -45,7 +45,7 @@ export async function render(root /*Element*/, params) {
     async function refresh() {
         try {
             const list = await window.api.get('/api/v1/datasources') || [];
-            renderList(tbody, list, root);
+            renderList(tbody, list, root, refresh);
         } catch (e) {
             tbody.innerHTML = '<tr><td colspan="6" class="lib-empty">' + escapeHtml((e && e.message) || '加载失败') + '</td></tr>';
         }
@@ -76,7 +76,7 @@ async function ensureDsnExamples() {
     return dsnExamples;
 }
 
-function renderList(tbody, list, root) {
+function renderList(tbody, list, root, refresh) {
     tbody.innerHTML = '';
     if (!list.length) {
         tbody.innerHTML = '<tr><td colspan="6" class="lib-empty">暂无数据源，点击右上角「新建数据源」添加</td></tr>';

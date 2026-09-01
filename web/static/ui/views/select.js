@@ -1,5 +1,5 @@
 /* owl-migrate SPA · SELECT generator view (ported from web/templates/select.html) */
-import { buildGeneratorView } from './generator.js';
+import { buildGeneratorView, tablesFieldHTML, collectTables } from './generator.js';
 
 export const render = buildGeneratorView({
     overline: 'generate · select',
@@ -8,7 +8,8 @@ export const render = buildGeneratorView({
     endpoint: '/api/v1/select/generate',
     downloadLabel: 'SELECT',
     formHTML:
-        '<div class="field">'
+        tablesFieldHTML('逗号分隔表名，支持 schema.table 与通配符，如 EMP,DEPT,T_*；留空 = 配置的表清单，均为空则全部表')
+        + '<div class="field">'
         +   '<label>分页方式</label>'
         +   '<select id="opt-method">'
         +     '<option value="cursor">cursor（游标分页）</option>'
@@ -23,6 +24,7 @@ export const render = buildGeneratorView({
         +   '<label class="check"><input type="checkbox" id="opt-no-quote"> 不引用标识符 <code>no_quote_identifiers</code></label>'
         + '</div>',
     collectOptions: (root) => ({
+        tables: collectTables(root),
         batch_method: root.querySelector('#opt-method').value,
         page_size: parseInt(root.querySelector('#opt-page-size').value) || 5000,
         no_quote_identifiers: root.querySelector('#opt-no-quote').checked ? true : null

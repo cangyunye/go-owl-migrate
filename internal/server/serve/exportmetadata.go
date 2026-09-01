@@ -36,6 +36,15 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 	if src.Type == "" {
 		src = cfg.Source
 	}
+	if resolved, refSchema, err := s.resolveDSNRef(src.DSN); err != nil {
+		writeError(w, http.StatusBadRequest, "data source: "+err.Error())
+		return
+	} else {
+		src.DSN = resolved
+		if src.Schema == "" {
+			src.Schema = refSchema
+		}
+	}
 	if src.DSN == "" {
 		writeError(w, http.StatusBadRequest, "source.dsn is required for metadata export")
 		return

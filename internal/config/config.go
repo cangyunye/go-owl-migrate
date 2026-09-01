@@ -614,18 +614,23 @@ func mapKeys(m map[string]bool) []string {
 // MatchTable checks whether a table matches the include/exclude filter rules.
 // Priority: includes → glob exclude → regex exclude → schema exclude → table exclude.
 func MatchTable(f TableFilterConfig, schema, table string) bool {
-	// Check includes first
+	// Check includes first. Matching is case-insensitive: Oracle metadata is
+	// uppercase while MySQL/PostgreSQL and CSV-derived names are often
+	// lowercase, and a migration filter should bridge both.
 	matched := false
+	lt := strings.ToLower(table)
+	lfull := strings.ToLower(schema + "." + table)
 	for _, inc := range f.Include {
 		if inc == "*" {
 			matched = true
 			break
 		}
-		if m, _ := filepath.Match(inc, schema+"."+table); m {
+		li := strings.ToLower(inc)
+		if m, _ := filepath.Match(li, lfull); m {
 			matched = true
 			break
 		}
-		if m, _ := filepath.Match(inc, table); m {
+		if m, _ := filepath.Match(li, lt); m {
 			matched = true
 			break
 		}

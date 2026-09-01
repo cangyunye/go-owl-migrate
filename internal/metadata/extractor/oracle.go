@@ -347,7 +347,17 @@ func (q OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Co
 		"COALESCE(c.character_set_name, '') AS charset",
 	}
 	if !q.OceanBase {
-		defs = append(defs, "COALESCE(c.collation, '') AS collation")
+		defs = append(defs,
+			"COALESCE(c.collation, '') AS collation",
+			// Identity metadata: IDENTITY_COLUMN lives on all_tab_columns,
+			// GENERATION_TYPE on all_tab_identity_cols, start/increment on
+			// the backing all_sequences row. Must stay in the same order the
+			// native scanArgs append them.
+			"c.identity_column",
+			"ic.generation_type",
+			"seq.min_value",
+			"seq.increment_by",
+		)
 	}
 	var joins strings.Builder
 	joins.WriteString("LEFT JOIN all_col_comments cc\n\t\t\tON cc.owner = c.owner AND cc.table_name = c.table_name AND cc.column_name = c.column_name")

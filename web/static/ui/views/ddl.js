@@ -1,5 +1,5 @@
 /* owl-migrate SPA · DDL generator view (ported from web/templates/ddl.html) */
-import { buildGeneratorView } from './generator.js';
+import { buildGeneratorView, tablesFieldHTML, collectTables } from './generator.js';
 
 export const render = buildGeneratorView({
     overline: 'generate · ddl',
@@ -8,10 +8,12 @@ export const render = buildGeneratorView({
     endpoint: '/api/v1/ddl/generate',
     downloadLabel: 'DDL',
     formHTML:
-        '<div class="field">'
+        tablesFieldHTML('逗号分隔表名，支持 schema.table 与通配符，如 EMP,DEPT,T_*；留空 = 配置的表清单，均为空则全部表')
+        + '<div class="field">'
         +   '<label class="check"><input type="checkbox" id="opt-no-quote"> 不引用标识符 <code>no_quote_identifiers</code></label>'
         + '</div>',
     collectOptions: (root) => ({
+        tables: collectTables(root),
         no_quote_identifiers: root.querySelector('#opt-no-quote').checked ? true : null
     }),
 });

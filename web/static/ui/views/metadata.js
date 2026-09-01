@@ -19,8 +19,6 @@
 
 import { escapeHtml } from '../util.js';
 
-const MASK_RE = /\*/;
-
 let dsnExamples = {};
 
 export async function render(root /*Element*/, params) {
@@ -58,6 +56,7 @@ export async function render(root /*Element*/, params) {
         +   '</div>'
         +   '<div class="field hidden" id="f-db-dsn">'
         +     '<label>数据库 DSN</label>'
+        +     '<select id="m-ds-pick" class="hidden" style="margin-bottom:6px"><option value="">— 手动输入 DSN —</option></select>'
         +     '<input type="text" id="m-src-dsn" class="mono">'
         +     '<div class="field-help" id="m-dsn-hint"></div>'
         +   '</div>'
@@ -104,6 +103,7 @@ export async function render(root /*Element*/, params) {
     const xlsxField = root.querySelector('#f-xlsx');
     const srcType = root.querySelector('#m-src-type');
     const dsnInput = root.querySelector('#m-src-dsn');
+    const dsPick = root.querySelector('#m-ds-pick');
     const schemaInput = root.querySelector('#m-src-schema');
     const hint = root.querySelector('#m-dsn-hint');
     const dbFields = ['f-db-type', 'f-db-dsn', 'f-db-schema'].map(id => root.querySelector('#' + id));
@@ -298,20 +298,46 @@ export async function render(root /*Element*/, params) {
         window.toast && window.toast.err('加载数据库类型失败', e && e.message || '');
     }
 
-    /* ── prefill metadata type + source type/schema (DSN mask-safe) ── */
+    /* ── prefill from the current config (values include the resolved DSN) ── */
     try {
-        const cfg = await window.api.get('/api/v1/config');
-        if (cfg && cfg.metadata) {
-            if (cfg.metadata.type) typeSel.value = cfg.metadata.type;
-            if (cfg.metadata.csv && cfg.metadata.csv.path) csvPath.value = cfg.metadata.csv.path;
-            if (cfg.metadata.xlsx && cfg.metadata.xlsx.path) xlsxPath.value = cfg.metadata.xlsx.path;
-        }
-        if (cfg && cfg.source) {
-            if (cfg.source.type) srcType.value = cfg.source.type;
-            if (cfg.source.dsn && !MASK_RE.test(cfg.source.dsn)) dsnInput.value = cfg.source.dsn;
-            if (cfg.source.schema) schemaInput.value = cfg.source.schema;
+        const cur = await window.api.get('/api/v1/config/current');
+        const vs = (cur && cur.values) || {};
+        if (cur && !cur.empty) {
+            if (vs.metadata_type) typeSel.value = vs.metadata_type;
+            if (vs.csv_path) csvPath.value = vs.csv_path;
+            if (vs.xlsx_path) xlsxPath.value = vs.xlsx_path;
+            if (vs.source_type) srcType.value = vs.source_type;
+            if (vs.source_dsn) dsnInput.value = vs.source_dsn;
+            if (vs.source_schema) schemaInput.value = vs.source_schema;
         }
     } catch (e) { /* config prefill is best-effort; leave fields blank */ }
+
+    /* ── saved-datasource quick pick (DSN resolved server-side) ── */
+    try {
+        const dsList = await window.api.get('/api/v1/datasources') || [];
+        if (dsList.length) {
+            dsPick.classList.remove('hidden');
+            dsList.forEach(function (d) {
+                const o = document.createElement('option');
+                o.value = d.name;
+                o.textContent = d.name + ' · ' + (d.type || '?') + (d.schema ? ' · ' + d.schema : '');
+                dsPick.appendChild(o);
+            });
+        }
+        dsPick.addEventListener('change', async function () {
+            if (!this.value) { dsnInput.value = ''; updateDsnHint(); return; }
+            try {
+                const p = await window.api.post('/api/v1/datasources/' + encodeURIComponent(this.value) + '/pick', {});
+                if (p.type) srcType.value = p.type;
+                if (p.schema && !schemaInput.value) schemaInput.value = p.schema;
+                dsnInput.value = p.ref || ('datasource:' + this.value);
+                hint.textContent = '已选数据源 ' + this.value + '，DSN 由服务端解密';
+                hint.classList.add('has-example');
+            } catch (e) {
+                window.toast && window.toast.err('读取数据源失败', (e && e.message) || '');
+            }
+        });
+    } catch (e) { /* data-source list is best-effort */ }
 
     toggleMetaFields();
     updateDsnHint();

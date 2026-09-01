@@ -6,9 +6,26 @@ import (
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/datasource"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
+
+// resolveDSNRef expands a "datasource:<name>" token into its stored plaintext
+// DSN (and default schema) so endpoints like connection-test and metadata-load
+// can connect without the browser ever holding the secret. A plain DSN is
+// returned unchanged with an empty schema.
+func (s *Server) resolveDSNRef(dsn string) (resolved, schema string, err error) {
+	if !datasource.IsRef(dsn) {
+		return dsn, "", nil
+	}
+	store, err := s.dsStore()
+	if err != nil {
+		return "", "", err
+	}
+	_, schema, resolved, err = store.Resolve(datasource.RefName(dsn))
+	return resolved, schema, err
+}
 
 // handleTestConn attempts to open and ping a database connection from the
 // submitted DSN, returning whether it is reachable. Used by the config page's
@@ -27,10 +44,18 @@ func (s *Server) handleTestConn(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "type and dsn are required")
 		return
 	}
+	dsn, refSchema, err := s.resolveDSNRef(req.DSN)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "data source: "+err.Error())
+		return
+	}
+	if req.Schema == "" {
+		req.Schema = refSchema
+	}
 
 	cfg := config.DBConfig{
 		Type:           req.Type,
-		DSN:            req.DSN,
+		DSN:            dsn,
 		Schema:         req.Schema,
 		ConnectTimeout: req.ConnectTimeout,
 	}

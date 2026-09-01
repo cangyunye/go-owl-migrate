@@ -7,17 +7,14 @@
    api.post('/api/v1/metadata/export', {source:{type,dsn,schema},
    format, scope}). Result file tabs and error text are HTML-escaped.
 
-   DSN prefill mask-safety: GET /api/v1/config masks the DSN password
-   (config.MaskDSN -> literal '******'). Prefilling a masked secret
-   is wrong — the user cannot see the real password and would re-send
-   the mask. So when the config DSN contains an asterisk we skip the
-   DSN prefill entirely and leave the field blank for the user to
-   type the real DSN.
+    DSN prefill: GET /api/v1/config/current returns the active config's
+    form values with the resolved (unmasked) DSN, so the field survives
+    page switches. Saved data sources are offered in a dropdown; picking
+    one fills the DSN with a datasource:<name> token that the server
+    decrypts at connect time — the browser never has to type a password.
    ============================================================ */
 
 import { escapeHtml } from '../util.js';
-
-const MASK_RE = /\*/;
 
 /* Module-scoped dsn_examples; populated during init and read by updateHint. */
 let dsnExamples = {};
@@ -40,6 +37,7 @@ export async function render(root /*Element*/, params) {
         +   '</div>'
         +   '<div class="field">'
         +     '<label>DSN</label>'
+        +     '<select id="em-ds-pick" class="hidden" style="margin-bottom:6px"><option value="">— 手动输入 DSN —</option></select>'
         +     '<input type="text" id="em-src-dsn" class="mono" placeholder="user/pass@host:port/service">'
         +     '<div class="field-help" id="em-dsn-hint"></div>'
         +   '</div>'
@@ -77,6 +75,7 @@ export async function render(root /*Element*/, params) {
         + '</div>';
 
     const sel = root.querySelector('#em-src-type');
+    const dsPick = root.querySelector('#em-ds-pick');
     const dsnInput = root.querySelector('#em-src-dsn');
     const schemaInput = root.querySelector('#em-src-schema');
     const hint = root.querySelector('#em-dsn-hint');
@@ -149,15 +148,43 @@ export async function render(root /*Element*/, params) {
         window.toast && window.toast.err('加载数据库类型失败', e && e.message || '');
     }
 
-    /* ── prefill source.type/schema (DSN mask-safe) ────────────── */
+    /* ── prefill from the current config (values include the resolved DSN) ── */
     try {
-        const cfg = await window.api.get('/api/v1/config');
-        if (cfg && cfg.source) {
-            if (cfg.source.type) sel.value = cfg.source.type;
-            if (cfg.source.dsn && !MASK_RE.test(cfg.source.dsn)) dsnInput.value = cfg.source.dsn;
-            if (cfg.source.schema) schemaInput.value = cfg.source.schema;
+        const cur = await window.api.get('/api/v1/config/current');
+        const vs = (cur && cur.values) || {};
+        if (cur && !cur.empty) {
+            if (vs.source_type) sel.value = vs.source_type;
+            if (vs.source_dsn) dsnInput.value = vs.source_dsn;
+            if (vs.source_schema) schemaInput.value = vs.source_schema;
         }
     } catch (e) { /* config prefill is best-effort; leave fields blank */ }
+
+    /* ── saved-datasource quick pick (DSN resolved server-side) ── */
+    try {
+        const dsList = await window.api.get('/api/v1/datasources') || [];
+        if (dsList.length) {
+            dsPick.classList.remove('hidden');
+            dsList.forEach(function (d) {
+                const o = document.createElement('option');
+                o.value = d.name;
+                o.textContent = d.name + ' · ' + (d.type || '?') + (d.schema ? ' · ' + d.schema : '');
+                dsPick.appendChild(o);
+            });
+        }
+        dsPick.addEventListener('change', async function () {
+            if (!this.value) { dsnInput.value = ''; updateHint(); return; }
+            try {
+                const p = await window.api.post('/api/v1/datasources/' + encodeURIComponent(this.value) + '/pick', {});
+                if (p.type) sel.value = p.type;
+                if (p.schema && !schemaInput.value) schemaInput.value = p.schema;
+                dsnInput.value = p.ref || ('datasource:' + this.value);
+                hint.textContent = '已选数据源 ' + this.value + '，DSN 由服务端解密';
+                hint.classList.add('has-example');
+            } catch (e) {
+                window.toast && window.toast.err('读取数据源失败', (e && e.message) || '');
+            }
+        });
+    } catch (e) { /* data-source list is best-effort */ }
 
     updateHint();
 }

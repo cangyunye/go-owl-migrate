@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvvalidator "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
@@ -51,6 +52,100 @@ func (s *Server) requireMetadata() (*md.SchemaModel, error) {
 	return s.schemaModel, nil
 }
 
+// resolveTableInclude merges the request's comma-separated table spec with the
+// saved config. Precedence: request body > config.export.tables.include > all.
+// "*" or an empty spec means "all tables" (nil filter).
+func resolveTableInclude(reqTables *string, cfg *config.Config) []string {
+	spec := ""
+	if reqTables != nil {
+		spec = *reqTables
+	} else {
+		return normalizeInclude(cfg.Export.Tables.Include)
+	}
+	var out []string
+	for _, t := range strings.Split(spec, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			out = append(out, t)
+		}
+	}
+	return normalizeInclude(out)
+}
+
+func normalizeInclude(in []string) []string {
+	if len(in) == 1 && in[0] == "*" {
+		return nil
+	}
+	return in
+}
+
+func insertDataDir(cfg *config.Config) string {
+	if cfg.Import.SourceDir != "" {
+		return cfg.Import.SourceDir
+	}
+	return "./output/data/"
+}
+
+// filterTableDefs keeps only tables matched by include (nil = keep all).
+func filterTableDefs(tables []*md.TableDef, include []string) []*md.TableDef {
+	if len(include) == 0 {
+		return tables
+	}
+	f := config.TableFilterConfig{Include: include}
+	out := make([]*md.TableDef, 0, len(tables))
+	for _, t := range tables {
+		if config.MatchTable(f, t.TableSchema, t.TableName) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// handleListInsertTables reports which tables the INSERT generator would pick
+// up from the configured CSV data directory, without generating anything.
+func (s *Server) handleListInsertTables(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+
+	dataDir := insertDataDir(cfg)
+	type tableEntry struct {
+		Schema  string `json:"schema"`
+		Name    string `json:"name"`
+		Columns int    `json:"columns"`
+	}
+	resp := map[string]any{"data_dir": dataDir, "tables": []tableEntry{}}
+	tables, err := detectTablesFromCSVDir(dataDir)
+	if err != nil {
+		resp["error"] = err.Error()
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	entries := make([]tableEntry, 0, len(tables))
+	for _, t := range tables {
+		entries = append(entries, tableEntry{Schema: t.TableSchema, Name: t.TableName, Columns: len(t.Columns)})
+	}
+	resp["tables"] = entries
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// filterSchemaTables returns a shallow copy of sm keeping only tables matched
+// by include (nil = keep all). Views/sequences/synonyms etc. carry over
+// unchanged; indexes and per-table objects follow the table filter.
+func filterSchemaTables(sm *md.SchemaModel, include []string) *md.SchemaModel {
+	if len(include) == 0 {
+		return sm
+	}
+	f := config.TableFilterConfig{Include: include}
+	out := *sm
+	out.Tables = make(map[string]*md.TableDef)
+	for key, t := range sm.Tables {
+		if config.MatchTable(f, t.TableSchema, t.TableName) {
+			out.Tables[key] = t
+		}
+	}
+	return &out
+}
+
 func readGenFiles(paths []string) []genFile {
 	files := make([]genFile, 0, len(paths))
 	for _, p := range paths {
@@ -74,11 +169,13 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	var req struct {
-		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
+		Tables             *string `json:"tables"`
+		NoQuoteIdentifiers *bool   `json:"no_quote_identifiers"`
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
+	sm = filterSchemaTables(sm, resolveTableInclude(req.Tables, cfg))
 
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
@@ -145,13 +242,15 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	var req struct {
-		BatchMethod        string `json:"batch_method"`
-		PageSize           int    `json:"page_size"`
-		NoQuoteIdentifiers *bool  `json:"no_quote_identifiers"`
+		BatchMethod        string  `json:"batch_method"`
+		PageSize           int     `json:"page_size"`
+		Tables             *string `json:"tables"`
+		NoQuoteIdentifiers *bool   `json:"no_quote_identifiers"`
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
+	sm = filterSchemaTables(sm, resolveTableInclude(req.Tables, cfg))
 
 	d, err := registry.Get(cfg.DDL.TargetDialect)
 	if err != nil {
@@ -210,27 +309,27 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	var req struct {
-		BatchSize          int   `json:"batch_size"`
-		Truncate           bool  `json:"truncate"`
-		NoQuoteIdentifiers *bool `json:"no_quote_identifiers"`
+		BatchSize          int     `json:"batch_size"`
+		Truncate           bool    `json:"truncate"`
+		Tables             *string `json:"tables"`
+		NoQuoteIdentifiers *bool   `json:"no_quote_identifiers"`
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
 
-	dataDir := cfg.Import.SourceDir
-	if dataDir == "" {
-		dataDir = "./output/data/"
-	}
-	dialect := cfg.DDL.TargetDialect
-	if dialect == "" {
-		dialect = "postgres"
-	}
+	dataDir := insertDataDir(cfg)
 
 	tables, err := detectTablesFromCSVDir(dataDir)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "read CSV data: "+err.Error())
 		return
+	}
+	tables = filterTableDefs(tables, resolveTableInclude(req.Tables, cfg))
+
+	dialect := cfg.DDL.TargetDialect
+	if dialect == "" {
+		dialect = "postgres"
 	}
 
 	outDir := filepath.Join(paths.TempDir(), "insert-"+randSuffix())

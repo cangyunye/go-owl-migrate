@@ -223,13 +223,13 @@ func ScenarioSchemas() []Scenario {
 			Name: "export-ddl", Label: "生成 DDL", Command: "owl-migrate export ddl",
 			Description: "从元数据生成目标库建表语句",
 			Fields: append([]Field{metaType(), csvPath(), xlsxPath()},
-				append(dbSourceFields(), tgtType(), schemaMappingField())...),
+				append(dbSourceFields(), tablesField(), tgtType(), schemaMappingField())...),
 		},
 		{
 			Name: "gen-select", Label: "生成 SELECT", Command: "owl-migrate gen-select",
 			Description: "生成分页查询语句用于手动导出",
 			Fields: append([]Field{metaType(), csvPath(), xlsxPath()},
-				append(dbSourceFields(), tgtType())...),
+				append(dbSourceFields(), tablesField(), tgtType())...),
 		},
 		{
 			Name: "export", Label: "导出数据", Command: "owl-migrate export data",
@@ -392,10 +392,10 @@ func buildMigrateCfg(v map[string]string) *config.Config {
 			CSV:    config.ImportCSVConfig{NullMarker: "\\N"},
 			Target: config.ImportTargetConfig{TruncateBefore: true},
 			Batch:  config.ImportBatchConfig{CommitInterval: 1000, ErrorPolicy: "skip_row"},
-			Parallel: config.ParallelConfig{
-				Enabled:    true,
-				MaxWorkers: 4,
-			},
+			// Web forms expose no FK toggle; without ordering, child tables
+			// (e.g. EMP) import before parents (DEPT) and rows are silently
+			// skipped. Correctness beats parallel here.
+			Parallel: config.ParallelConfig{Enabled: true, MaxWorkers: 4, RespectForeignKeys: true},
 			DataTransforms: config.DataTransforms{
 				DatetimeFormat: "yyyyMMddHHmmss",
 				TrimStrings:    true,
@@ -420,6 +420,7 @@ func buildDDLCfg(v map[string]string) *config.Config {
 	if m := parseSchemaMapping(v["schema_mapping"]); len(m) > 0 {
 		cfg.DDL.SchemaMapping = m
 	}
+	cfg.Export.Tables.Include = splitTables(v["tables"])
 	return cfg
 }
 
@@ -491,7 +492,9 @@ func ExtractFormValues(cfg *config.Config) map[string]string {
 func DetectScenario(cfg *config.Config) string {
 	hasSource := cfg.Source.Type != ""
 	hasTarget := cfg.Target.Type != ""
-	hasExport := cfg.Export.CSV.Delimiter != "" || cfg.Export.Batch.PageSize > 0 || len(cfg.Export.Tables.Include) > 0
+	// Data-export configs always set Export.OutputDir; the table-include list
+	// alone does not (DDL/SELECT configs now also carry one).
+	hasExport := cfg.Export.OutputDir != "" || cfg.Export.CSV.Delimiter != "" || cfg.Export.Batch.PageSize > 0
 	hasImport := cfg.Import.SourceDir != "" || cfg.Import.CSV.NullMarker != "" || cfg.Import.Batch.CommitInterval > 0
 	switch {
 	case hasSource && hasTarget:
@@ -517,6 +520,7 @@ func buildSelectCfg(v map[string]string) *config.Config {
 	}
 	setMetadataSource(cfg, v)
 	cfg.DDL = config.DDLConfig{TargetDialect: v["target_type"]}
+	cfg.Export.Tables.Include = splitTables(v["tables"])
 	return cfg
 }
 
@@ -558,7 +562,7 @@ func buildImportCfg(v map[string]string) *config.Config {
 			CSV:       config.ImportCSVConfig{NullMarker: "\\N"},
 			Target:    config.ImportTargetConfig{TruncateBefore: true},
 			Batch:     config.ImportBatchConfig{CommitInterval: 1000, ErrorPolicy: "skip_row"},
-			Parallel:  config.ParallelConfig{Enabled: true, MaxWorkers: 4},
+			Parallel:  config.ParallelConfig{Enabled: true, MaxWorkers: 4, RespectForeignKeys: true},
 			DataTransforms: config.DataTransforms{
 				DatetimeFormat: "yyyyMMddHHmmss",
 				TrimStrings:    true,

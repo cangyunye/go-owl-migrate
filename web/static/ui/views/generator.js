@@ -64,5 +64,29 @@ export function buildGeneratorView(cfg) {
         });
 
         dlBtn.addEventListener('click', () => { window.location = endpoint.replace(/\/generate$/, '/download'); });
+
+        /* prefill the target-tables box from the active config (best-effort) */
+        const tablesInput = root.querySelector('#opt-tables');
+        if (tablesInput) {
+            try {
+                const cur = await window.api.get('/api/v1/config/current');
+                const t = cur && cur.values && cur.values.tables;
+                if (root.isConnected && t) tablesInput.value = t;
+            } catch (e) { /* prefill is optional */ }
+        }
+        if (cfg.afterRender) cfg.afterRender(root);
     };
+}
+
+export function tablesFieldHTML(help) {
+    return '<div class="field">'
+        +   '<label>目标表 <code>tables</code></label>'
+        +   '<input type="text" id="opt-tables" class="mono" placeholder="留空或 * = 全部">'
+        +   '<div class="field-help">' + (help || '逗号分隔表名，支持 schema.table 与通配符，如 EMP,SCOTT.DEPT,T_*') + '</div>'
+        + '</div>';
+}
+
+export function collectTables(root) {
+    const el = root.querySelector('#opt-tables');
+    return el ? (el.value.trim() || null) : null;
 }

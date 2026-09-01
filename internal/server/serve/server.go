@@ -136,6 +136,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/select/generate", s.handleGenerateSelect)
 	mux.HandleFunc("GET /api/v1/select/download", s.handleDownloadGen("select"))
 	mux.HandleFunc("POST /api/v1/insert/generate", s.handleGenerateInsert)
+	mux.HandleFunc("GET /api/v1/insert/tables", s.handleListInsertTables)
 	mux.HandleFunc("GET /api/v1/insert/download", s.handleDownloadGen("insert"))
 	mux.HandleFunc("GET /api/v1/metadata/validate", s.handleMetadataValidate)
 	mux.HandleFunc("GET /api/v1/metadata/tables/{schema}/{table}", s.handleMetadataTableDetail)
@@ -288,6 +289,15 @@ func (s *Server) handleMetadataLoad(w http.ResponseWriter, r *http.Request) {
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
+	}
+	if resolved, refSchema, err := s.resolveDSNRef(req.Source.DSN); err != nil {
+		writeError(w, http.StatusBadRequest, "data source: "+err.Error())
+		return
+	} else {
+		req.Source.DSN = resolved
+		if req.Source.Schema == "" {
+			req.Source.Schema = refSchema
+		}
 	}
 
 	cfg := &config.Config{
