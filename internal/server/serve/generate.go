@@ -452,12 +452,19 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 				return
 			}
 			rec, gerr := s.store.GetGeneration(id)
-			if gerr == nil && rec.Kind != kind {
+			if gerr != nil {
+				if errors.Is(gerr, service.ErrNoGeneration) {
+					writeError(w, http.StatusNotFound, "generation not found")
+				} else {
+					writeError(w, http.StatusInternalServerError, "lookup generation output: "+gerr.Error())
+				}
+				return
+			}
+			if rec.Kind != kind {
 				writeError(w, http.StatusNotFound, "generation not found")
 				return
 			}
 			dir = rec.Dir
-			err = gerr
 		} else {
 			dir, err = s.store.LatestGeneration(kind)
 		}

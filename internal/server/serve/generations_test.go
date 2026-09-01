@@ -263,4 +263,11 @@ func TestDownloadGen_ByIDAndLatest(t *testing.T) {
 	if resp3.StatusCode != http.StatusNotFound {
 		t.Fatalf("cross-kind id status = %d, want 404", resp3.StatusCode)
 	}
+
+	// 不存在的 id → 404
+	resp4, _ := http.Get(ts.URL + "/api/v1/ddl/download?id=99999")
+	resp4.Body.Close()
+	if resp4.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown id status = %d, want 404", resp4.StatusCode)
+	}
 }
