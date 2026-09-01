@@ -194,6 +194,7 @@ export function render(root /*Element*/, params) {
                     try {
                         const f = await window.api.get('/api/v1/generations/' + a.dataset.browse + '/files');
                         const files = f.files || [];
+                        switchMode('offline');
                         root.querySelector('#off-result').style.display = 'block';
                         root.querySelector('#off-count').textContent = f.files.length + ' 个文件';
                         root.querySelector('#off-files').innerHTML = files.map(x => '<div class="file-tab">'
