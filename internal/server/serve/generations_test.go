@@ -1,6 +1,8 @@
 package serve
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -205,12 +207,42 @@ func TestDownloadGen_ByIDAndLatest(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 
+	// 解压 zip 并读出指定 entry 的内容
+	zipEntry := func(body []byte, name string) (string, error) {
+		zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+		if err != nil {
+			return "", err
+		}
+		for _, f := range zr.File {
+			if f.Name != name {
+				continue
+			}
+			rc, err := f.Open()
+			if err != nil {
+				return "", err
+			}
+			data, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return "", err
+			}
+			return string(data), nil
+		}
+		return "", fmt.Errorf("zip entry %q not found", name)
+	}
+
 	// 缺省 = 最新
 	resp, _ := http.Get(ts.URL + "/api/v1/ddl/download")
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(body), "NEW") || strings.Contains(string(body), "OLD") {
-		t.Errorf("latest download wrong: %s", body)
+	newContent, err := zipEntry(body, "new.sql")
+	if err != nil {
+		t.Errorf("latest download: %v", err)
+	} else if !strings.Contains(newContent, "NEW") {
+		t.Errorf("latest download new.sql = %q, want to contain NEW", newContent)
+	}
+	if oldContent, err := zipEntry(body, "old.sql"); err == nil {
+		t.Errorf("latest download unexpectedly contains old.sql entry (%q)", oldContent)
 	}
 
 	// 按 id 取旧的
@@ -218,8 +250,11 @@ func TestDownloadGen_ByIDAndLatest(t *testing.T) {
 	resp2, _ := http.Get(fmt.Sprintf("%s/api/v1/ddl/download?id=%d", ts.URL, recs[1].ID))
 	b2, _ := io.ReadAll(resp2.Body)
 	resp2.Body.Close()
-	if !strings.Contains(string(b2), "OLD") {
-		t.Errorf("by-id download wrong: %s", b2)
+	oldContent, err := zipEntry(b2, "old.sql")
+	if err != nil {
+		t.Errorf("by-id download: %v", err)
+	} else if !strings.Contains(oldContent, "OLD") {
+		t.Errorf("by-id download old.sql = %q, want to contain OLD", oldContent)
 	}
 
 	// 跨 kind 的 id → 404（metadata 端点上拿 ddl 记录）

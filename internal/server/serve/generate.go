@@ -486,10 +486,7 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 			if err != nil {
 				continue
 			}
-			// Entries are stored uncompressed so the archive remains
-			// byte-addressable (small SQL/CSV outputs; keeps history
-			// downloads trivially greppable).
-			f, err := zw.CreateHeader(&zip.FileHeader{Name: e.Name(), Method: zip.Store})
+			f, err := zw.Create(e.Name())
 			if err != nil {
 				continue
 			}
