@@ -61,11 +61,13 @@ export function buildGeneratorView(cfg) {
                 histList.innerHTML = items.map(it => {
                     const t = it.created_at ? new Date(it.created_at.replace(' ', 'T') + 'Z').toLocaleString() : '—';
                     const src = it.source_label || '未知来源';
+                    const meta = (it.file_count || 0) + ' 文件';
+                    const size = window.humanSize ? window.humanSize(it.size_bytes) : it.size_bytes + ' B';
                     return '<div class="gen-row">'
                         + '<span class="gen-time">' + escapeHtml(t) + '</span>'
                         + '<span class="gen-src">' + escapeHtml(src) + '</span>'
-                        + '<span class="gen-meta">' + (it.file_count || 0) + ' 文件</span>'
-                        + '<span class="gen-size">' + (window.humanSize ? window.humanSize(it.size_bytes) : (it.size_bytes + ' B')) + '</span>'
+                        + '<span class="gen-meta">' + escapeHtml(meta) + '</span>'
+                        + '<span class="gen-size">' + escapeHtml(size) + '</span>'
                         + '<span class="gen-actions">'
                         +   '<a href="#" data-browse="' + it.id + '">浏览</a>'
                         +   '<a href="' + window.api.downloadURL(endpoint.replace(/\/generate$/, '/download') + '?id=' + it.id) + '">下载</a>'
