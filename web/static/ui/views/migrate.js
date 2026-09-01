@@ -212,7 +212,7 @@ export function render(root /*Element*/, params) {
             window.toast.warn('格式不适用', '原始文件下载仅适用于单个文件，多文件请选 tar.gz 或 zip');
             return;
         }
-        window.location = '/api/v1/jobs/' + completedJobId + '/output/download?format=' + encodeURIComponent(fmt);
+        window.location = window.api.downloadURL('/api/v1/jobs/' + completedJobId + '/output/download?format=' + encodeURIComponent(fmt));
     }
 
     root.querySelector('#btn-start').addEventListener('click', startMigrate);

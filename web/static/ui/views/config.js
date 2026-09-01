@@ -72,7 +72,7 @@ export async function render(root /*Element*/, params) {
         +     '<p class="subtitle">选择场景，填写表单，实时生成配置</p>'
         +   '</div>'
         +   '<div class="panel-actions">'
-        +     '<a class="btn-ghost btn-sm" href="/api/v1/config/download">下载当前配置</a>'
+        +     '<a class="btn-ghost btn-sm" href="' + window.api.downloadURL('/api/v1/config/download') + '">下载当前配置</a>'
         +   '</div>'
         + '</div>'
 

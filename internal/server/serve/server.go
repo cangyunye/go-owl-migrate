@@ -169,7 +169,11 @@ func withAuth(next http.Handler, token string) http.Handler {
 		isWS := strings.HasSuffix(p, "/ws")
 		if isAPI && !isWS && p != "/api/v1/health" {
 			auth := r.Header.Get("Authorization")
-			if auth != "Bearer "+token {
+			// Download routes also accept the token as a ?token= query param,
+			// mirroring the WebSocket handshake: the SPA's plain <a href>
+			// downloads cannot set an Authorization header.
+			qTokenOK := strings.HasSuffix(p, "/download") && r.URL.Query().Get("token") == token
+			if auth != "Bearer "+token && !qTokenOK {
 				writeError(w, http.StatusUnauthorized, "unauthorized")
 				return
 			}

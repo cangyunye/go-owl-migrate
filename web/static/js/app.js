@@ -33,12 +33,13 @@ const api = {
         return fetch(path, { method: 'PUT', headers: this._headers({ 'Content-Type': 'application/json' }), body: JSON.stringify(body || {}) }).then(r => this._handle(r));
     },
     del(path) { return fetch(path, { method: 'DELETE', headers: this._headers() }).then(r => this._handle(r)); },
-    wsURL(path) {
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        let u = proto + '//' + location.host + path;
+    /* Download URLs can't send an Authorization header (plain <a href>
+       navigation), so the token travels as a query param — the server accepts
+       it on download routes only. */
+    downloadURL(path) {
         const t = this.getToken();
-        if (t) u += (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(t);
-        return u;
+        if (!t) return path;
+        return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(t);
     }
 };
 

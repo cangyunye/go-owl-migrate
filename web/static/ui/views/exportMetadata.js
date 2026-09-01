@@ -69,7 +69,7 @@ export async function render(root /*Element*/, params) {
         + '<div class="panel reveal" style="--i:2;display:none" id="em-result">'
         +   '<div class="panel-head">'
         +     '<span class="panel-title">导出结果 <span class="badge badge-green" id="em-count"></span></span>'
-        +     '<a id="em-download" class="btn-primary btn-sm" href="/api/v1/metadata/export/download">下载 ZIP</a>'
+        +     '<a id="em-download" class="btn-primary btn-sm" href="' + window.api.downloadURL('/api/v1/metadata/export/download') + '">下载 ZIP</a>'
         +   '</div>'
         +   '<div id="em-files"></div>'
         + '</div>';

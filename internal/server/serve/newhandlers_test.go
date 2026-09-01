@@ -350,15 +350,38 @@ func TestAuth_RequiresToken(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Wrong token → 401
-	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/jobs", nil)
-	req.Header.Set("Authorization", "Bearer nope")
+	// Download routes accept the token as a query param (the SPA's plain
+	// <a href> downloads cannot set an Authorization header). No generation
+	// record exists yet, so the handler answers 400 — the point is auth passed.
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/metadata/export/download?token=s3cret", nil)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		t.Fatalf("download with query token got 401, want auth to pass")
+	}
+	resp.Body.Close()
+
+	// Wrong query token on a download route still 401s.
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/metadata/export/download?token=nope", nil)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("wrong-token status = %d, want 401", resp.StatusCode)
+		t.Fatalf("download with wrong query token status = %d, want 401", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Query token does NOT bypass auth on non-download API routes.
+	req, _ = http.NewRequest("GET", ts.URL+"/api/v1/jobs?token=s3cret", nil)
+	resp, err = client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("query token on non-download status = %d, want 401", resp.StatusCode)
 	}
 	resp.Body.Close()
 

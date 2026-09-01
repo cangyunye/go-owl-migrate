@@ -63,7 +63,7 @@ export function buildGeneratorView(cfg) {
             } finally { btn.disabled = false; }
         });
 
-        dlBtn.addEventListener('click', () => { window.location = endpoint.replace(/\/generate$/, '/download'); });
+        dlBtn.addEventListener('click', () => { window.location = window.api.downloadURL(endpoint.replace(/\/generate$/, '/download')); });
 
         /* prefill the target-tables box from the active config (best-effort) */
         const tablesInput = root.querySelector('#opt-tables');

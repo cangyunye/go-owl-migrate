@@ -103,7 +103,7 @@ export function render(root /*Element*/, params) {
         +   '<div class="panel reveal" style="--i:3;display:none" id="off-result">'
         +     '<div class="panel-head">'
         +       '<span class="panel-title">离线导出结果 <span class="badge badge-green" id="off-count"></span></span>'
-        +       '<a class="btn-primary btn-sm" href="/api/v1/export/offline/download">下载 ZIP</a>'
+        +       '<a class="btn-primary btn-sm" href="' + window.api.downloadURL('/api/v1/export/offline/download') + '">下载 ZIP</a>'
         +     '</div>'
         +     '<div id="off-files"></div>'
         +   '</div>'
