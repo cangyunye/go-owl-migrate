@@ -112,6 +112,9 @@ function renderList(tbody, list, root, refresh) {
 
         const tdActions = document.createElement('td');
         tdActions.className = 'lib-actions';
+        tdActions.appendChild(dsButton('测试连接', 'btn-ghost', function () {
+            testConn(ds.type, 'datasource:' + ds.name, ds.schema);
+        }));
         tdActions.appendChild(dsButton('编辑', 'btn-ghost', function () {
             dsModal(root, ds, refresh);
         }));
@@ -129,6 +132,27 @@ function dsButton(text, cls, onclick) {
     b.textContent = text;
     b.addEventListener('click', onclick);
     return b;
+}
+
+/* Shared "test connection" — POSTs to /api/v1/conn/test. Accepts a plain DSN
+   or a "datasource:<name>" ref (the server resolves it, so editing with a
+   blank DSN still tests the stored secret). */
+async function testConn(type, dsn, schema) {
+    if (!type) { window.toast.warn('请选择类型', ''); return false; }
+    if (!dsn) { window.toast.warn('请填写 DSN', ''); return false; }
+    window.toast.show('正在测试连接…', '', 'info');
+    try {
+        const resp = await window.api.post('/api/v1/conn/test', { type, dsn, schema: schema || '' });
+        if (resp.error) {
+            window.toast.err('连接失败', resp.error);
+            return false;
+        }
+        window.toast.ok('连接成功', resp.latency != null ? resp.latency + 'ms' : '');
+        return true;
+    } catch (e) {
+        window.toast.err('连接失败', (e && e.message) || String(e));
+        return false;
+    }
 }
 
 async function delDS(name, refresh) {
@@ -162,6 +186,7 @@ function dsModal(root, record, onChange) {
         +     '<div class="field"><label>备注</label><input name="ds-remark" type="text" spellcheck="false" placeholder="可选"></div>'
         +   '</div>'
         +   '<div class="dsn-modal-actions">'
+        +     '<button type="button" class="btn-ghost" id="ds-test" style="margin-right:auto">测试连接</button>'
         +     '<button type="button" class="btn-ghost" id="ds-cancel">取消</button>'
         +     '<button type="button" class="btn-primary" id="ds-save">保存</button>'
         +   '</div>'
@@ -177,6 +202,7 @@ function dsModal(root, record, onChange) {
     const remarkEl = overlay.querySelector('[name="ds-remark"]');
     const saveBtn = overlay.querySelector('#ds-save');
     const cancelBtn = overlay.querySelector('#ds-cancel');
+    const testBtn = overlay.querySelector('#ds-test');
 
     (dialects || []).forEach(function (d) {
         const o = document.createElement('option');
@@ -212,6 +238,16 @@ function dsModal(root, record, onChange) {
     overlay.querySelector('.dsn-modal-x').addEventListener('click', close);
     overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
     overlay.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+
+    testBtn.addEventListener('click', function () {
+        if (!typeEl.value) { window.toast.warn('请选择类型', ''); return; }
+        let dsn = dsnEl.value.trim();
+        if (!dsn) {
+            if (record) dsn = 'datasource:' + record.name;
+            else { window.toast.warn('请填写 DSN', ''); return; }
+        }
+        testConn(typeEl.value, dsn, schemaEl.value.trim());
+    });
 
     saveBtn.addEventListener('click', async function () {
         const name = (nameEl.value || '').trim();
