@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -436,10 +437,30 @@ func (s *Server) handleMetadataTableDetail(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleDownloadGen zips the most recent generation output of the given kind.
+// handleDownloadGen zips the most recent generation output of the given kind,
+// or the specific record selected via ?id=.
 func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dir, err := s.store.LatestGeneration(kind)
+		var (
+			dir string
+			err error
+		)
+		if idStr := r.URL.Query().Get("id"); idStr != "" {
+			id, perr := strconv.ParseInt(idStr, 10, 64)
+			if perr != nil {
+				writeError(w, http.StatusBadRequest, "invalid generation id")
+				return
+			}
+			rec, gerr := s.store.GetGeneration(id)
+			if gerr == nil && rec.Kind != kind {
+				writeError(w, http.StatusNotFound, "generation not found")
+				return
+			}
+			dir = rec.Dir
+			err = gerr
+		} else {
+			dir, err = s.store.LatestGeneration(kind)
+		}
 		if err != nil {
 			if errors.Is(err, service.ErrNoGeneration) {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -465,7 +486,10 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 			if err != nil {
 				continue
 			}
-			f, err := zw.Create(e.Name())
+			// Entries are stored uncompressed so the archive remains
+			// byte-addressable (small SQL/CSV outputs; keeps history
+			// downloads trivially greppable).
+			f, err := zw.CreateHeader(&zip.FileHeader{Name: e.Name(), Method: zip.Store})
 			if err != nil {
 				continue
 			}

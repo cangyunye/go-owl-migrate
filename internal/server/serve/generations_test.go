@@ -1,9 +1,14 @@
 package serve
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
@@ -115,5 +120,112 @@ func TestRecordGenOutput_PersistsMetaAndPrunes(t *testing.T) {
 	}
 	if recs[0].Detail["format"] != "csv" {
 		t.Errorf("detail = %v, want csv", recs[0].Detail)
+	}
+}
+func TestGenerationsAPI(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "g.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	outDir := t.TempDir()
+	os.WriteFile(filepath.Join(outDir, "tables.csv"), []byte("x"), 0644)
+	store.RecordGeneration("metadata", outDir, service.GenerationMeta{
+		SourceLabel: "mysql@h:3306/s", Detail: map[string]any{"format": "csv", "file_count": float64(1)},
+	})
+	store.RecordGeneration("ddl", t.TempDir(), service.GenerationMeta{})
+
+	srv := NewServer(Config{Store: store})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	// 列表：kind 过滤 + 元数据 + 实时大小
+	resp, _ := http.Get(ts.URL + "/api/v1/generations?kind=metadata")
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list status = %d: %s", resp.StatusCode, body)
+	}
+	var list struct {
+		Kind  string `json:"kind"`
+		Items []struct {
+			ID          int64          `json:"id"`
+			SourceLabel string         `json:"source_label"`
+			Detail      map[string]any `json:"detail"`
+			FileCount   int            `json:"file_count"`
+			SizeBytes   int64          `json:"size_bytes"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		t.Fatal(err)
+	}
+	if list.Kind != "metadata" || len(list.Items) != 1 {
+		t.Fatalf("list = %+v", list)
+	}
+	it := list.Items[0]
+	if it.SourceLabel != "mysql@h:3306/s" || it.FileCount != 1 || it.SizeBytes != 1 {
+		t.Errorf("item = %+v", it)
+	}
+
+	// files：内容可读
+	resp2, _ := http.Get(fmt.Sprintf("%s/api/v1/generations/%d/files", ts.URL, it.ID))
+	b2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("files status = %d: %s", resp2.StatusCode, b2)
+	}
+	if !strings.Contains(string(b2), "tables.csv") {
+		t.Errorf("files body missing tables.csv: %s", b2)
+	}
+
+	// 未知 id → 404
+	resp3, _ := http.Get(ts.URL + "/api/v1/generations/9999/files")
+	resp3.Body.Close()
+	if resp3.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown id status = %d, want 404", resp3.StatusCode)
+	}
+}
+
+func TestDownloadGen_ByIDAndLatest(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "d.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+
+	d1 := t.TempDir()
+	os.WriteFile(filepath.Join(d1, "old.sql"), []byte("OLD"), 0644)
+	store.RecordGeneration("ddl", d1, service.GenerationMeta{})
+	d2 := t.TempDir()
+	os.WriteFile(filepath.Join(d2, "new.sql"), []byte("NEW"), 0644)
+	store.RecordGeneration("ddl", d2, service.GenerationMeta{})
+
+	srv := NewServer(Config{Store: store})
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	// 缺省 = 最新
+	resp, _ := http.Get(ts.URL + "/api/v1/ddl/download")
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "NEW") || strings.Contains(string(body), "OLD") {
+		t.Errorf("latest download wrong: %s", body)
+	}
+
+	// 按 id 取旧的
+	recs, _ := store.ListGenerations("ddl")
+	resp2, _ := http.Get(fmt.Sprintf("%s/api/v1/ddl/download?id=%d", ts.URL, recs[1].ID))
+	b2, _ := io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+	if !strings.Contains(string(b2), "OLD") {
+		t.Errorf("by-id download wrong: %s", b2)
+	}
+
+	// 跨 kind 的 id → 404（metadata 端点上拿 ddl 记录）
+	resp3, _ := http.Get(fmt.Sprintf("%s/api/v1/metadata/export/download?id=%d", ts.URL, recs[0].ID))
+	resp3.Body.Close()
+	if resp3.StatusCode != http.StatusNotFound {
+		t.Fatalf("cross-kind id status = %d, want 404", resp3.StatusCode)
 	}
 }

@@ -1,10 +1,15 @@
 package serve
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,4 +98,100 @@ func dirStats(dir string) (fileCount int, sizeBytes int64) {
 		return nil
 	})
 	return fileCount, sizeBytes
+}
+
+// handleListGenerations lists generation records for a kind with live
+// on-disk stats (file count and total size).
+func (s *Server) handleListGenerations(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	if kind == "" {
+		kind = "metadata"
+	}
+	recs, err := s.store.ListGenerations(kind)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "list generations: "+err.Error())
+		return
+	}
+	items := make([]map[string]any, 0, len(recs))
+	for _, rec := range recs {
+		fc, sz := dirStats(rec.Dir)
+		items = append(items, map[string]any{
+			"id":              rec.ID,
+			"kind":            rec.Kind,
+			"dir":             rec.Dir,
+			"created_at":      rec.CreatedAt,
+			"source_label":    rec.SourceLabel,
+			"datasource_name": rec.DatasourceName,
+			"detail":          rec.Detail,
+			"file_count":      fc,
+			"size_bytes":      sz,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"kind": kind, "items": items})
+}
+
+// handleGenerationFiles returns the file contents of one generation output.
+func (s *Server) handleGenerationFiles(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid generation id")
+		return
+	}
+	rec, err := s.store.GetGeneration(id)
+	if err != nil {
+		if errors.Is(err, service.ErrNoGeneration) {
+			writeError(w, http.StatusNotFound, err.Error())
+		} else {
+			writeError(w, http.StatusInternalServerError, "lookup generation: "+err.Error())
+		}
+		return
+	}
+	entries, err := os.ReadDir(rec.Dir)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "generation files no longer exist")
+		return
+	}
+	files := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			files = append(files, filepath.Join(rec.Dir, e.Name()))
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":           rec.ID,
+		"kind":         rec.Kind,
+		"created_at":   rec.CreatedAt,
+		"source_label": rec.SourceLabel,
+		"files":        readGenFiles(files),
+	})
+}
+
+// pruneAllGenerations enforces retention across every kind; used at startup
+// and on the hourly cleanup tick. Errors are non-fatal (stderr only).
+func (s *Server) pruneAllGenerations() {
+	for _, kind := range genKinds {
+		pruned, err := s.store.PruneGenerations(kind, genOutputKeep, genOutputMaxAge)
+		for _, d := range pruned {
+			if rmErr := os.RemoveAll(d); rmErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: remove pruned generation dir %s: %v\n", d, rmErr)
+			}
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: prune generations %s: %v\n", kind, err)
+		}
+	}
+}
+
+// CleanupLoop enforces generation retention hourly until ctx is done.
+func (s *Server) CleanupLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.pruneAllGenerations()
+		}
+	}
 }
