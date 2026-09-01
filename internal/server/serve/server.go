@@ -127,6 +127,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/scenarios/{name}", s.handleGetScenario)
 	mux.HandleFunc("POST /api/v1/scenarios/{name}/build", s.handleBuildScenarioConfig)
 	mux.HandleFunc("GET /api/v1/datasources", s.handleListDataSources)
+	mux.HandleFunc("GET /api/v1/datasources/{name}", s.handleGetDataSource)
 	mux.HandleFunc("POST /api/v1/datasources", s.handleCreateDataSource)
 	mux.HandleFunc("PUT /api/v1/datasources/{name}", s.handleUpdateDataSource)
 	mux.HandleFunc("DELETE /api/v1/datasources/{name}", s.handleDeleteDataSource)

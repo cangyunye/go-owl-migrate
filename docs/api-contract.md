@@ -82,8 +82,9 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/scenarios/{name} | Returns the schema for one scenario. 404 if unknown. |
 | POST /api/v1/scenarios/{name}/build | Builds a config from submitted form values; optional `save` makes it the active config. Resolves `datasource:<name>` references server-side. |
 | GET /api/v1/datasources | Lists reusable data sources (name, type, schema, remark, updated). Never returns the DSN. |
-| POST /api/v1/datasources | Creates/replaces a data source; the DSN is encrypted at rest. |
-| PUT /api/v1/datasources/{name} | Updates a data source; an empty `dsn` keeps the stored secret. |
+| GET /api/v1/datasources/{name} | Returns one profile plus its decomposed `fields` (username, host, port, database, extra) and `password_set`. The password value itself is never returned. |
+| POST /api/v1/datasources | Creates/replaces a data source; the DSN is encrypted at rest. Accepts either `dsn` (raw) or `fields` (structured). |
+| PUT /api/v1/datasources/{name} | Updates a data source; an empty `dsn` or a `fields.password` blank keeps the stored secret. |
 | DELETE /api/v1/datasources/{name} | Removes a data source. |
 | POST /api/v1/datasources/{name}/pick | Returns a data source's type + schema and its `datasource:<name>` ref for filling a config form. Never returns the DSN. |
 | POST /api/v1/ddl/generate | Generates DDL files from the loaded metadata; optional `no_quote_identifiers`. Returns files + output dir. |

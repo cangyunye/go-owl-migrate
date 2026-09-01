@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/cangyunye/go-owl-migrate/internal/datasource"
+	"github.com/cangyunye/go-owl-migrate/internal/dsnfields"
 )
 
 // handleListDataSources returns the DSN-free projections of every saved data
@@ -26,6 +27,49 @@ func (s *Server) handleListDataSources(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
+// handleGetDataSource returns one profile plus its structured DSN fields for
+// the edit form. The stored password is never returned; password_set tells the
+// form to show a "leave blank to keep" placeholder.
+func (s *Server) handleGetDataSource(w http.ResponseWriter, r *http.Request) {
+	store, err := s.dsStore()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "data-source store: "+err.Error())
+		return
+	}
+	name := r.PathValue("name")
+	rec, err := store.Get(name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "data source not found")
+		return
+	}
+	dsn, err := resolveDataSourceDSN(store, rec)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	fields, _ := dsnfields.Decompose(rec.Type, dsn)
+	passwordSet := fields.Password != ""
+	fields.Password = ""
+	writeJSON(w, http.StatusOK, map[string]any{
+		"name":         rec.Name,
+		"type":         rec.Type,
+		"schema":       rec.Schema,
+		"remark":       rec.Remark,
+		"updated":      rec.Updated,
+		"password_set": passwordSet,
+		"fields":       fields,
+	})
+}
+
+// resolveDataSourceDSN decrypts a record's DSN, tolerating a nil vault.
+func resolveDataSourceDSN(store *datasource.Store, rec *datasource.Record) (string, error) {
+	_, _, dsn, err := store.Resolve(rec.Name)
+	if err != nil {
+		return "", err
+	}
+	return dsn, nil
+}
+
 // handleCreateDataSource saves a new profile (or replaces the same name).
 func (s *Server) handleCreateDataSource(w http.ResponseWriter, r *http.Request) {
 	var req dataSourceReq
@@ -36,7 +80,9 @@ func (s *Server) handleCreateDataSource(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleUpdateDataSource updates an existing profile by name. An empty dsn in
-// the body keeps the previously-stored ciphertext intact.
+// the body keeps the previously-stored ciphertext intact. Structured fields
+// (req.Fields) are also accepted: Build keeps the stored password when its
+// Password value is blank.
 func (s *Server) handleUpdateDataSource(w http.ResponseWriter, r *http.Request) {
 	var req dataSourceReq
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
@@ -45,13 +91,15 @@ func (s *Server) handleUpdateDataSource(w http.ResponseWriter, r *http.Request) 
 	s.saveDataSource(w, req, r.PathValue("name"))
 }
 
-// dataSourceReq is the create/update request body.
+// dataSourceReq is the create/update request body. Either DSN (raw string) or
+// Fields (structured) may be supplied; the latter is built into a DSN.
 type dataSourceReq struct {
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	Schema string `json:"schema"`
-	DSN    string `json:"dsn"`
-	Remark string `json:"remark"`
+	Name   string            `json:"name"`
+	Type   string            `json:"type"`
+	Schema string            `json:"schema"`
+	DSN    string            `json:"dsn"`
+	Remark string            `json:"remark"`
+	Fields *dsnfields.Fields `json:"fields"`
 }
 
 func (s *Server) saveDataSource(w http.ResponseWriter, req dataSourceReq, urlName string) {
@@ -64,7 +112,26 @@ func (s *Server) saveDataSource(w http.ResponseWriter, req dataSourceReq, urlNam
 	if urlName != "" {
 		name = urlName
 	}
-	if err := store.Put(name, req.Type, req.Schema, req.DSN, req.Remark); err != nil {
+
+	dsn := req.DSN
+	if req.Fields != nil {
+		oldDSN := ""
+		if urlName != "" {
+			if rec, err := store.Get(urlName); err == nil {
+				if d, err := resolveDataSourceDSN(store, rec); err == nil {
+					oldDSN = d
+				}
+			}
+		}
+		built, err := dsnfields.Build(req.Type, *req.Fields, oldDSN)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "dsn: "+err.Error())
+			return
+		}
+		dsn = built
+	}
+
+	if err := store.Put(name, req.Type, req.Schema, dsn, req.Remark); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
