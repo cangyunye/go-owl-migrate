@@ -26,6 +26,9 @@ let tablesCache = [];
 let page = 1;
 const pageSize = 50;
 
+/* 渲染竞态令牌（模块级：跨 render 实例共享，防止旧响应覆盖新缓存） */
+let renderToken = 0;
+
 export async function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
@@ -137,9 +140,6 @@ export async function render(root /*Element*/, params) {
     const pagerInfo = root.querySelector('#pager-info');
     const pagerPrev = root.querySelector('#pager-prev');
     const pagerNext = root.querySelector('#pager-next');
-    /* 竞态防护：renderTables 是异步的，加载与 autoRestore 并发时，
-       只允许最新一次 fetch 的结果落地渲染，过期响应直接丢弃。 */
-    let renderToken = 0;
 
     /* ── metadata-type toggle ────────────────────────────────── */
     function toggleMetaFields() {
@@ -202,8 +202,9 @@ export async function render(root /*Element*/, params) {
     /* ── table list (DOM-built, XSS-safe) ────────────────────── */
     async function renderTables() {
         const t = ++renderToken;
-        tablesCache = await window.api.get('/api/v1/metadata/tables') || [];
+        const data = await window.api.get('/api/v1/metadata/tables') || [];
         if (t !== renderToken) return; // 已有更新的加载/恢复请求，丢弃过期响应
+        tablesCache = data;
         page = 1;
         applyFilterAndPage();
     }
@@ -393,8 +394,8 @@ export async function render(root /*Element*/, params) {
         try {
             const st = await window.api.get('/api/v1/config/status');
             if (!st || !st.metadata_loaded) return;
-            tablesPanel.style.display = 'block';
             await renderTables();
+            tablesPanel.style.display = 'block';
         } catch (e) { /* best-effort: leave the page blank */ }
     }
 
