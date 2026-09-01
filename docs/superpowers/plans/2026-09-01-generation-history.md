@@ -912,7 +912,7 @@ func TestDownloadGen_ByIDAndLatest(t *testing.T) {
 Run: `go test ./internal/server/serve/ -run 'TestGenerationsAPI|TestDownloadGen_ByID' -count=1`
 Expected: 失败（端点不存在 → 404 或匹配错误）。
 
-- [ ] **Step 3: 实现端点与清理**（`generations.go` 追加）
+  本文件 imports 在 Task 2 基础上需补 `context`、`errors`、`fmt`、`net/http`、`strconv`。
 
 ```go
 // handleListGenerations lists generation records for a kind with live
@@ -1060,12 +1060,15 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 	mux.HandleFunc("GET /api/v1/generations/{id}/files", s.handleGenerationFiles)
 ```
 
-5b. `NewServer` 返回前（`return s` 处）加启动 prune：
+5b. `NewServer` 返回前（`return s` 处）加启动 prune。注意 `NewServer(Config{})`（如 `TestSPA_UIShellServed`）store 为 nil，必须判空：
 
 ```go
 	// Enforce generation retention at startup so stale dirs don't linger
-	// after long uptimes or config changes.
-	s.pruneAllGenerations()
+	// after long uptimes or config changes. Guarded: some tests construct
+	// the server without a store.
+	if s.store != nil {
+		s.pruneAllGenerations()
+	}
 	return s
 ```
 
