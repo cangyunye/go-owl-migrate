@@ -2,6 +2,7 @@ package service
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -45,6 +46,25 @@ type JobCheckpoint struct {
 	ImportedRows int64  `json:"imported_rows"`
 	Status       string `json:"status"`
 	Error        string `json:"error,omitempty"`
+}
+
+// GenerationMeta carries the display metadata recorded with a generation
+// output. The full DSN is never stored — only a password-free label.
+type GenerationMeta struct {
+	SourceLabel    string         `json:"source_label"`
+	DatasourceName string         `json:"datasource_name,omitempty"`
+	Detail         map[string]any `json:"detail"`
+}
+
+// GenerationRecord is a persisted generation output row.
+type GenerationRecord struct {
+	ID             int64          `json:"id"`
+	Kind           string         `json:"kind"`
+	Dir            string         `json:"dir"`
+	CreatedAt      string         `json:"created_at"`
+	SourceLabel    string         `json:"source_label"`
+	DatasourceName string         `json:"datasource_name,omitempty"`
+	Detail         map[string]any `json:"detail"`
 }
 
 type JobStore struct {
@@ -113,7 +133,10 @@ CREATE TABLE IF NOT EXISTS generation_outputs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     kind       TEXT NOT NULL,
     dir        TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
+    created_at TEXT DEFAULT (datetime('now')),
+    source_label    TEXT NOT NULL DEFAULT '',
+    datasource_name TEXT NOT NULL DEFAULT '',
+    detail          TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_gen_kind ON generation_outputs(kind, id);
 `
@@ -122,6 +145,9 @@ CREATE INDEX IF NOT EXISTS idx_gen_kind ON generation_outputs(kind, id);
 		return err
 	}
 	if err := s.addNodeIDColumns(); err != nil {
+		return err
+	}
+	if err := s.addGenOutputColumns(); err != nil {
 		return err
 	}
 	return nil
@@ -139,6 +165,23 @@ func (s *JobStore) addNodeIDColumns() error {
 		if n == 0 {
 			q = fmt.Sprintf(`ALTER TABLE %s ADD COLUMN node_id TEXT NOT NULL DEFAULT 'local'`, tbl)
 			if _, err := s.db.Exec(q); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// addGenOutputColumns backfills the generation-history seam into databases
+// created before the columns existed.
+func (s *JobStore) addGenOutputColumns() error {
+	for _, col := range []string{"source_label", "datasource_name", "detail"} {
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('generation_outputs') WHERE name = ?`, col).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := s.db.Exec(fmt.Sprintf(`ALTER TABLE generation_outputs ADD COLUMN %s TEXT NOT NULL DEFAULT ''`, col)); err != nil {
 				return err
 			}
 		}
@@ -311,19 +354,32 @@ func (s *JobStore) MarkRunningAsInterrupted() (int64, error) {
 	return res.RowsAffected()
 }
 
-// RecordGeneration stores a generation output record, prunes records beyond
-// keep for that kind, and returns the pruned dirs so the caller can delete
-// them from disk.
-func (s *JobStore) RecordGeneration(kind, dir string, keep int) ([]string, error) {
-	if _, err := s.db.Exec(
-		`INSERT INTO generation_outputs (kind, dir) VALUES (?, ?)`, kind, dir,
-	); err != nil {
-		return nil, err
+// RecordGeneration stores a generation output record.
+func (s *JobStore) RecordGeneration(kind, dir string, meta GenerationMeta) error {
+	detail := "{}"
+	if meta.Detail != nil {
+		if b, err := json.Marshal(meta.Detail); err == nil {
+			detail = string(b)
+		}
 	}
+	_, err := s.db.Exec(
+		`INSERT INTO generation_outputs (kind, dir, source_label, datasource_name, detail)
+		 VALUES (?, ?, ?, ?, ?)`,
+		kind, dir, meta.SourceLabel, meta.DatasourceName, detail,
+	)
+	return err
+}
+
+// PruneGenerations removes records beyond keep (by age) or older than maxAge
+// for a kind, returning the dirs that were deleted so callers can remove them
+// from disk. Both limits apply; either one tripping deletes the row.
+func (s *JobStore) PruneGenerations(kind string, keep int, maxAge time.Duration) ([]string, error) {
+	cutoff := time.Now().UTC().Add(-maxAge).Format("2006-01-02 15:04:05")
 	rows, err := s.db.Query(
-		`SELECT id, dir FROM generation_outputs WHERE kind = ? AND id NOT IN
-		 (SELECT id FROM generation_outputs WHERE kind = ? ORDER BY id DESC LIMIT ?)`,
-		kind, kind, keep,
+		`SELECT id, dir FROM generation_outputs WHERE kind = ?
+		 AND (id NOT IN (SELECT id FROM generation_outputs WHERE kind = ? ORDER BY id DESC LIMIT ?)
+		      OR created_at < ?)`,
+		kind, kind, keep, cutoff,
 	)
 	if err != nil {
 		return nil, err
@@ -354,6 +410,52 @@ func (s *JobStore) RecordGeneration(kind, dir string, keep int) ([]string, error
 		dirs = append(dirs, p.dir)
 	}
 	return dirs, nil
+}
+
+// ListGenerations returns generation records for a kind, newest first.
+func (s *JobStore) ListGenerations(kind string) ([]GenerationRecord, error) {
+	rows, err := s.db.Query(
+		`SELECT id, kind, dir, created_at, source_label, datasource_name, detail
+		 FROM generation_outputs WHERE kind = ? ORDER BY id DESC`, kind,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recs []GenerationRecord
+	for rows.Next() {
+		var r GenerationRecord
+		var detail string
+		if err := rows.Scan(&r.ID, &r.Kind, &r.Dir, &r.CreatedAt, &r.SourceLabel, &r.DatasourceName, &detail); err != nil {
+			return nil, err
+		}
+		if detail != "" {
+			_ = json.Unmarshal([]byte(detail), &r.Detail)
+		}
+		recs = append(recs, r)
+	}
+	return recs, rows.Err()
+}
+
+// GetGeneration returns one generation record by id.
+func (s *JobStore) GetGeneration(id int64) (GenerationRecord, error) {
+	var r GenerationRecord
+	var detail string
+	err := s.db.QueryRow(
+		`SELECT id, kind, dir, created_at, source_label, datasource_name, detail
+		 FROM generation_outputs WHERE id = ?`, id,
+	).Scan(&r.ID, &r.Kind, &r.Dir, &r.CreatedAt, &r.SourceLabel, &r.DatasourceName, &detail)
+	if err == sql.ErrNoRows {
+		return r, fmt.Errorf("%w: generation %d", ErrNoGeneration, id)
+	}
+	if err != nil {
+		return r, err
+	}
+	if detail != "" {
+		_ = json.Unmarshal([]byte(detail), &r.Detail)
+	}
+	return r, nil
 }
 
 // LatestGeneration returns the most recent output dir for kind.

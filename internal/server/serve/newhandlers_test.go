@@ -200,7 +200,7 @@ func TestDownloadGen_PersistedAcrossRestart(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(outDir, "emp.sql"), []byte("CREATE TABLE emp (id INT);"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.RecordGeneration("ddl", outDir, 10); err != nil {
+	if err := store.RecordGeneration("ddl", outDir, service.GenerationMeta{}); err != nil {
 		t.Fatalf("RecordGeneration: %v", err)
 	}
 
