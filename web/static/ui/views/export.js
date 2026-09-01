@@ -107,6 +107,11 @@ export function render(root /*Element*/, params) {
         +     '</div>'
         +     '<div id="off-files"></div>'
         +   '</div>'
+        + '</div>'
+
+        + '<div class="panel reveal" style="--i:4" id="off-history">'
+        +   '<div class="panel-head"><span class="panel-title">历史离线导出 <span class="badge" id="offh-count"></span></span></div>'
+        +   '<div id="offh-list" class="gen-history"></div>'
         + '</div>';
 
     function switchMode(m) {
@@ -158,6 +163,44 @@ export function render(root /*Element*/, params) {
             root.querySelector('#btn-offline').disabled = false;
         }
     }
+
+    const offHistList = root.querySelector('#offh-list');
+    const offHistCount = root.querySelector('#offh-count');
+    (async function loadOffHistory() {
+        try {
+            const data = await window.api.get('/api/v1/generations?kind=export-offline');
+            const items = data.items || [];
+            offHistCount.textContent = items.length + ' 次';
+            if (!items.length) { offHistList.innerHTML = '<p class="field-help">暂无历史</p>'; return; }
+            offHistList.innerHTML = items.map(it => {
+                const t = it.created_at ? new Date(it.created_at.replace(' ', 'T') + 'Z').toLocaleString() : '—';
+                const src = it.source_label || '未知来源';
+                return '<div class="gen-row">'
+                    + '<span class="gen-time">' + escapeHtml(t) + '</span>'
+                    + '<span class="gen-src">' + escapeHtml(src) + '</span>'
+                    + '<span class="gen-meta">' + (it.file_count || 0) + ' 文件</span>'
+                    + '<span class="gen-size">' + (window.humanSize ? window.humanSize(it.size_bytes) : (it.size_bytes + ' B')) + '</span>'
+                    + '<span class="gen-actions">'
+                    +   '<a href="#" data-browse="' + it.id + '">浏览</a>'
+                    +   '<a href="' + window.api.downloadURL('/api/v1/export/offline/download?id=' + it.id) + '">下载</a>'
+                    + '</span>'
+                    + '</div>';
+            }).join('');
+            offHistList.querySelectorAll('a[data-browse]').forEach(a => {
+                a.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    try {
+                        const f = await window.api.get('/api/v1/generations/' + a.dataset.browse + '/files');
+                        const files = f.files || [];
+                        root.querySelector('#off-files').innerHTML = files.map(x => '<div class="file-tab">'
+                            + escapeHtml(x.name) + '</div>').join('');
+                    } catch (err) {
+                        window.toast && window.toast.err('读取历史失败', (err && err.message) || '');
+                    }
+                });
+            });
+        } catch (e) { /* history is best-effort */ }
+    })();
 
     root.querySelectorAll('.tab[data-mode]').forEach(t =>
         t.addEventListener('click', () => switchMode(t.dataset.mode)));

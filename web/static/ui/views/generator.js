@@ -36,6 +36,11 @@ export function buildGeneratorView(cfg) {
             +     '<div class="file-tabs" id="file-list"></div>'
             +     '<div class="code-box"><pre class="sql-view" id="sql-preview"></pre></div>'
             +   '</div>'
+            + '</div>'
+
+            + '<div class="panel reveal" style="--i:3" id="gen-history">'
+            +   '<div class="panel-head"><span class="panel-title">历史' + cfg.downloadLabel + ' <span class="badge" id="genh-count"></span></span></div>'
+            +   '<div id="genh-list" class="gen-history"></div>'
             + '</div>';
 
         const status = root.querySelector('#gen-status');
@@ -44,6 +49,44 @@ export function buildGeneratorView(cfg) {
         const dlBtn = root.querySelector('#btn-download');
         const listEl = root.querySelector('#file-list');
         const previewEl = root.querySelector('#sql-preview');
+        const kind = (endpoint.match(/\/api\/v1\/(\w+)\/generate/) || [])[1] || 'ddl';
+        const histList = root.querySelector('#genh-list');
+        const histCount = root.querySelector('#genh-count');
+        (async function loadGenHistory() {
+            try {
+                const data = await window.api.get('/api/v1/generations?kind=' + encodeURIComponent(kind));
+                const items = data.items || [];
+                histCount.textContent = items.length + ' 次';
+                if (!items.length) { histList.innerHTML = '<p class="field-help">暂无历史</p>'; return; }
+                histList.innerHTML = items.map(it => {
+                    const t = it.created_at ? new Date(it.created_at.replace(' ', 'T') + 'Z').toLocaleString() : '—';
+                    const src = it.source_label || '未知来源';
+                    return '<div class="gen-row">'
+                        + '<span class="gen-time">' + escapeHtml(t) + '</span>'
+                        + '<span class="gen-src">' + escapeHtml(src) + '</span>'
+                        + '<span class="gen-meta">' + (it.file_count || 0) + ' 文件</span>'
+                        + '<span class="gen-size">' + (window.humanSize ? window.humanSize(it.size_bytes) : (it.size_bytes + ' B')) + '</span>'
+                        + '<span class="gen-actions">'
+                        +   '<a href="#" data-browse="' + it.id + '">浏览</a>'
+                        +   '<a href="' + window.api.downloadURL(endpoint.replace(/\/generate$/, '/download') + '?id=' + it.id) + '">下载</a>'
+                        + '</span>'
+                        + '</div>';
+                }).join('');
+                histList.querySelectorAll('a[data-browse]').forEach(a => {
+                    a.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        try {
+                            const f = await window.api.get('/api/v1/generations/' + a.dataset.browse + '/files');
+                            const files = f.files || [];
+                            listEl.innerHTML = files.map(x => '<div class="file-tab">'
+                                + escapeHtml(x.name) + '</div>').join('');
+                        } catch (err) {
+                            window.toast && window.toast.err('读取历史失败', (err && err.message) || '');
+                        }
+                    });
+                });
+            } catch (e) { /* history is best-effort */ }
+        })();
 
         btn.addEventListener('click', async () => {
             status.textContent = '生成中…'; status.className = 'status-msg';

@@ -72,6 +72,12 @@ export async function render(root /*Element*/, params) {
         +     '<a id="em-download" class="btn-primary btn-sm" href="' + window.api.downloadURL('/api/v1/metadata/export/download') + '">下载 ZIP</a>'
         +   '</div>'
         +   '<div id="em-files"></div>'
+        + '</div>'
+
+        + '<div class="panel reveal" style="--i:3" id="em-history">'
+        +   '<div class="panel-head"><span class="panel-title">历史导出 <span class="badge" id="emh-count"></span></span></div>'
+        +   '<div class="field-help" style="margin-bottom:10px">仅保留最近 10 次 · 最长 7 天 · 刷新页面后仍可浏览下载</div>'
+        +   '<div id="emh-list" class="gen-history"></div>'
         + '</div>';
 
     const sel = root.querySelector('#em-src-type');
@@ -86,6 +92,8 @@ export async function render(root /*Element*/, params) {
     const filesEl = root.querySelector('#em-files');
     const statusEl = root.querySelector('#em-status');
     const btn = root.querySelector('#btn-export');
+    const historyList = root.querySelector('#emh-list');
+    const historyCount = root.querySelector('#emh-count');
 
     function updateHint() {
         const dialect = sel.value;
@@ -127,6 +135,54 @@ export async function render(root /*Element*/, params) {
         } finally {
             btn.disabled = false;
         }
+    }
+
+    async function loadHistory() {
+        try {
+            const data = await window.api.get('/api/v1/generations?kind=metadata');
+            const items = data.items || [];
+            historyCount.textContent = items.length + ' 次';
+            if (!items.length) {
+                historyList.innerHTML = '<p class="field-help">暂无历史导出</p>';
+                return;
+            }
+            historyList.innerHTML = items.map(it => {
+                const d = (it.detail || {});
+                const t = it.created_at ? new Date(it.created_at.replace(' ', 'T') + 'Z').toLocaleString() : '—';
+                const src = it.source_label || '未知来源';
+                const meta = [d.format, d.table_count != null ? d.table_count + ' 表' : null, it.file_count + ' 文件']
+                    .filter(Boolean).join(' · ');
+                const size = window.humanSize ? window.humanSize(it.size_bytes) : it.size_bytes + ' B';
+                return '<div class="gen-row">'
+                    + '<span class="gen-time">' + escapeHtml(t) + '</span>'
+                    + '<span class="gen-src">' + escapeHtml(src) + '</span>'
+                    + '<span class="gen-meta">' + escapeHtml(meta || '') + '</span>'
+                    + '<span class="gen-size">' + escapeHtml(size) + '</span>'
+                    + '<span class="gen-actions">'
+                    +   '<a href="#" data-browse="' + it.id + '">浏览</a>'
+                    +   '<a href="' + window.api.downloadURL('/api/v1/metadata/export/download?id=' + it.id) + '">下载</a>'
+                    + '</span>'
+                    + '</div>';
+            }).join('');
+
+            historyList.querySelectorAll('a[data-browse]').forEach(a => {
+                a.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    try {
+                        const f = await window.api.get('/api/v1/generations/' + a.dataset.browse + '/files');
+                        const files = f.files || [];
+                        resultEl.style.display = 'block';
+                        countEl.textContent = f.source_label + ' · ' + files.length + ' 个文件';
+                        filesEl.innerHTML = '<div class="file-tabs">'
+                            + files.map(x => '<span class="file-tab" title="' + escapeHtml(String(x.content || '').length) + ' bytes">'
+                                + escapeHtml(x.name) + '</span>').join('')
+                            + '</div>';
+                    } catch (err) {
+                        window.toast && window.toast.err('读取历史导出失败', (err && err.message) || '');
+                    }
+                });
+            });
+        } catch (e) { /* history is best-effort */ }
     }
 
     btn.addEventListener('click', doExport);
@@ -187,4 +243,5 @@ export async function render(root /*Element*/, params) {
     } catch (e) { /* data-source list is best-effort */ }
 
     updateHint();
+    loadHistory();
 }
