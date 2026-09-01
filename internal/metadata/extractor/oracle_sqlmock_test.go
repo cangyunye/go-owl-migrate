@@ -151,6 +151,47 @@ func TestQueryColumns_OceanBase_NoCollation(t *testing.T) {
 	}
 }
 
+// TestQueryColumns_OceanBase_NullOrdinal guards Problem 4: OceanBase Oracle
+// tenants return NULL for all_tab_columns.column_id on some columns, which
+// used to fail with "converting NULL to int is unsupported". The ordinal must
+// be scanned as sql.NullInt64 and fall back to the per-table scan order so the
+// column keeps a valid (>=1) ordinal and the migration does not abort.
+func TestQueryColumns_OceanBase_NullOrdinal(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	const schema = "SIT"
+	rows := sqlmock.NewRows([]string{
+		"table_name", "column_name", "ordinal_position", "data_type",
+		"data_length", "data_precision", "data_scale", "nullable", "data_default",
+		"comments", "char_used", "charset",
+	}).
+		AddRow("EMP", "EMPNO", nil, "NUMBER", 22, 4, 0, "N", nil, nil, "B", "UTF8MB4").
+		AddRow("EMP", "ENAME", nil, "VARCHAR2", 10, 0, 0, "N", nil, nil, "B", "UTF8MB4")
+
+	q := OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}}
+	mock.ExpectQuery(regexp.QuoteMeta("FROM all_tab_columns c")).
+		WithArgs(schema).WillReturnRows(rows)
+
+	columns, err := q.QueryColumns(db, schema)
+	if err != nil {
+		t.Fatalf("QueryColumns with NULL column_id: %v", err)
+	}
+	if len(columns) != 2 {
+		t.Fatalf("columns = %+v, want 2 columns", columns)
+	}
+	if columns[0].OrdinalPosition != 1 || columns[1].OrdinalPosition != 2 {
+		t.Errorf("ordinals = %d,%d, want 1,2 (NULL column_id falls back to scan order)",
+			columns[0].OrdinalPosition, columns[1].OrdinalPosition)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
 // TestQueryColumns_NativeOracle_HasCollation ensures native Oracle still selects
 // and scans the collation column (17 columns) so collation metadata roundtrips.
 func TestQueryColumns_NativeOracle_HasCollation(t *testing.T) {

@@ -24,7 +24,7 @@ ORDER BY t.table_name`
 const queryOracleColumns = `SELECT
 	c.table_name,
 	c.column_name,
-	c.column_id AS ordinal_position,
+	COALESCE(c.column_id, 0) AS ordinal_position,
 	c.data_type,
 	COALESCE(c.data_length, 0) AS data_length,
 	COALESCE(c.data_precision, 0) AS data_precision,
@@ -46,7 +46,7 @@ ORDER BY c.table_name, c.column_id`
 const queryOracleColumnsOceanBase = `SELECT
 	c.table_name,
 	c.column_name,
-	c.column_id AS ordinal_position,
+	COALESCE(c.column_id, 0) AS ordinal_position,
 	c.data_type,
 	COALESCE(c.data_length, 0) AS data_length,
 	COALESCE(c.data_precision, 0) AS data_precision,
@@ -380,9 +380,15 @@ func (q OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Co
 	defer rows.Close()
 
 	var columns []*md.ColumnDef
+	curTable := ""
+	pos := 0
 	for rows.Next() {
 		var tableName, colName, dataType, nullable, identityCol string
-		var ordinal, dataLen, dataPrec, dataScale int
+		// column_id can be NULL in OceanBase Oracle-compatible tenants; scan it
+		// as NullInt64 and fall back to a per-table scan order so the column
+		// keeps a valid (>=1) ordinal instead of failing the whole migration.
+		var ordinal sql.NullInt64
+		var dataLen, dataPrec, dataScale int
 		var defaultVal, comments, charUsed, charset, collation sql.NullString
 		var identGen sql.NullString
 		var identStart, identIncr sql.NullInt64
@@ -407,7 +413,20 @@ func (q OracleMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.Co
 			nullStr = "NO"
 		}
 
-		col, err := md.NewColumnDef(schema, tableName, colName, ordinal, dataType)
+		if tableName != curTable {
+			curTable = tableName
+			pos = 0
+		}
+		pos++
+		// NewColumnDef rejects ordinals < 1; column_id is NULL in OceanBase
+		// Oracle tenants, so fall back to the per-table scan order, which
+		// matches ORDER BY c.table_name, c.column_id (NULLS LAST).
+		colOrdinal := int(ordinal.Int64)
+		if !ordinal.Valid || colOrdinal < 1 {
+			colOrdinal = pos
+		}
+
+		col, err := md.NewColumnDef(schema, tableName, colName, colOrdinal, dataType)
 		if err != nil {
 			return nil, err
 		}
