@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/datasource"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -25,23 +26,26 @@ var (
 
 // sourceLabel builds a password-free display label for a generation output:
 // <type>@<host[:port]>[/schema]. DSN passwords are never included.
+// The libpq keyword form (host=... port=...) is matched before the
+// user/pass@host form so that an '@' inside a keyword password is never
+// mistaken for the user/pass separator.
 func sourceLabel(srcType, dsn, schema string) string {
 	srcType = strings.TrimSpace(srcType)
 	host := ""
 	if dsn != "" {
 		if u, err := url.Parse(dsn); err == nil && u.Scheme != "" && u.Host != "" {
 			host = u.Host
+		} else if m := reKvHost.FindStringSubmatch(dsn); m != nil {
+			host = m[1]
+			if p := reKvPort.FindStringSubmatch(dsn); p != nil {
+				host += ":" + p[1]
+			}
 		} else if at := strings.LastIndex(dsn, "@"); at >= 0 {
 			rest := dsn[at+1:]
 			if i := strings.IndexAny(rest, "/"); i >= 0 {
 				rest = rest[:i]
 			}
 			host = rest
-		} else if m := reKvHost.FindStringSubmatch(dsn); m != nil {
-			host = m[1]
-			if p := reKvPort.FindStringSubmatch(dsn); p != nil {
-				host += ":" + p[1]
-			}
 		}
 	}
 	label := srcType
@@ -59,10 +63,12 @@ func sourceLabel(srcType, dsn, schema string) string {
 
 // sourceMetaFrom derives the GenerationMeta for a source config, honoring the
 // datasource:<name> ref form (the label then shows the ref name, never a DSN).
+// An empty ref name ("datasource:") is not a reference and falls through to the
+// plain DSN label path.
 func sourceMetaFrom(src config.DBConfig, schema string) service.GenerationMeta {
 	m := service.GenerationMeta{}
-	if strings.HasPrefix(src.DSN, "datasource:") {
-		name := strings.TrimPrefix(src.DSN, "datasource:")
+	if datasource.IsRef(src.DSN) {
+		name := datasource.RefName(src.DSN)
 		m.DatasourceName = name
 		m.SourceLabel = src.Type + "@" + name
 	} else {

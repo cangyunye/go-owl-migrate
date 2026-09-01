@@ -36,6 +36,7 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 	if src.Type == "" {
 		src = cfg.Source
 	}
+	metaSrc := src
 	if resolved, refSchema, err := s.resolveDSNRef(src.DSN); err != nil {
 		writeError(w, http.StatusBadRequest, "data source: "+err.Error())
 		return
@@ -130,7 +131,7 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	meta := sourceMetaFrom(src, targetSchema)
+	meta := sourceMetaFrom(metaSrc, targetSchema)
 	meta.Detail = map[string]any{
 		"format":      format,
 		"scope":       req.Scope,

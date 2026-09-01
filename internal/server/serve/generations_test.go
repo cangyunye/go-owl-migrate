@@ -17,6 +17,7 @@ func TestSourceLabel_NoPasswordLeak(t *testing.T) {
 		{"url", "mysql", "mysql://root:secret@127.0.0.1:3306/default_db", "default_db", "mysql@127.0.0.1:3306/default_db"},
 		{"oracle user/pass", "oracle", "scott/tiger@127.0.0.1:1521/XEPDB1", "SCOTT", "oracle@127.0.0.1:1521/SCOTT"},
 		{"pg keyword", "postgres", "host=127.0.0.1 port=5432 user=postgres password=secret dbname=postgres_db sslmode=disable", "public", "postgres@127.0.0.1:5432/public"},
+		{"pg keyword with @ in password", "postgres", "host=127.0.0.1 user=postgres password=p@ss dbname=db sslmode=disable", "public", "postgres@127.0.0.1/public"},
 		{"no dsn", "sqlite3", "", "main", "sqlite3/main"},
 		{"empty everything", "", "", "", "unknown"},
 	}
@@ -26,7 +27,7 @@ func TestSourceLabel_NoPasswordLeak(t *testing.T) {
 			if got != tc.want {
 				t.Errorf("sourceLabel = %q, want %q", got, tc.want)
 			}
-			for _, secret := range []string{"secret", "tiger", "password="} {
+			for _, secret := range []string{"secret", "tiger", "password=", "p@ss"} {
 				if contains(got, secret) {
 					t.Errorf("label %q leaks secret %q", got, secret)
 				}
@@ -43,6 +44,17 @@ func TestSourceMetaFrom_DatasourceRef(t *testing.T) {
 	}
 	if m.SourceLabel != "oracle@prod-ora" {
 		t.Errorf("SourceLabel = %q, want oracle@prod-ora", m.SourceLabel)
+	}
+}
+
+func TestSourceMetaFrom_EmptyRefNameIsPlain(t *testing.T) {
+	cfg := config.DBConfig{Type: "oracle", DSN: "datasource:", Schema: "SCOTT"}
+	m := sourceMetaFrom(cfg, cfg.Schema)
+	if m.DatasourceName != "" {
+		t.Errorf("DatasourceName = %q, want empty", m.DatasourceName)
+	}
+	if m.SourceLabel != "oracle/SCOTT" {
+		t.Errorf("SourceLabel = %q, want oracle/SCOTT", m.SourceLabel)
 	}
 }
 
