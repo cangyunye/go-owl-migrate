@@ -31,10 +31,13 @@ type genFile struct {
 // oldest dirs are removed from disk when the limit is exceeded.
 const genOutputKeep = 10
 
-// recordGenOutput persists a generation output directory in the job store and
-// prunes retired outputs from disk.
-func (s *Server) recordGenOutput(kind, dir string) error {
-	pruned, err := s.store.RecordGeneration(kind, dir, genOutputKeep)
+// recordGenOutput persists a generation output directory in the job store,
+// prunes retired outputs (count + age) from disk, then removes their dirs.
+func (s *Server) recordGenOutput(kind, dir string, meta service.GenerationMeta) error {
+	if err := s.store.RecordGeneration(kind, dir, meta); err != nil {
+		return err
+	}
+	pruned, err := s.store.PruneGenerations(kind, genOutputKeep, genOutputMaxAge)
 	for _, d := range pruned {
 		if rmErr := os.RemoveAll(d); rmErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: remove pruned generation dir %s: %v\n", d, rmErr)
@@ -220,7 +223,9 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	collect(gen.GeneratePackages(sm, schema))
 	collect(gen.GeneratePackageBodies(sm, schema))
 
-	if err := s.recordGenOutput("ddl", outDir); err != nil {
+	meta := sourceMetaFrom(cfg.Source, schema)
+	meta.Detail = map[string]any{"file_count": len(all)}
+	if err := s.recordGenOutput("ddl", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}
@@ -292,7 +297,9 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.recordGenOutput("select", outDir); err != nil {
+	meta := sourceMetaFrom(cfg.Source, cfg.Source.Schema)
+	meta.Detail = map[string]any{"file_count": len(files)}
+	if err := s.recordGenOutput("select", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}
@@ -361,7 +368,9 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.recordGenOutput("insert", outDir); err != nil {
+	meta := sourceMetaFrom(cfg.Source, cfg.Source.Schema)
+	meta.Detail = map[string]any{"table_count": len(tables), "file_count": len(files)}
+	if err := s.recordGenOutput("insert", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}

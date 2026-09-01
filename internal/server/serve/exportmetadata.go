@@ -130,7 +130,14 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.recordGenOutput("metadata", outDir); err != nil {
+	meta := sourceMetaFrom(src, targetSchema)
+	meta.Detail = map[string]any{
+		"format":      format,
+		"scope":       req.Scope,
+		"table_count": len(tables),
+		"file_count":  len(files),
+	}
+	if err := s.recordGenOutput("metadata", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}

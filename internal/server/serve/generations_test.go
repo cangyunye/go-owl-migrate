@@ -1,11 +1,13 @@
 package serve
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
 func TestSourceLabel_NoPasswordLeak(t *testing.T) {
@@ -66,4 +68,40 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+func TestRecordGenOutput_PersistsMetaAndPrunes(t *testing.T) {
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "g.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	srv := NewServer(Config{Store: store})
+
+	dirs := make([]string, 0, genOutputKeep+1)
+	for i := 0; i < genOutputKeep+1; i++ {
+		d := filepath.Join(t.TempDir(), fmt.Sprintf("out-%d", i))
+		os.MkdirAll(d, 0755)
+		dirs = append(dirs, d)
+	}
+	meta := service.GenerationMeta{SourceLabel: "mysql@h:3306/s", Detail: map[string]any{"format": "csv"}}
+	for i, d := range dirs {
+		if err := srv.recordGenOutput("metadata", d, meta); err != nil {
+			t.Fatalf("recordGenOutput(%d): %v", i, err)
+		}
+	}
+
+	// 最旧目录已被磁盘删除
+	if _, err := os.Stat(dirs[0]); !os.IsNotExist(err) {
+		t.Errorf("pruned dir %s still exists", dirs[0])
+	}
+	recs, err := store.ListGenerations("metadata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != genOutputKeep {
+		t.Errorf("records = %d, want %d", len(recs), genOutputKeep)
+	}
+	if recs[0].Detail["format"] != "csv" {
+		t.Errorf("detail = %v, want csv", recs[0].Detail)
+	}
 }
