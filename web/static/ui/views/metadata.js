@@ -21,6 +21,14 @@ import { escapeHtml } from '../util.js';
 
 let dsnExamples = {};
 
+/* 表列表缓存与分页状态（模块级：跨路由切换存活） */
+let tablesCache = [];
+let page = 1;
+const pageSize = 50;
+
+/* 渲染竞态令牌（模块级：跨 render 实例共享，防止旧响应覆盖新缓存） */
+let renderToken = 0;
+
 export async function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
@@ -78,10 +86,18 @@ export async function render(root /*Element*/, params) {
         +   '<div class="panel-head">'
         +     '<span class="panel-title">表列表 <span class="badge badge-accent" id="table-count"></span></span>'
         +   '</div>'
+        +   '<div class="meta-toolbar">'
+        +     '<input type="text" id="tables-filter" class="mono" placeholder="筛选表名 / Schema…">'
+        +   '</div>'
         +   '<table class="data-table">'
         +     '<thead><tr><th>Schema</th><th>表名</th><th>列数</th><th>主键</th><th></th></tr></thead>'
         +     '<tbody id="tables-body"></tbody>'
         +   '</table>'
+        +   '<div class="pager" id="tables-pager" style="display:none">'
+        +     '<span class="field-help" id="pager-info" style="margin:0"></span>'
+        +     '<button class="btn-ghost btn-sm" id="pager-prev" type="button">上一页</button>'
+        +     '<button class="btn-ghost btn-sm" id="pager-next" type="button">下一页</button>'
+        +   '</div>'
         + '</div>'
 
         + '<div class="panel reveal" style="--i:3;display:none" id="detail-panel">'
@@ -119,6 +135,11 @@ export async function render(root /*Element*/, params) {
     const validateList = root.querySelector('#validate-list');
     const btnLoad = root.querySelector('#btn-load');
     const btnValidate = root.querySelector('#btn-validate');
+    const filterInput = root.querySelector('#tables-filter');
+    const pagerEl = root.querySelector('#tables-pager');
+    const pagerInfo = root.querySelector('#pager-info');
+    const pagerPrev = root.querySelector('#pager-prev');
+    const pagerNext = root.querySelector('#pager-next');
 
     /* ── metadata-type toggle ────────────────────────────────── */
     function toggleMetaFields() {
@@ -167,7 +188,6 @@ export async function render(root /*Element*/, params) {
         try {
             const resp = await window.api.post('/api/v1/metadata/load', buildMetaPayload());
             tablesPanel.style.display = 'block';
-            tableCount.textContent = resp.table_count + ' 张表';
             await renderTables();
             showStatus('✓ 已加载 ' + resp.table_count + ' 张表', 'ok');
             window.toast.ok('元数据加载完成', resp.table_count + ' 张表');
@@ -181,9 +201,31 @@ export async function render(root /*Element*/, params) {
 
     /* ── table list (DOM-built, XSS-safe) ────────────────────── */
     async function renderTables() {
-        const tables = await window.api.get('/api/v1/metadata/tables') || [];
+        const t = ++renderToken;
+        const data = await window.api.get('/api/v1/metadata/tables') || [];
+        if (t !== renderToken) return; // 已有更新的加载/恢复请求，丢弃过期响应
+        tablesCache = data;
+        page = 1;
+        applyFilterAndPage();
+    }
+
+    function applyFilterAndPage() {
+        const q = (filterInput.value || '').trim().toLowerCase();
+        const filtered = q
+            ? tablesCache.filter(t =>
+                (t.schema || '').toLowerCase().includes(q) ||
+                (t.name || '').toLowerCase().includes(q))
+            : tablesCache.slice();
+
+        tableCount.textContent = filtered.length + ' / ' + tablesCache.length;
+        const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (page < 1) page = 1;
+        if (page > totalPages) page = totalPages;
+        const start = (page - 1) * pageSize;
+        const rows = filtered.slice(start, start + pageSize);
+
         tbody.innerHTML = '';
-        tables.forEach(t => {
+        rows.forEach(t => {
             const tr = document.createElement('tr');
 
             const tSchema = document.createElement('td');
@@ -220,6 +262,11 @@ export async function render(root /*Element*/, params) {
 
             tbody.appendChild(tr);
         });
+
+        pagerInfo.textContent = '共 ' + filtered.length + ' 张 · 第 ' + page + '/' + totalPages + ' 页';
+        pagerPrev.disabled = page <= 1;
+        pagerNext.disabled = page >= totalPages;
+        pagerEl.style.display = filtered.length > pageSize ? '' : 'none';
     }
 
     /* ── table detail (escaped) ──────────────────────────────── */
@@ -281,6 +328,9 @@ export async function render(root /*Element*/, params) {
         e.preventDefault();
         showDetail(link.dataset.schema, link.dataset.table);
     });
+    filterInput.addEventListener('input', () => { page = 1; applyFilterAndPage(); });
+    pagerPrev.addEventListener('click', () => { page--; applyFilterAndPage(); });
+    pagerNext.addEventListener('click', () => { page++; applyFilterAndPage(); });
 
     /* ── populate dialect select + hint from scenarios ───────── */
     try {
@@ -339,6 +389,17 @@ export async function render(root /*Element*/, params) {
         });
     } catch (e) { /* data-source list is best-effort */ }
 
+    /* ── auto-restore table list if metadata already loaded ──── */
+    async function autoRestoreTables() {
+        try {
+            const st = await window.api.get('/api/v1/config/status');
+            if (!st || !st.metadata_loaded) return;
+            await renderTables();
+            tablesPanel.style.display = 'block';
+        } catch (e) { /* best-effort: leave the page blank */ }
+    }
+
     toggleMetaFields();
     updateDsnHint();
+    autoRestoreTables();
 }
