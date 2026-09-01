@@ -98,7 +98,13 @@ func (s *Server) handleExportOffline(w http.ResponseWriter, r *http.Request) {
 		outputFiles = append(outputFiles, res.OutputFile)
 	}
 
-	if err := s.recordGenOutput("export-offline", outDir); err != nil {
+	meta := sourceMetaFrom(cfg.Source, cfg.Source.Schema)
+	meta.Detail = map[string]any{
+		"format":      format,
+		"table_count": len(dataTables),
+		"file_count":  len(outputFiles),
+	}
+	if err := s.recordGenOutput("export-offline", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}

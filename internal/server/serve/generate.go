@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,10 +32,13 @@ type genFile struct {
 // oldest dirs are removed from disk when the limit is exceeded.
 const genOutputKeep = 10
 
-// recordGenOutput persists a generation output directory in the job store and
-// prunes retired outputs from disk.
-func (s *Server) recordGenOutput(kind, dir string) error {
-	pruned, err := s.store.RecordGeneration(kind, dir, genOutputKeep)
+// recordGenOutput persists a generation output directory in the job store,
+// prunes retired outputs (count + age) from disk, then removes their dirs.
+func (s *Server) recordGenOutput(kind, dir string, meta service.GenerationMeta) error {
+	if err := s.store.RecordGeneration(kind, dir, meta); err != nil {
+		return err
+	}
+	pruned, err := s.store.PruneGenerations(kind, genOutputKeep, genOutputMaxAge)
 	for _, d := range pruned {
 		if rmErr := os.RemoveAll(d); rmErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: remove pruned generation dir %s: %v\n", d, rmErr)
@@ -220,7 +224,9 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	collect(gen.GeneratePackages(sm, schema))
 	collect(gen.GeneratePackageBodies(sm, schema))
 
-	if err := s.recordGenOutput("ddl", outDir); err != nil {
+	meta := sourceMetaFrom(cfg.Source, schema)
+	meta.Detail = map[string]any{"file_count": len(all)}
+	if err := s.recordGenOutput("ddl", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}
@@ -292,7 +298,9 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.recordGenOutput("select", outDir); err != nil {
+	meta := sourceMetaFrom(cfg.Source, cfg.Source.Schema)
+	meta.Detail = map[string]any{"file_count": len(files)}
+	if err := s.recordGenOutput("select", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}
@@ -361,7 +369,9 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.recordGenOutput("insert", outDir); err != nil {
+	meta := sourceMetaFrom(cfg.Source, cfg.Source.Schema)
+	meta.Detail = map[string]any{"table_count": len(tables), "file_count": len(files)}
+	if err := s.recordGenOutput("insert", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}
@@ -427,10 +437,37 @@ func (s *Server) handleMetadataTableDetail(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// handleDownloadGen zips the most recent generation output of the given kind.
+// handleDownloadGen zips the most recent generation output of the given kind,
+// or the specific record selected via ?id=.
 func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dir, err := s.store.LatestGeneration(kind)
+		var (
+			dir string
+			err error
+		)
+		if idStr := r.URL.Query().Get("id"); idStr != "" {
+			id, perr := strconv.ParseInt(idStr, 10, 64)
+			if perr != nil {
+				writeError(w, http.StatusBadRequest, "invalid generation id")
+				return
+			}
+			rec, gerr := s.store.GetGeneration(id)
+			if gerr != nil {
+				if errors.Is(gerr, service.ErrNoGeneration) {
+					writeError(w, http.StatusNotFound, "generation not found")
+				} else {
+					writeError(w, http.StatusInternalServerError, "lookup generation output: "+gerr.Error())
+				}
+				return
+			}
+			if rec.Kind != kind {
+				writeError(w, http.StatusNotFound, "generation not found")
+				return
+			}
+			dir = rec.Dir
+		} else {
+			dir, err = s.store.LatestGeneration(kind)
+		}
 		if err != nil {
 			if errors.Is(err, service.ErrNoGeneration) {
 				writeError(w, http.StatusBadRequest, err.Error())
@@ -441,7 +478,7 @@ func (s *Server) handleDownloadGen(kind string) http.HandlerFunc {
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeError(w, http.StatusNotFound, "generation files no longer exist")
 			return
 		}
 		w.Header().Set("Content-Type", "application/zip")

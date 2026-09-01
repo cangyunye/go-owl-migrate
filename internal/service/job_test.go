@@ -2,10 +2,13 @@ package service
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestStore(t *testing.T) *JobStore {
@@ -339,17 +342,17 @@ func TestJobStore_GenerationRetention(t *testing.T) {
 	}
 	defer store.Close()
 
-	var allPruned []string
 	for i := 1; i <= 3; i++ {
-		pruned, err := store.RecordGeneration("ddl", fmt.Sprintf("/tmp/gen-%d", i), 2)
-		if err != nil {
+		if err := store.RecordGeneration("ddl", fmt.Sprintf("/tmp/gen-%d", i), GenerationMeta{}); err != nil {
 			t.Fatalf("RecordGeneration(%d): %v", i, err)
 		}
-		allPruned = append(allPruned, pruned...)
 	}
-
-	if len(allPruned) != 1 || allPruned[0] != "/tmp/gen-1" {
-		t.Fatalf("pruned = %v, want [/tmp/gen-1]", allPruned)
+	pruned, err := store.PruneGenerations("ddl", 2, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("PruneGenerations: %v", err)
+	}
+	if len(pruned) != 1 || pruned[0] != "/tmp/gen-1" {
+		t.Fatalf("pruned = %v, want [/tmp/gen-1]", pruned)
 	}
 	dir, err := store.LatestGeneration("ddl")
 	if err != nil {
@@ -360,5 +363,127 @@ func TestJobStore_GenerationRetention(t *testing.T) {
 	}
 	if _, err := store.LatestGeneration("insert"); err == nil {
 		t.Error("LatestGeneration for unknown kind should error")
+	}
+}
+func TestJobStore_GenerationOutputsUpgrade(t *testing.T) {
+	// 旧库无新列 → NewJobStore 迁移补列
+	dbPath := filepath.Join(t.TempDir(), "old.db")
+	old, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Exec(`CREATE TABLE generation_outputs (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		kind       TEXT NOT NULL,
+		dir        TEXT NOT NULL,
+		created_at TEXT DEFAULT (datetime('now'))
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+
+	store, err := NewJobStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	defer store.Close()
+
+	var cols []string
+	rows, err := store.db.Query(`SELECT name FROM pragma_table_info('generation_outputs')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			t.Fatal(err)
+		}
+		cols = append(cols, c)
+	}
+	rows.Close()
+	for _, want := range []string{"source_label", "datasource_name", "detail"} {
+		if !slices.Contains(cols, want) {
+			t.Errorf("migrated table missing column %q (got %v)", want, cols)
+		}
+	}
+}
+func TestJobStore_GenerationMetaRoundTrip(t *testing.T) {
+	store, err := NewJobStore(filepath.Join(t.TempDir(), "meta.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	defer store.Close()
+
+	meta := GenerationMeta{
+		SourceLabel:    "mysql@127.0.0.1:3306/SCOTT",
+		DatasourceName: "prod",
+		Detail:         map[string]any{"format": "csv", "table_count": float64(3), "file_count": float64(9)},
+	}
+	if err := store.RecordGeneration("metadata", "/tmp/meta-1", meta); err != nil {
+		t.Fatalf("RecordGeneration: %v", err)
+	}
+
+	recs, err := store.ListGenerations("metadata")
+	if err != nil {
+		t.Fatalf("ListGenerations: %v", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("len = %d, want 1", len(recs))
+	}
+	r := recs[0]
+	if r.SourceLabel != meta.SourceLabel || r.DatasourceName != meta.DatasourceName {
+		t.Errorf("labels = %q/%q, want %q/%q", r.SourceLabel, r.DatasourceName, meta.SourceLabel, meta.DatasourceName)
+	}
+	if r.Detail["format"] != "csv" {
+		t.Errorf("detail.format = %v, want csv", r.Detail["format"])
+	}
+
+	got, err := store.GetGeneration(r.ID)
+	if err != nil {
+		t.Fatalf("GetGeneration: %v", err)
+	}
+	if got.Dir != "/tmp/meta-1" || got.Kind != "metadata" {
+		t.Errorf("GetGeneration = %+v", got)
+	}
+	if _, err := store.GetGeneration(9999); !errors.Is(err, ErrNoGeneration) {
+		t.Errorf("GetGeneration(9999) err = %v, want ErrNoGeneration", err)
+	}
+}
+func TestJobStore_GenerationPruneAgeAndCount(t *testing.T) {
+	store, err := NewJobStore(filepath.Join(t.TempDir(), "prune.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	defer store.Close()
+
+	// 3 条同 kind；keep=2 → 删最旧 1 条
+	for i := 1; i <= 3; i++ {
+		if err := store.RecordGeneration("ddl", fmt.Sprintf("/tmp/gen-%d", i), GenerationMeta{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pruned, err := store.PruneGenerations("ddl", 2, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("PruneGenerations: %v", err)
+	}
+	if len(pruned) != 1 || pruned[0] != "/tmp/gen-1" {
+		t.Fatalf("count prune = %v, want [/tmp/gen-1]", pruned)
+	}
+
+	// 手工把剩余某条改老 → 年龄限制触发
+	if _, err := store.db.Exec(`UPDATE generation_outputs SET created_at = '2000-01-01 00:00:00' WHERE dir = '/tmp/gen-2'`); err != nil {
+		t.Fatal(err)
+	}
+	pruned, err = store.PruneGenerations("ddl", 10, 24*time.Hour)
+	if err != nil {
+		t.Fatalf("PruneGenerations age: %v", err)
+	}
+	if len(pruned) != 1 || pruned[0] != "/tmp/gen-2" {
+		t.Fatalf("age prune = %v, want [/tmp/gen-2]", pruned)
+	}
+
+	recs, _ := store.ListGenerations("ddl")
+	if len(recs) != 1 || recs[0].Dir != "/tmp/gen-3" {
+		t.Errorf("after prune recs = %+v, want only /tmp/gen-3", recs)
 	}
 }

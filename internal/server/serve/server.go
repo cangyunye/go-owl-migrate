@@ -72,6 +72,12 @@ func NewServer(cfg Config) *Server {
 			}
 		}
 	}
+	// Enforce generation retention at startup so stale dirs don't linger
+	// after long uptimes or config changes. Guarded: some tests construct
+	// the server without a store.
+	if s.store != nil {
+		s.pruneAllGenerations()
+	}
 	return s
 }
 
@@ -143,6 +149,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/metadata/tables/{schema}/{table}", s.handleMetadataTableDetail)
 	mux.HandleFunc("POST /api/v1/metadata/export", s.handleExportMetadata)
 	mux.HandleFunc("GET /api/v1/metadata/export/download", s.handleDownloadGen("metadata"))
+	mux.HandleFunc("GET /api/v1/generations", s.handleListGenerations)
+	mux.HandleFunc("GET /api/v1/generations/{id}/files", s.handleGenerationFiles)
 	mux.HandleFunc("POST /api/v1/export/offline", s.handleExportOffline)
 	mux.HandleFunc("GET /api/v1/export/offline/download", s.handleDownloadGen("export-offline"))
 	mux.HandleFunc("GET /api/v1/show-query", s.handleShowQuery)

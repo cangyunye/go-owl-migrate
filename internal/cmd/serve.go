@@ -135,6 +135,7 @@ No authentication is required — intended for local or trusted-network use.`,
 					}
 				}
 			}()
+			go srv.CleanupLoop(ctx)
 
 			go func() {
 				fmt.Printf("owl-migrate web UI: http://%s\n", serveAddr)

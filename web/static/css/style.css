@@ -1261,3 +1261,17 @@ body.modal-open { overflow: hidden; }
   .topbar { padding: 0 16px; }
   .cfg-chip.hide-sm { display: none; }
 }
+
+/* generation history rows */
+.gen-history { display: flex; flex-direction: column; gap: 6px; }
+.gen-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 10px; border: 1px solid var(--border, #333);
+    border-radius: 8px; font-size: 13px;
+}
+.gen-row .gen-time { min-width: 150px; color: var(--text-dim, #999); }
+.gen-row .gen-src { min-width: 140px; }
+.gen-row .gen-meta { flex: 1; }
+.gen-row .gen-size { min-width: 70px; text-align: right; color: var(--text-dim, #999); }
+.gen-row .gen-actions { display: flex; gap: 10px; }
+.gen-row .gen-actions a { color: var(--accent, #4da3ff); }
