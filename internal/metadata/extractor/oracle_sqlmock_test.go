@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"errors"
 	"regexp"
 	"testing"
 
@@ -223,6 +224,179 @@ func TestQueryColumns_NativeOracle_HasCollation(t *testing.T) {
 	}
 	if columns[0].Collation != "UTF8_BIN" {
 		t.Errorf("Collation = %q, want UTF8_BIN", columns[0].Collation)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestQuerySynonyms_OceanBase_TwoArgs guards Problem 1: the synonyms query
+// filters on both owner and table_owner. The wire querier rewrites each :N to a
+// separate "?" placeholder, so the query needs two bind arguments. Passing a
+// single argument previously threw "not enough query arguments".
+func TestQuerySynonyms_OceanBase_TwoArgs(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	const schema = "SIT"
+	mock.ExpectQuery(regexp.QuoteMeta("FROM all_synonyms")).
+		WithArgs(schema, schema).
+		WillReturnRows(sqlmock.NewRows([]string{"synonym_name", "owner", "table_owner", "table_name", "is_public"}).
+			AddRow("EMP_PUBLIC", "PUBLIC", "SCOTT", "EMP", "YES"))
+
+	q := OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}}
+	synonyms, err := q.QuerySynonyms(db, schema)
+	if err != nil {
+		t.Fatalf("QuerySynonyms: %v", err)
+	}
+	if len(synonyms) != 1 || synonyms[0].SynonymName != "EMP_PUBLIC" {
+		t.Fatalf("synonyms = %+v, want single EMP_PUBLIC", synonyms)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestQuerySynonyms_NativeOracle_ReusesBind ensures native Oracle, which keeps
+// ":"-style named binds, still issues the query with the same schema for both
+// :1 and :2 (no regression).
+func TestQuerySynonyms_NativeOracle_ReusesBind(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	const schema = "SCOTT"
+	mock.ExpectQuery(regexp.QuoteMeta("FROM all_synonyms")).
+		WithArgs(schema, schema).
+		WillReturnRows(sqlmock.NewRows([]string{"synonym_name", "owner", "table_owner", "table_name", "is_public"}).
+			AddRow("EMP_ALIAS", "SCOTT", "SCOTT", "EMP", "NO"))
+
+	q := OracleMetadataQuerier{}
+	synonyms, err := q.QuerySynonyms(db, schema)
+	if err != nil {
+		t.Fatalf("QuerySynonyms: %v", err)
+	}
+	if len(synonyms) != 1 || synonyms[0].SynonymName != "EMP_ALIAS" {
+		t.Fatalf("synonyms = %+v, want single EMP_ALIAS", synonyms)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// stubVersionBanner mocks the v$version banner query that QueryMViews issues on
+// OceanBase to gate materialized-view support.
+func stubVersionBanner(mock sqlmock.Sqlmock, banner string) {
+	mock.ExpectQuery(regexp.QuoteMeta("FROM v$version")).
+		WillReturnRows(sqlmock.NewRows([]string{"banner"}).AddRow(banner))
+}
+
+// TestQueryMViews_OceanBase_MissingView guards Problem 2: a modern OceanBase
+// tenant (>= 4.3.3) that lacks ALL_MVIEWS raises ORA-00942, which must be
+// degraded to an empty result instead of aborting the whole metadata
+// extraction.
+func TestQueryMViews_OceanBase_MissingView(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	const schema = "CBSPARAM"
+	stubVersionBanner(mock, "OceanBase 4.3.3.0 (r100000192024040922) (Built Apr 9 2024)")
+	mock.ExpectQuery(regexp.QuoteMeta("FROM all_mviews mv")).
+		WithArgs(schema).
+		WillReturnError(errors.New("error 942 (42S02): ORA-00942: table or view 'CBSPARAM.ALL_MVIEWS' does not exist"))
+
+	q := OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}}
+	mviews, err := q.QueryMViews(db, schema)
+	if err != nil {
+		t.Fatalf("QueryMViews: expected degraded empty result, got error %v", err)
+	}
+	if len(mviews) != 0 {
+		t.Fatalf("mviews = %+v, want empty (missing dictionary view)", mviews)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestQueryMViews_OceanBase_OldVersion_Skips guards the version gate: an OceanBase
+// tenant older than 4.3.3 returns nil without ever querying ALL_MVIEWS.
+func TestQueryMViews_OceanBase_OldVersion_Skips(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	const schema = "CBSPARAM"
+	stubVersionBanner(mock, "OceanBase 3.2.4.0 (r1000001920230101) (Built Jan 1 2023)")
+
+	q := OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}}
+	mviews, err := q.QueryMViews(db, schema)
+	if err != nil {
+		t.Fatalf("QueryMViews: expected skip on old version, got error %v", err)
+	}
+	if len(mviews) != 0 {
+		t.Fatalf("mviews = %+v, want empty on old version", mviews)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations (all_mviews should never be queried): %v", err)
+	}
+}
+
+// TestQueryMViews_OceanBase_ReadsViews ensures a modern OceanBase tenant (>= 4.3.3)
+// with ALL_MVIEWS present still reads materialized views.
+func TestQueryMViews_OceanBase_ReadsViews(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	const schema = "SIT"
+	stubVersionBanner(mock, "OceanBase 4.4.2.0 (r1000001920241107) (Built Nov 7 2024)")
+	mock.ExpectQuery(regexp.QuoteMeta("FROM all_mviews mv")).
+		WithArgs(schema).
+		WillReturnRows(sqlmock.NewRows([]string{"mview_name", "query", "refresh_method", "refresh_mode", "build_mode", "comments"}).
+			AddRow("MV_EMP", "SELECT * FROM emp", "COMPLETE", "DEMAND", "IMMEDIATE", "monthly rollup"))
+
+	q := OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}}
+	mviews, err := q.QueryMViews(db, schema)
+	if err != nil {
+		t.Fatalf("QueryMViews: %v", err)
+	}
+	if len(mviews) != 1 || mviews[0].MViewName != "MV_EMP" {
+		t.Fatalf("mviews = %+v, want single MV_EMP", mviews)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestQueryMViews_NativeOracle_ErrPropagates ensures native Oracle still
+// propagates real errors instead of degrading them.
+func TestQueryMViews_NativeOracle_ErrPropagates(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	const schema = "SCOTT"
+	mock.ExpectQuery(regexp.QuoteMeta("FROM all_mviews mv")).
+		WithArgs(schema).
+		WillReturnError(errors.New("connection refused"))
+
+	q := OracleMetadataQuerier{}
+	if _, err := q.QueryMViews(db, schema); err == nil {
+		t.Fatal("QueryMViews: expected error to propagate for native Oracle")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)

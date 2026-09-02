@@ -1,6 +1,7 @@
 package extractor
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -98,5 +99,55 @@ func TestOceanBaseOracleWireQuerierRegistered(t *testing.T) {
 	// TNS-style oceanbase-oracle still routes to the native ":N" querier.
 	if _, err := Get(normalizeDBType("oceanbase-oracle")); err != nil {
 		t.Fatalf("normalized oceanbase-oracle lookup: %v", err)
+	}
+}
+
+func TestParseOracleVersion(t *testing.T) {
+	cases := []struct {
+		banner string
+		want   string // "M.m.p"; "" means unparseable
+	}{
+		{"OceanBase 4.3.3.0 (r100000192024040922) (Built Apr 9 2024)", "4.3.3"},
+		{"OceanBase 3.2.4.0 (r1000001920230101)", "3.2.4"},
+		{"Oracle Database 19c Enterprise Edition Release 19.0.0.0.0 - Production", "19.0.0"},
+		{"OceanBase 4.4.2.0 (r1000001920241107)", "4.4.2"},
+		{"not a version banner", ""},
+	}
+	for _, c := range cases {
+		got, ok := parseOracleVersion(c.banner)
+		if c.want == "" {
+			if ok {
+				t.Errorf("parseOracleVersion(%q) = %v, %v; want not-ok", c.banner, got, ok)
+			}
+			continue
+		}
+		if !ok {
+			t.Fatalf("parseOracleVersion(%q) not ok", c.banner)
+		}
+		want := fmt.Sprintf("%d.%d.%d", got.major, got.minor, got.patch)
+		if want != c.want {
+			t.Errorf("parseOracleVersion(%q) = %q, want %q", c.banner, want, c.want)
+		}
+	}
+}
+
+func TestOracleVersionAtLeast(t *testing.T) {
+	cases := []struct {
+		v, cmp string
+		want   bool
+	}{
+		{"4.3.3", "4.3.3", true},
+		{"4.3.4", "4.3.3", true},
+		{"4.4.0", "4.3.3", true},
+		{"4.3.2", "4.3.3", false},
+		{"3.2.4", "4.3.3", false},
+		{"4.2.9", "4.3.3", false},
+	}
+	for _, c := range cases {
+		v, _ := parseOracleVersion("OceanBase " + c.v + ".0")
+		got := v.atLeast(4, 3, 3)
+		if got != c.want {
+			t.Errorf("atLeast(%s, 4.3.3) = %v, want %v", c.v, got, c.want)
+		}
 	}
 }

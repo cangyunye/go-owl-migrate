@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
@@ -158,7 +159,7 @@ const queryOracleSynonyms = `SELECT
 	CASE WHEN owner = 'PUBLIC' THEN 'YES' ELSE 'NO' END AS is_public
 FROM all_synonyms
 WHERE owner = UPPER(:1)
-	OR table_owner = UPPER(:1)
+	OR table_owner = UPPER(:2)
 ORDER BY synonym_name`
 
 // OracleMetadataQuerier implements MetadataQuerier for Oracle using ALL_* dictionary views.
@@ -184,6 +185,61 @@ func (q OracleMetadataQuerier) bind(sqlText string) string {
 		return sqlText
 	}
 	return oracleBindRe.ReplaceAllString(sqlText, "?")
+}
+
+// isMissingViewError reports whether err is an ORA-00942 ("table or view does
+// not exist"), which OceanBase Oracle tenants also surface as error code 942
+// (SQLSTATE 42S02) over the MySQL wire protocol.
+func isMissingViewError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToUpper(err.Error())
+	return strings.Contains(msg, "ORA-00942") ||
+		strings.Contains(msg, "DOES NOT EXIST") ||
+		strings.Contains(msg, "ERROR 942")
+}
+
+// oracleVersion is a parsed X.Y.Z database version.
+type oracleVersion struct{ major, minor, patch int }
+
+var oracleVersionRe = regexp.MustCompile(`(\d+)\.(\d+)\.(\d+)`)
+
+// parseOracleVersion extracts the first X.Y.Z from a version banner string
+// (e.g. "OceanBase 4.3.3.0 (r100000192024040922)" -> 4.3.3, "Oracle Database
+// 19c ... Release 19.0.0.0.0" -> 19.0.0).
+func parseOracleVersion(banner string) (oracleVersion, bool) {
+	m := oracleVersionRe.FindStringSubmatch(banner)
+	if m == nil {
+		return oracleVersion{}, false
+	}
+	major, _ := strconv.Atoi(m[1])
+	minor, _ := strconv.Atoi(m[2])
+	patch, _ := strconv.Atoi(m[3])
+	return oracleVersion{major, minor, patch}, true
+}
+
+// atLeast reports whether v >= the given (major, minor, patch).
+func (v oracleVersion) atLeast(major, minor, patch int) bool {
+	return v.major > major ||
+		(v.major == major && (v.minor > minor || (v.minor == minor && v.patch >= patch)))
+}
+
+// queryVersion reads the first banner line from v$version (available in both
+// native Oracle and OceanBase Oracle-compatible tenants) and parses it. It
+// carries no bind parameters so it works under both ":"- and "?"-placeholder
+// protocols. Returns ok=false if the view is missing or unparseable.
+func (q OracleMetadataQuerier) queryVersion(db *sql.DB) (oracleVersion, bool) {
+	rows, err := db.Query("SELECT banner FROM v$version WHERE ROWNUM = 1")
+	if err != nil {
+		return oracleVersion{}, false
+	}
+	defer rows.Close()
+	var banner string
+	if !rows.Next() || rows.Scan(&banner) != nil {
+		return oracleVersion{}, false
+	}
+	return parseOracleVersion(banner)
 }
 
 // OceanBaseOracleWireQuerier extracts Oracle-compatible metadata from an
@@ -733,8 +789,8 @@ func (q OracleMetadataQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.S
 			CASE WHEN owner = 'PUBLIC' THEN 'YES' ELSE 'NO' END AS is_public
 		FROM all_synonyms
 		WHERE owner = UPPER(:1)
-		   OR table_owner = UPPER(:1)
-		ORDER BY synonym_name`), schema)
+		   OR table_owner = UPPER(:2)
+		ORDER BY synonym_name`), schema, schema)
 	if err != nil {
 		return nil, err
 	}
@@ -809,7 +865,21 @@ func (q OracleMetadataQuerier) QueryFunctions(db *sql.DB, schema string) ([]*md.
 	return funcs, nil
 }
 
+// QueryMViews reads ALL_MVIEWS. OceanBase Oracle tenants support materialized
+// views from 4.3.3 onward (ALL_MVIEWS exists then); earlier versions have no
+// such dictionary view. For OceanBase the version is read from v$version and,
+// when known to be older than 4.3.3, the query is skipped entirely. The
+// missing-view degradation below remains as a fallback so an unparseable or
+// absent version can never abort the whole extraction. Native Oracle always has
+// ALL_MVIEWS and its behavior is unchanged.
 func (q OracleMetadataQuerier) QueryMViews(db *sql.DB, schema string) ([]*md.MViewDef, error) {
+	// OceanBase materialized views require >= 4.3.3; skip the dictionary query
+	// on older tenants rather than letting ORA-00942 abort metadata extraction.
+	if q.OceanBase {
+		if ver, ok := q.queryVersion(db); ok && !ver.atLeast(4, 3, 3) {
+			return nil, nil
+		}
+	}
 	rows, err := db.Query(q.bind(`
 		SELECT mv.mview_name, mv.query, mv.refresh_method, mv.refresh_mode, mv.build_mode,
 			NVL(c.comments, '') AS comments
@@ -819,6 +889,9 @@ func (q OracleMetadataQuerier) QueryMViews(db *sql.DB, schema string) ([]*md.MVi
 		WHERE mv.owner = UPPER(:1)
 		ORDER BY mv.mview_name`), schema)
 	if err != nil {
+		if q.OceanBase && isMissingViewError(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
