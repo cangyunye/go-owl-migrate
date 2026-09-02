@@ -1,5 +1,7 @@
 # OceanBase Oracle 租户 E2E 测试方案
 
+> 配套的可执行验收测试（环境变量驱动 + JSON 报告）见 [oceanbase-oracle-acceptance.md](oceanbase-oracle-acceptance.md)。
+
 ## 方言信息
 
 | 属性 | 值 |
