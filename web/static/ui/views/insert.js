@@ -4,11 +4,14 @@ import { escapeHtml } from '../util.js';
 
 /* 检测表列表缓存（模块级：每次 render 由 showDetectedTables 重拉） */
 let detectedTables = [];
+/* 渲染竞态令牌（模块级：跨 render 实例共享，防止旧响应覆盖新缓存） */
+let renderToken = 0;
 
 function getTargetTables(root) {
     const el = root.querySelector('#opt-tables');
     if (!el) return [];
-    return (el.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    const list = (el.value || '').split(',').map(s => s.trim()).filter(Boolean);
+    return [...new Set(list)];
 }
 
 function setTargetTables(root, list) {
@@ -51,8 +54,10 @@ function renderPills(root) {
 async function showDetectedTables(root) {
     const hint = root.querySelector('#detected-hint');
     if (!hint) return;
+    const t = ++renderToken;
     try {
         const resp = await window.api.get('/api/v1/insert/tables') || {};
+        if (t !== renderToken) return; // 已有更新的请求，丢弃过期响应
         if (!root.isConnected) return;
         detectedTables = resp.tables || [];
         if (detectedTables.length) {
