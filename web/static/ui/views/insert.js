@@ -41,6 +41,11 @@ function renderPills(root) {
         btn.addEventListener('click', () => {
             const list = getTargetTables(root);
             const i = list.indexOf(label);
+            if (list.length === 1 && list[0] === '*') {
+                setTargetTables(root, [label]);
+                renderPills(root);
+                return;
+            }
             if (i >= 0) list.splice(i, 1); else list.push(label);
             setTargetTables(root, list);
             renderPills(root);
