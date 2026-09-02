@@ -1,0 +1,66 @@
+# OceanBase-Oracle 租户 → 本地 PostgreSQL 端到端迁移配置模板
+#
+# 用法（在仓库根目录）:
+#   1. 替换下方 source.dsn 与 source.schema 为你的 OceanBase-Oracle 租户连接
+#   2. go run ./cmd/migrate/main.go migrate -c testdata/db/oceanbase_oracle_to_pg.yaml
+#
+# source.dsn 两种写法（自动识别驱动）:
+#   - MySQL 协议直连 OBServer:  oceanbase-oracle://user@tenant:pass@host:2881/db
+#   - OBProxy 多集群（必须带 cluster）: oceanbase-oracle://user@tenant#cluster:pass@host:2883/db
+#   - Oracle TNS 协议:          oracle://user:pass@host:2883/service
+# source.schema = 租户内实际 owner（Oracle 模式下通常大写，如 SCOTT 或你的业务用户）
+
+general:
+  log_level: debug
+  log_format: text
+
+metadata:
+  type: database          # 从活库抽取元数据（表/列/主键/外键/索引/视图/序列/同义词/触发器/函数/包）
+
+source:
+  type: oceanbase-oracle
+  dsn: "oceanbase-oracle://CHANGE_ME_USER@CHANGE_ME_TENANT:CHANGE_ME_PASS@CHANGE_ME_HOST:2881/CHANGE_ME_DB"
+  schema: "SCOTT"        # ← 改成你的实际 owner
+  connect_timeout: "30s"
+
+target:
+  type: postgres
+  dsn: "host=127.0.0.1 port=5432 user=postgres password=postgres123 dbname=postgres_db sslmode=disable"
+
+ddl:
+  target_dialect: postgres
+  schema_mapping:
+    SCOTT: public         # ← 源 owner 到目标 schema 的映射
+  include_if_not_exists: true
+
+export:
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    header: true
+    null_representation: "\\N"
+    line_terminator: "\n"
+  batch:
+    page_size: 5000
+  parallel:
+    enabled: true
+    max_workers: 4
+
+import:
+  csv:
+    delimiter: ","
+    has_header: true
+    null_marker: "\\N"
+  target:
+    truncate_before: true
+  batch:
+    commit_interval: 1000
+    error_policy: stop
+  parallel:
+    enabled: true
+    max_workers: 2
+    respect_foreign_keys: true  # 目标表带外键时必须：父表先插入（自动串行）
+  data_transforms:
+    datetime_format: "yyyyMMddHHmmss"
+    trim_strings: true
+    null_if: ["NULL", "null", "\\N"]
