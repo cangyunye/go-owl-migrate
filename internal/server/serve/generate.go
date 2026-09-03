@@ -18,7 +18,6 @@ import (
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvvalidator "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/paths"
-	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -89,6 +88,19 @@ func insertDataDir(cfg *config.Config) string {
 	return "./output/data/"
 }
 
+// readGenFiles reads generation output files for API responses.
+func readGenFiles(paths []string) []genFile {
+	files := make([]genFile, 0, len(paths))
+	for _, p := range paths {
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		files = append(files, genFile{Name: filepath.Base(p), Content: string(data)})
+	}
+	return files
+}
+
 // filterTableDefs keeps only tables matched by include (nil/empty = keep all).
 // 语义收敛到 metadata.ObjectSelector（ADR-003）。
 func filterTableDefs(tables []*md.TableDef, include []string) []*md.TableDef {
@@ -121,37 +133,6 @@ func (s *Server) handleListInsertTables(w http.ResponseWriter, r *http.Request) 
 	}
 	resp["tables"] = entries
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// filterSchemaTables returns a shallow copy of sm keeping only tables matched
-// by include (nil/empty = keep all). Views/sequences/synonyms etc. carry over
-// unchanged; indexes and per-table objects follow the table filter.
-// 表匹配语义收敛到 metadata.ObjectSelector（ADR-003）。
-func filterSchemaTables(sm *md.SchemaModel, include []string) *md.SchemaModel {
-	if len(include) == 0 {
-		return sm
-	}
-	sel := md.SelectorFromInclude(include)
-	out := *sm
-	out.Tables = make(map[string]*md.TableDef)
-	for key, t := range sm.Tables {
-		if sel.Matches(t.TableSchema, t.TableName) {
-			out.Tables[key] = t
-		}
-	}
-	return &out
-}
-
-func readGenFiles(paths []string) []genFile {
-	files := make([]genFile, 0, len(paths))
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		files = append(files, genFile{Name: filepath.Base(p), Content: string(data)})
-	}
-	return files
 }
 
 func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
@@ -216,43 +197,13 @@ func (s *Server) handleGenerateSelect(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
-	sm = filterSchemaTables(sm, resolveTableInclude(req.Tables, cfg))
-
-	d, err := registry.Get(cfg.DDL.TargetDialect)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "unknown target dialect: "+err.Error())
-		return
-	}
-
-	method := req.BatchMethod
-	if method == "" {
-		method = cfg.SelectGen.Batch.Method
-	}
-	if method == "" {
-		method = "cursor"
-	}
-	pageSize := req.PageSize
-	if pageSize == 0 {
-		pageSize = cfg.SelectGen.Batch.PageSize
-	}
-	if pageSize == 0 {
-		pageSize = 5000
-	}
-
-	quoteFn := d.Quote
-	if req.NoQuoteIdentifiers != nil && *req.NoQuoteIdentifiers {
-		quoteFn = func(s string) string { return s }
-	}
 
 	outDir := filepath.Join(paths.TempDir(), "select-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
 
-	oracleRowNum := strings.Contains(cfg.DDL.TargetDialect, "oracle")
-	gen := generator.NewSelectGenerator(method, pageSize, outDir, quoteFn,
-		cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum).
-		WithPagination(d.BuildPaginationClause)
-
-	files, err := gen.Generate(sm)
+	// CLI gen-select 与 serve 共用 service.GenerateSelect。
+	files, err := service.GenerateSelect(sm, cfg, resolveTableInclude(req.Tables, cfg),
+		req.BatchMethod, req.PageSize, req.NoQuoteIdentifiers, outDir)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "generate select: "+err.Error())
 		return

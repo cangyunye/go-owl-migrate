@@ -2,13 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
-	"github.com/cangyunye/go-owl-migrate/internal/generator"
-	"github.com/cangyunye/go-owl-migrate/internal/registry"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
 func genSelectCmd() *cobra.Command {
@@ -27,8 +25,8 @@ func genSelectCmd() *cobra.Command {
 	)
 
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/select/", "output directory for SELECT files")
-	cmd.Flags().StringVar(&batchMethod, "batch-method", "cursor", "pagination method: cursor/offset")
-	cmd.Flags().IntVarP(&pageSize, "page-size", "n", 5000, "rows per batch")
+	cmd.Flags().StringVar(&batchMethod, "batch-method", "", "pagination method: cursor/offset")
+	cmd.Flags().IntVarP(&pageSize, "page-size", "n", 0, "rows per batch (default from config)")
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -37,36 +35,21 @@ func genSelectCmd() *cobra.Command {
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		if pageSize == 0 {
-			pageSize = cfg.SelectGen.Batch.PageSize
-		}
-		if batchMethod == "" {
-			batchMethod = cfg.SelectGen.Batch.Method
-		}
-
-		// Load metadata from CSV or database
 		sm, err := loadSchemaModel(cfg)
 		if err != nil {
 			return err
 		}
 
-		// Get dialect for quoting
-		d, err := registry.Get(cfg.DDL.TargetDialect)
-		if err != nil {
-			return err
+		var noQuotePtr *bool
+		if cmd.Flags().Changed("no-quote-identifiers") {
+			noQuotePtr = &noQuote
 		}
 
-		quoteFn := d.Quote
-		if cmd.Flags().Changed("no-quote-identifiers") && noQuote {
-			quoteFn = func(s string) string { return s }
-		}
-		oracleRowNum := strings.Contains(cfg.DDL.TargetDialect, "oracle")
-		gen := generator.NewSelectGenerator(batchMethod, pageSize, outputDir, quoteFn, cfg.SelectGen.IncludeRowNumber, cfg.SelectGen.AddExportColumns, oracleRowNum).
-			WithPagination(d.BuildPaginationClause)
-
-		files, err := gen.Generate(sm)
+		// 与 serve 一致：默认表清单来自 cfg.Export.Tables.Include（留空 = 全部）。
+		files, err := service.GenerateSelect(sm, cfg, cfg.Export.Tables.Include,
+			batchMethod, pageSize, noQuotePtr, outputDir)
 		if err != nil {
-			return err
+			return fmt.Errorf("generate select: %w", err)
 		}
 		for _, f := range files {
 			fmt.Printf("  %s\n", f)
