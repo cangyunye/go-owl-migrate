@@ -159,21 +159,7 @@ func buildPKMap(sm *md.SchemaModel) map[string][]string {
 	return pkMap
 }
 
-// filterTables filters tables by include list.
+// filterTables filters tables by include list（收敛到 metadata.ObjectSelector 语义，ADR-003）。
 func filterTables(tables []*md.TableDef, include []string) []*md.TableDef {
-	if len(include) == 1 && include[0] == "*" {
-		return tables
-	}
-	includeSet := make(map[string]bool)
-	for _, inc := range include {
-		includeSet[inc] = true
-	}
-	var result []*md.TableDef
-	for _, tbl := range tables {
-		key := fmt.Sprintf("%s.%s", tbl.TableSchema, tbl.TableName)
-		if includeSet[key] || includeSet["*"] {
-			result = append(result, tbl)
-		}
-	}
-	return result
+	return md.FilterTablesByInclude(tables, include)
 }

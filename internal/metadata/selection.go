@@ -381,3 +381,49 @@ func (sm *SchemaModel) Schemas() []string {
 	sort.Strings(out)
 	return out
 }
+
+// ── include 列表 → Selector（config.table_filter.include / CLI 表清单收敛点）──
+
+// SelectorFromInclude 把"include 模式列表"转换为 Selector（无 exclude）。
+// 模式：`*`=全量；`SCHEMA.TABLE` 精确；`SCHEMA.*` 整 schema；`*.TABLE` 任意 owner；
+// `T_*`/`EM?` 等 glob 匹配任意 owner 的表名。nil/空列表 = 全量。
+func SelectorFromInclude(include []string) ObjectSelector {
+	if len(include) == 0 {
+		return ObjectSelector{Schemas: []SchemaPattern{{}}}
+	}
+	var patterns []SchemaPattern
+	for _, item := range include {
+		item = strings.TrimSpace(item)
+		if item == "" || item == "*" {
+			return ObjectSelector{Schemas: []SchemaPattern{{}}} // 含全量即无需其它模式
+		}
+		i := strings.Index(item, ".")
+		if i < 0 {
+			patterns = append(patterns, SchemaPattern{TablePattern: item})
+			continue
+		}
+		schema, pattern := item[:i], item[i+1:]
+		if schema == "*" {
+			patterns = append(patterns, SchemaPattern{TablePattern: pattern})
+		} else {
+			patterns = append(patterns, SchemaPattern{Schema: schema, TablePattern: pattern})
+		}
+	}
+	return ObjectSelector{Schemas: patterns}
+}
+
+// FilterTablesByInclude 返回 include 模式命中的表（保留输入顺序；nil/`*`/空 = 全部）。
+// serve / service / CLI 的表清单过滤共用此实现。
+func FilterTablesByInclude(tables []*TableDef, include []string) []*TableDef {
+	if len(include) == 0 {
+		return tables
+	}
+	sel := SelectorFromInclude(include)
+	out := make([]*TableDef, 0, len(tables))
+	for _, t := range tables {
+		if sel.Matches(t.TableSchema, t.TableName) {
+			out = append(out, t)
+		}
+	}
+	return out
+}

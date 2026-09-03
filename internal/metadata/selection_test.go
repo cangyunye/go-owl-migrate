@@ -309,3 +309,67 @@ func TestSchemaModelSchemas(t *testing.T) {
 		}
 	}
 }
+
+// ── Slice 7: include 列表 → Selector（config/CLI/Web 收敛共用）──
+
+func TestSelectorFromInclude(t *testing.T) {
+	tests := []struct {
+		name    string
+		include []string
+		want    []SchemaPattern
+	}{
+		{"nil = all", nil, []SchemaPattern{{}}},
+		{"empty = all", []string{}, []SchemaPattern{{}}},
+		{"star = all", []string{"*"}, []SchemaPattern{{}}},
+		{"bare name any schema", []string{"DEPT"}, []SchemaPattern{{TablePattern: "DEPT"}}},
+		{"schema.table exact", []string{"SCOTT.DEPT"}, []SchemaPattern{{Schema: "SCOTT", TablePattern: "DEPT"}}},
+		{"schema wildcard", []string{"SCOTT.*"}, []SchemaPattern{{Schema: "SCOTT", TablePattern: "*"}}},
+		{"any-schema glob", []string{"*.EMP"}, []SchemaPattern{{TablePattern: "EMP"}}},
+		{"glob bare", []string{"T_*"}, []SchemaPattern{{TablePattern: "T_*"}}},
+		{"multiple", []string{"SCOTT.DEPT", "EMP"}, []SchemaPattern{{Schema: "SCOTT", TablePattern: "DEPT"}, {TablePattern: "EMP"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sel := SelectorFromInclude(tt.include)
+			if len(sel.Schemas) != len(tt.want) {
+				t.Fatalf("SelectorFromInclude(%v).Schemas = %v, want %v", tt.include, sel.Schemas, tt.want)
+			}
+			for i := range tt.want {
+				if sel.Schemas[i] != tt.want[i] {
+					t.Errorf("Schemas[%d] = %+v, want %+v", i, sel.Schemas[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFilterTablesByInclude(t *testing.T) {
+	sm := selFixture(t) // SCOTT.EMP/DEPT, HR.EMP
+	tables := sm.GetTables()
+	got := FilterTablesByInclude(tables, []string{"scott.emp"}) // 大小写不敏感
+	if len(got) != 1 || got[0].TableName != "EMP" {
+		t.Fatalf("case-insensitive exact include = %v", tableNamesOf(got))
+	}
+	if len(FilterTablesByInclude(tables, []string{"*"})) != 3 {
+		t.Fatal("star include should keep all")
+	}
+	if len(FilterTablesByInclude(tables, nil)) != 3 {
+		t.Fatal("nil include should keep all")
+	}
+	got = FilterTablesByInclude(tables, []string{"E*"})
+	if len(got) != 2 { // SCOTT.EMP + HR.EMP
+		t.Fatalf("glob E* = %v", tableNamesOf(got))
+	}
+	got = FilterTablesByInclude(tables, []string{"SCOTT.*"})
+	if len(got) != 2 {
+		t.Fatalf("SCOTT.* = %v", tableNamesOf(got))
+	}
+}
+
+func tableNamesOf(ts []*TableDef) []string {
+	var out []string
+	for _, t := range ts {
+		out = append(out, t.TableSchema+"."+t.TableName)
+	}
+	return out
+}

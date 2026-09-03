@@ -89,19 +89,10 @@ func insertDataDir(cfg *config.Config) string {
 	return "./output/data/"
 }
 
-// filterTableDefs keeps only tables matched by include (nil = keep all).
+// filterTableDefs keeps only tables matched by include (nil/empty = keep all).
+// 语义收敛到 metadata.ObjectSelector（ADR-003）。
 func filterTableDefs(tables []*md.TableDef, include []string) []*md.TableDef {
-	if len(include) == 0 {
-		return tables
-	}
-	f := config.TableFilterConfig{Include: include}
-	out := make([]*md.TableDef, 0, len(tables))
-	for _, t := range tables {
-		if config.MatchTable(f, t.TableSchema, t.TableName) {
-			out = append(out, t)
-		}
-	}
-	return out
+	return md.FilterTablesByInclude(tables, include)
 }
 
 // handleListInsertTables reports which tables the INSERT generator would pick
@@ -133,17 +124,18 @@ func (s *Server) handleListInsertTables(w http.ResponseWriter, r *http.Request) 
 }
 
 // filterSchemaTables returns a shallow copy of sm keeping only tables matched
-// by include (nil = keep all). Views/sequences/synonyms etc. carry over
+// by include (nil/empty = keep all). Views/sequences/synonyms etc. carry over
 // unchanged; indexes and per-table objects follow the table filter.
+// 表匹配语义收敛到 metadata.ObjectSelector（ADR-003）。
 func filterSchemaTables(sm *md.SchemaModel, include []string) *md.SchemaModel {
 	if len(include) == 0 {
 		return sm
 	}
-	f := config.TableFilterConfig{Include: include}
+	sel := md.SelectorFromInclude(include)
 	out := *sm
 	out.Tables = make(map[string]*md.TableDef)
 	for key, t := range sm.Tables {
-		if config.MatchTable(f, t.TableSchema, t.TableName) {
+		if sel.Matches(t.TableSchema, t.TableName) {
 			out.Tables[key] = t
 		}
 	}
@@ -195,13 +187,6 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	}
 	gen := generator.NewDDLGenerator(d, opts, outDir)
 
-	schema := cfg.Source.Schema
-	if schema == "" {
-		if tables := sm.GetTables(); len(tables) > 0 {
-			schema = tables[0].TableSchema
-		}
-	}
-
 	var all []string
 	collect := func(files []string, e error) {
 		if e == nil {
@@ -216,15 +201,19 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	all = append(all, tbls...)
 	collect(gen.GenerateIndexes(sm))
 	collect(gen.GenerateViews(sm))
-	collect(gen.GenerateSequences(sm, schema))
-	collect(gen.GenerateSynonyms(sm, schema))
 	collect(gen.GenerateMViews(sm))
 	collect(gen.GenerateTriggers(sm))
-	collect(gen.GenerateFunctions(sm, schema))
-	collect(gen.GeneratePackages(sm, schema))
-	collect(gen.GeneratePackageBodies(sm, schema))
+	// schema 级对象（序列/同义词/函数/包/包体）按模型实际 owner 分组生成，
+	// 不再依赖 cfg.Source.Schema 单一全局值（多 owner 模型正确性）。
+	for _, sch := range sm.Schemas() {
+		collect(gen.GenerateSequences(sm, sch))
+		collect(gen.GenerateSynonyms(sm, sch))
+		collect(gen.GenerateFunctions(sm, sch))
+		collect(gen.GeneratePackages(sm, sch))
+		collect(gen.GeneratePackageBodies(sm, sch))
+	}
 
-	meta := sourceMetaFrom(cfg.Source, schema)
+	meta := sourceMetaFrom(cfg.Source, "")
 	meta.Detail = map[string]any{"file_count": len(all)}
 	if err := s.recordGenOutput("ddl", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())

@@ -3,11 +3,11 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
 // MarshalYAML implements yaml.Marshaler to omit empty config sections.
@@ -611,71 +611,26 @@ func mapKeys(m map[string]bool) []string {
 	return keys
 }
 
-// MatchTable checks whether a table matches the include/exclude filter rules.
-// Priority: includes → glob exclude → regex exclude → schema exclude → table exclude.
-func MatchTable(f TableFilterConfig, schema, table string) bool {
-	// Check includes first. Matching is case-insensitive: Oracle metadata is
-	// uppercase while MySQL/PostgreSQL and CSV-derived names are often
-	// lowercase, and a migration filter should bridge both.
-	matched := false
-	lt := strings.ToLower(table)
-	lfull := strings.ToLower(schema + "." + table)
-	for _, inc := range f.Include {
-		if inc == "*" {
-			matched = true
-			break
-		}
-		li := strings.ToLower(inc)
-		if m, _ := filepath.Match(li, lfull); m {
-			matched = true
-			break
-		}
-		if m, _ := filepath.Match(li, lt); m {
-			matched = true
-			break
-		}
+// Selector 把 table_filter 转换为一元对象选择器（metadata.ObjectSelector），
+// 供 MatchTable 及请求/生成层共用（ADR-003）。
+func (c TableFilterConfig) Selector() md.ObjectSelector {
+	sel := md.SelectorFromInclude(c.Include)
+	sel.Exclude = md.ExcludeFilter{
+		Glob:    c.Exclude.Glob,
+		Regex:   c.Exclude.Regex,
+		Schemas: c.Exclude.Schemas,
+		Tables:  c.Exclude.Tables,
 	}
-	if !matched {
+	return sel
+}
+
+// MatchTable checks whether a table matches the include/exclude filter rules.
+// Semantics unified with metadata.ObjectSelector (ADR-003)：匹配大小写不敏感；
+// 优先级 = 显式点名精确表 > exclude > glob include。
+// 兼容旧行为：include 为空时任何表都不匹配（调用方在空 include 时应自行跳过过滤）。
+func MatchTable(f TableFilterConfig, schema, table string) bool {
+	if len(f.Include) == 0 {
 		return false
 	}
-
-	// Check excludes
-	e := f.Exclude
-
-	// Glob excludes
-	for _, g := range e.Glob {
-		if m, _ := filepath.Match(g, table); m {
-			return false
-		}
-		if m, _ := filepath.Match(g, schema+"."+table); m {
-			return false
-		}
-	}
-
-	// Regex excludes
-	for _, r := range e.Regex {
-		re, err := regexp.Compile(r)
-		if err != nil {
-			continue
-		}
-		if re.MatchString(table) || re.MatchString(schema+"."+table) {
-			return false
-		}
-	}
-
-	// Schema excludes
-	for _, s := range e.Schemas {
-		if strings.EqualFold(s, schema) {
-			return false
-		}
-	}
-
-	// Exact table excludes
-	for _, t := range e.Tables {
-		if strings.EqualFold(t, schema+"."+table) {
-			return false
-		}
-	}
-
-	return true
+	return f.Selector().Matches(schema, table)
 }

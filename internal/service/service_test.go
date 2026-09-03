@@ -95,7 +95,10 @@ func TestFilterTables(t *testing.T) {
 		{"exact", []string{"SCOTT.EMP", "SCOTT.DEPT"}, 2},
 		{"single", []string{"SCOTT.BONUS"}, 1},
 		{"none", []string{"SCOTT.NONEXIST"}, 0},
-		{"empty", []string{}, 0},
+		{"empty list = keep all", []string{}, 3}, // 与 UI "留空 = 全部表" 一致
+		{"lowercase exact", []string{"scott.emp"}, 1},
+		{"glob", []string{"SCOTT.E*"}, 1},
+		{"schema wildcard", []string{"SCOTT.*"}, 3},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
