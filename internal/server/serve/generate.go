@@ -3,7 +3,6 @@ package serve
 import (
 	"archive/zip"
 	"crypto/rand"
-	"encoding/csv"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
-	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvvalidator "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 	"github.com/cangyunye/go-owl-migrate/internal/paths"
@@ -81,13 +79,6 @@ func normalizeInclude(in []string) []string {
 	return in
 }
 
-func insertDataDir(cfg *config.Config) string {
-	if cfg.Import.SourceDir != "" {
-		return cfg.Import.SourceDir
-	}
-	return "./output/data/"
-}
-
 // readGenFiles reads generation output files for API responses.
 func readGenFiles(paths []string) []genFile {
 	files := make([]genFile, 0, len(paths))
@@ -101,12 +92,6 @@ func readGenFiles(paths []string) []genFile {
 	return files
 }
 
-// filterTableDefs keeps only tables matched by include (nil/empty = keep all).
-// 语义收敛到 metadata.ObjectSelector（ADR-003）。
-func filterTableDefs(tables []*md.TableDef, include []string) []*md.TableDef {
-	return md.FilterTablesByInclude(tables, include)
-}
-
 // handleListInsertTables reports which tables the INSERT generator would pick
 // up from the configured CSV data directory, without generating anything.
 func (s *Server) handleListInsertTables(w http.ResponseWriter, r *http.Request) {
@@ -114,22 +99,17 @@ func (s *Server) handleListInsertTables(w http.ResponseWriter, r *http.Request) 
 	cfg := s.cfg
 	s.mu.RUnlock()
 
-	dataDir := insertDataDir(cfg)
-	type tableEntry struct {
-		Schema  string `json:"schema"`
-		Name    string `json:"name"`
-		Columns int    `json:"columns"`
-	}
-	resp := map[string]any{"data_dir": dataDir, "tables": []tableEntry{}}
-	tables, err := detectTablesFromCSVDir(dataDir)
+	dataDir := service.InsertDataDir(cfg)
+	resp := map[string]any{"data_dir": dataDir, "tables": []map[string]any{}}
+	tables, err := service.DetectTablesFromCSVDir(dataDir)
 	if err != nil {
 		resp["error"] = err.Error()
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	entries := make([]tableEntry, 0, len(tables))
+	entries := make([]map[string]any, 0, len(tables))
 	for _, t := range tables {
-		entries = append(entries, tableEntry{Schema: t.TableSchema, Name: t.TableName, Columns: len(t.Columns)})
+		entries = append(entries, map[string]any{"schema": t.TableSchema, "name": t.TableName, "columns": len(t.GetColumns())})
 	}
 	resp["tables"] = entries
 	writeJSON(w, http.StatusOK, resp)
@@ -237,44 +217,24 @@ func (s *Server) handleGenerateInsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dataDir := insertDataDir(cfg)
+	dataDir := service.InsertDataDir(cfg)
 
-	tables, err := detectTablesFromCSVDir(dataDir)
+	// CLI export insert 与 serve 共用 service.GenerateInsert（目录检测、include
+	// 过滤、缺失目录的可操作指引、方言/批大小回落）。
+	tables, err := service.DetectTablesFromCSVDir(dataDir)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "read CSV data: "+err.Error())
 		return
 	}
-	tables = filterTableDefs(tables, resolveTableInclude(req.Tables, cfg))
-
-	dialect := cfg.DDL.TargetDialect
-	if dialect == "" {
-		dialect = "postgres"
-	}
-
 	outDir := filepath.Join(paths.TempDir(), "insert-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
 
-	batchSize := req.BatchSize
-	if batchSize <= 0 {
-		batchSize = 100
-	}
-
-	noQuote := cfg.DDL.NoQuoteIdentifiers
-	if req.NoQuoteIdentifiers != nil {
-		noQuote = *req.NoQuoteIdentifiers
-	}
-
-	gen := generator.NewInsertGenerator(generator.InsertConfig{
-		OutputDir:          outDir,
-		BatchSize:          batchSize,
-		TruncateBefore:     req.Truncate,
-		Dialect:            dialect,
-		NullMarker:         cfg.Import.CSV.NullMarker,
-		CSVDelimiter:       cfg.Import.CSV.Delimiter,
-		NoQuoteIdentifiers: noQuote,
-	})
-
-	files, err := gen.Generate(tables, dataDir)
+	files, err := service.GenerateInsert(cfg, resolveTableInclude(req.Tables, cfg), dataDir, outDir,
+		service.InsertOptions{
+			BatchSize: req.BatchSize,
+			Truncate:  req.Truncate,
+			NoQuote:   req.NoQuoteIdentifiers,
+		})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "generate insert: "+err.Error())
 		return
@@ -417,50 +377,4 @@ func randSuffix() string {
 	var b [4]byte
 	rand.Read(b[:])
 	return fmt.Sprintf("%d-%x", time.Now().UnixNano(), b[:])
-}
-
-// detectTablesFromCSVDir infers TableDefs from CSV data file headers,
-// mirroring cmd/export_insert.go's detectTablesFromCSV.
-func detectTablesFromCSVDir(dir string) ([]*md.TableDef, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("read data directory %q: %w", dir, err)
-	}
-	var tables []*md.TableDef
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".csv") {
-			continue
-		}
-		name := strings.TrimSuffix(entry.Name(), ".csv")
-		parts := strings.SplitN(name, ".", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		f, err := os.Open(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			return nil, err
-		}
-		r := csv.NewReader(f)
-		header, err := r.Read()
-		f.Close()
-		if err != nil {
-			return nil, err
-		}
-		tbl, err := md.NewTableDef(parts[0], parts[1])
-		if err != nil {
-			return nil, err
-		}
-		for i, colName := range header {
-			col, err := md.NewColumnDef(parts[0], parts[1], colName, i+1, "VARCHAR")
-			if err != nil {
-				return nil, err
-			}
-			tbl.AddColumn(col)
-		}
-		tables = append(tables, tbl)
-	}
-	if len(tables) == 0 {
-		return nil, fmt.Errorf("no {schema}.{table}.csv files found in %q", dir)
-	}
-	return tables, nil
 }
