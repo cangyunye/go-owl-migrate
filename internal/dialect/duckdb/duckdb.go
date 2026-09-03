@@ -98,6 +98,9 @@ func (DuckDBTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 
 type DuckDBQuoter struct{}
 
+func (DuckDBQuoter) QuotePreserve(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 func (DuckDBQuoter) Quote(name string) string     { return `"` + name + `"` }
 func (DuckDBQuoter) Unquote(quoted string) string { return strings.Trim(quoted, `"`) }
 
@@ -216,12 +219,24 @@ func (DuckDBDDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.Bu
 }
 
 // Unsupported DDL stubs
-func (DuckDBDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (DuckDBDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (DuckDBDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error)              { return "", nil }
-func (DuckDBDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error)        { return "", nil }
-func (DuckDBDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (DuckDBDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) { return "", nil }
+func (DuckDBDDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (DuckDBDDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (DuckDBDDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (DuckDBDDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (DuckDBDDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (DuckDBDDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
 
 type DuckDBDMLHelper struct{}
 

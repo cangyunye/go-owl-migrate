@@ -219,17 +219,17 @@ func runMigratePipeline(t *testing.T, cfg migratePipelineConfig) {
 
 	// Import CSV into target
 	impCfg := importer.Config{
-		SourceDir:        tmpDir,
-		CSVDelimiter:     ",",
-		CSVNullMarker:    "\\N",
-		CommitInterval:   100,
-		ErrorPolicy:      "stop",
-		MaxWorkers:       1,
-		DateTimeFormat:   "yyyyMMddHHmmss",
-		TrimStrings:      true,
+		SourceDir:          tmpDir,
+		CSVDelimiter:       ",",
+		CSVNullMarker:      "\\N",
+		CommitInterval:     100,
+		ErrorPolicy:        "stop",
+		MaxWorkers:         1,
+		DateTimeFormat:     "yyyyMMddHHmmss",
+		TrimStrings:        true,
 		RespectForeignKeys: false,
-		TargetDBType:     cfg.targetType,
-		Logger:           nopLogger(),
+		TargetDBType:       cfg.targetType,
+		Logger:             nopLogger(),
 	}
 	// Truncate for repeatable runs (except Oracle where TRUNCATE is DDL)
 	if !strings.EqualFold(cfg.targetType, "oracle") {
@@ -275,11 +275,11 @@ func TestMigrateE2E_OracleToPG(t *testing.T) {
 	tgtDB := connectE2E(t, "postgres", pgTargetDSN)
 	setupPGSchema(t, tgtDB, schema)
 	runMigratePipeline(t, migratePipelineConfig{
-		sourceType:   "oracle",
-		sourceDSN:    oracleSrcDSN,
-		sourceSchema: "SCOTT",
-		targetType:   "postgres",
-		targetDSN:    pgTargetDSN,
+		sourceType:    "oracle",
+		sourceDSN:     oracleSrcDSN,
+		sourceSchema:  "SCOTT",
+		targetType:    "postgres",
+		targetDSN:     pgTargetDSN,
 		schemaMapping: map[string]string{"SCOTT": schema},
 	})
 }
@@ -289,11 +289,11 @@ func TestMigrateE2E_MySQLToPG(t *testing.T) {
 	tgtDB := connectE2E(t, "postgres", pgTargetDSN)
 	setupPGSchema(t, tgtDB, schema)
 	runMigratePipeline(t, migratePipelineConfig{
-		sourceType:   "mysql",
-		sourceDSN:    mysqlSrcDSN,
-		sourceSchema: "default_db",
-		targetType:   "postgres",
-		targetDSN:    pgTargetDSN,
+		sourceType:    "mysql",
+		sourceDSN:     mysqlSrcDSN,
+		sourceSchema:  "default_db",
+		targetType:    "postgres",
+		targetDSN:     pgTargetDSN,
 		schemaMapping: map[string]string{"default_db": schema},
 	})
 }
@@ -302,11 +302,11 @@ func TestMigrateE2E_PGToMySQL(t *testing.T) {
 	dbName := setupMySQLTargetDB(t)
 	targetDSN := fmt.Sprintf("root:root123456@tcp(127.0.0.1:3306)/%s?charset=utf8mb4", dbName)
 	runMigratePipeline(t, migratePipelineConfig{
-		sourceType:   "postgres",
-		sourceDSN:    pgSrcDSN,
-		sourceSchema: "public",
-		targetType:   "mysql",
-		targetDSN:    targetDSN,
+		sourceType:    "postgres",
+		sourceDSN:     pgSrcDSN,
+		sourceSchema:  "public",
+		targetType:    "mysql",
+		targetDSN:     targetDSN,
 		schemaMapping: map[string]string{"public": dbName},
 	})
 }
@@ -317,11 +317,11 @@ func TestMigrateE2E_PGToOracle(t *testing.T) {
 	tgtDB := connectE2E(t, "oracle", oracleTargetDSN)
 	cleanupOracleTarget(t, tgtDB)
 	runMigratePipeline(t, migratePipelineConfig{
-		sourceType:   "postgres",
-		sourceDSN:    pgSrcDSN,
-		sourceSchema: "public",
-		targetType:   "oracle",
-		targetDSN:    oracleTargetDSN,
+		sourceType:    "postgres",
+		sourceDSN:     pgSrcDSN,
+		sourceSchema:  "public",
+		targetType:    "oracle",
+		targetDSN:     oracleTargetDSN,
 		schemaMapping: map[string]string{"public": "APPUSER"},
 	})
 }
@@ -330,11 +330,11 @@ func TestMigrateE2E_MySQLToOracle(t *testing.T) {
 	tgtDB := connectE2E(t, "oracle", oracleTargetDSN)
 	cleanupOracleTarget(t, tgtDB)
 	runMigratePipeline(t, migratePipelineConfig{
-		sourceType:   "mysql",
-		sourceDSN:    mysqlSrcDSN,
-		sourceSchema: "default_db",
-		targetType:   "oracle",
-		targetDSN:    oracleTargetDSN,
+		sourceType:    "mysql",
+		sourceDSN:     mysqlSrcDSN,
+		sourceSchema:  "default_db",
+		targetType:    "oracle",
+		targetDSN:     oracleTargetDSN,
 		schemaMapping: map[string]string{"default_db": "APPUSER"},
 	})
 }
@@ -394,7 +394,7 @@ func loadSchemaModelOrDie(t *testing.T, dbType, dsn, schema string) *md.SchemaMo
 	t.Helper()
 	cfg := &config.Config{
 		Metadata: config.MetadataConfig{Type: "database"},
-		Source: config.DBConfig{Type: dbType, DSN: dsn, Schema: schema},
+		Source:   config.DBConfig{Type: dbType, DSN: dsn, Schema: schema},
 	}
 	sm, err := loadSchemaModel(cfg)
 	if err != nil {
@@ -402,5 +402,3 @@ func loadSchemaModelOrDie(t *testing.T, dbType, dsn, schema string) *md.SchemaMo
 	}
 	return sm
 }
-
-

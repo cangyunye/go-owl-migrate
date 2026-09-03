@@ -18,7 +18,7 @@ func TestGenerateSelect(t *testing.T) {
 		t.Fatalf("files = %v, want 2", names)
 	}
 	content := readAll(t, files)
-	for _, want := range []string{"SELECT", "scott", "hr"} {
+	for _, want := range []string{"SELECT", "SCOTT", "HR"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("SELECT output missing %q:\n%s", want, content)
 		}
@@ -37,7 +37,7 @@ func TestGenerateSelectIncludeAndNoQuote(t *testing.T) {
 		t.Fatalf("include HR.EMP files = %v, want 1", fileNames(files))
 	}
 	content := readAll(t, files)
-	if !strings.Contains(content, "hr") || strings.Contains(content, "scott") {
+	if !strings.Contains(content, "HR") || strings.Contains(content, "SCOTT") {
 		t.Errorf("include should keep only hr.emp:\n%s", content)
 	}
 

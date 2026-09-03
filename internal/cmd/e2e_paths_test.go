@@ -244,9 +244,9 @@ func TestE2E_OutputDirsStayCWDRelative(t *testing.T) {
 	resetRootState(t)
 
 	cases := []struct {
-		args     []string
-		flag     string
-		wantDef  string
+		args    []string
+		flag    string
+		wantDef string
 	}{
 		{[]string{"export", "ddl"}, "output", "./output/ddl/"},
 		{[]string{"export", "data"}, "output", "./output/data/"},

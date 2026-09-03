@@ -272,18 +272,18 @@ func (g *DDLGenerator) ifExists() string {
 }
 
 func (g *DDLGenerator) dropTableSQL(schema, table string) string {
-	return fmt.Sprintf("DROP TABLE %s%s.%s;\n", g.ifExists(), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(table))
+	return fmt.Sprintf("DROP TABLE %s%s.%s;\n", g.ifExists(), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, g.mappedSchema(schema)), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, table))
 }
 
 func (g *DDLGenerator) dropViewSQL(schema, view string) string {
-	return fmt.Sprintf("DROP VIEW %s%s.%s;\n", g.ifExists(), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(view))
+	return fmt.Sprintf("DROP VIEW %s%s.%s;\n", g.ifExists(), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, g.mappedSchema(schema)), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, view))
 }
 
 func (g *DDLGenerator) dropIndexSQL(schema, table, indexName string) string {
 	if strings.Contains(g.dialect.Name(), "mysql") {
-		return fmt.Sprintf("DROP INDEX %s ON %s.%s;\n", g.dialect.Quote(indexName), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(table))
+		return fmt.Sprintf("DROP INDEX %s ON %s.%s;\n", dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, indexName), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, g.mappedSchema(schema)), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, table))
 	}
-	return fmt.Sprintf("DROP INDEX %s%s.%s;\n", g.ifExists(), g.dialect.Quote(g.mappedSchema(schema)), g.dialect.Quote(indexName))
+	return fmt.Sprintf("DROP INDEX %s%s.%s;\n", g.ifExists(), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, g.mappedSchema(schema)), dialect.QuoteName(g.dialect.IdentifierQuoter, g.opts, indexName))
 }
 
 func (g *DDLGenerator) writeFile(schema, name, objType, content string) (string, error) {

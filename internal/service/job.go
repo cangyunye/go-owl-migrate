@@ -15,13 +15,13 @@ import (
 var ErrNoGeneration = errors.New("nothing generated yet")
 
 type Job struct {
-	JobID      string  `json:"job_id"`
-	Type       string  `json:"type"`
-	Status     string  `json:"status"`
-	Config     string  `json:"config"`
-	PID        int     `json:"pid"`
-	CreatedAt  string  `json:"created_at"`
-	FinishedAt string  `json:"finished_at,omitempty"`
+	JobID      string `json:"job_id"`
+	Type       string `json:"type"`
+	Status     string `json:"status"`
+	Config     string `json:"config"`
+	PID        int    `json:"pid"`
+	CreatedAt  string `json:"created_at"`
+	FinishedAt string `json:"finished_at,omitempty"`
 }
 
 type ProgressEvent struct {

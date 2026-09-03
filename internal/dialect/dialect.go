@@ -70,9 +70,22 @@ type TypeMapper interface {
 }
 
 // IdentifierQuoter quotes identifiers per database rules.
+// Quote applies the dialect's folding convention (PG/Oracle quoters fold to the
+// dialect's unquoted case); QuotePreserve quotes with the original case kept,
+// which DDL/建表 output uses by default (ADR-001).
 type IdentifierQuoter interface {
 	Quote(name string) string
+	QuotePreserve(name string) string
 	Unquote(quoted string) string
+}
+
+// QuoteName quotes an identifier for DDL output honoring BuildOptions:
+// NoQuoteIdentifiers → raw name（由目标库按惯例折叠）；否则 quote 并保留原大小写（ADR-001）。
+func QuoteName(q IdentifierQuoter, opts BuildOptions, name string) string {
+	if opts.NoQuoteIdentifiers {
+		return name
+	}
+	return q.QuotePreserve(name)
 }
 
 // Features describes database capabilities.

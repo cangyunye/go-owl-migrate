@@ -72,6 +72,9 @@ func (SQLite3TypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 
 type SQLite3Quoter struct{}
 
+func (SQLite3Quoter) QuotePreserve(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 func (SQLite3Quoter) Quote(name string) string     { return `"` + name + `"` }
 func (SQLite3Quoter) Unquote(quoted string) string { return strings.Trim(quoted, `"`) }
 
@@ -195,12 +198,24 @@ func (SQLite3DDLBuilder) BuildCreateTrigger(trg *md.TriggerDef, opts dialect.Bui
 }
 
 // Unsupported DDL stubs
-func (SQLite3DDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error)       { return "", nil }
-func (SQLite3DDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (SQLite3DDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error)              { return "", nil }
-func (SQLite3DDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error)        { return "", nil }
-func (SQLite3DDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error)         { return "", nil }
-func (SQLite3DDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) { return "", nil }
+func (SQLite3DDLBuilder) BuildCreateSequence(seq *md.SequenceDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (SQLite3DDLBuilder) BuildCreateSynonym(syn *md.SynonymDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (SQLite3DDLBuilder) BuildCreateMView(mv *md.MViewDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (SQLite3DDLBuilder) BuildCreateFunction(fn *md.FunctionDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (SQLite3DDLBuilder) BuildCreatePackage(pkg *md.PackageDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
+func (SQLite3DDLBuilder) BuildCreatePackageBody(pkg *md.PackageBodyDef, opts dialect.BuildOptions) (string, error) {
+	return "", nil
+}
 
 // ── DMLHelper ──
 

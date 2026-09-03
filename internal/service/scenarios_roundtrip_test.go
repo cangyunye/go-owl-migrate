@@ -72,7 +72,7 @@ func TestRoundTrip_ExportDDL(t *testing.T) {
 func TestRoundTrip_ExportDDL_Database(t *testing.T) {
 	got, _ := roundTrip(t, "export-ddl", map[string]string{
 		"metadata_type": "database",
-		"source_type": "oracle", "source_dsn": "oracle://x", "source_schema": "SCOTT",
+		"source_type":   "oracle", "source_dsn": "oracle://x", "source_schema": "SCOTT",
 		"target_type": "postgres",
 	})
 	checkFields(t, got, map[string]string{
@@ -107,15 +107,15 @@ func TestRoundTrip_Export(t *testing.T) {
 
 func TestRoundTrip_Import(t *testing.T) {
 	got, scenario := roundTrip(t, "import", map[string]string{
-		"data_dir": "./output/data/",
+		"data_dir":    "./output/data/",
 		"target_type": "postgres", "target_dsn": "host=h", "target_schema": "public",
 	})
 	if scenario != "import" {
 		t.Errorf("detected %q, want import", scenario)
 	}
 	checkFields(t, got, map[string]string{
-		"data_dir":      "./output/data/",
-		"target_type":   "postgres", "target_dsn": "host=h", "target_schema": "public",
+		"data_dir":    "./output/data/",
+		"target_type": "postgres", "target_dsn": "host=h", "target_schema": "public",
 	})
 }
 

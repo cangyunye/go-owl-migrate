@@ -122,6 +122,9 @@ func (MySQLTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 
 type MySQLQuoter struct{}
 
+func (MySQLQuoter) QuotePreserve(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
 func (MySQLQuoter) Quote(name string) string     { return fmt.Sprintf("`%s`", name) }
 func (MySQLQuoter) Unquote(quoted string) string { return strings.Trim(quoted, "`") }
 

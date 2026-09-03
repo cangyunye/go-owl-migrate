@@ -34,7 +34,7 @@ func GenerateSelect(sm *md.SchemaModel, cfg *config.Config, include []string, ba
 		pageSize = 5000
 	}
 
-	quoteFn := d.Quote
+	quoteFn := d.IdentifierQuoter.QuotePreserve // 保真引用，与生成 DDL 一致（ADR-001）
 	if noQuote != nil && *noQuote {
 		quoteFn = func(s string) string { return s }
 	}

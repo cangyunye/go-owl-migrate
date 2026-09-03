@@ -128,6 +128,9 @@ func defaultIntPrecision(p, fallback int) int {
 
 type OracleQuoter struct{}
 
+func (OracleQuoter) QuotePreserve(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 func (OracleQuoter) Quote(name string) string     { return fmt.Sprintf(`"%s"`, strings.ToUpper(name)) }
 func (OracleQuoter) Unquote(quoted string) string { return strings.Trim(quoted, `"`) }
 

@@ -71,10 +71,10 @@ func (pw *ProgressWriter) Close() error {
 }
 
 type HeartbeatMonitor struct {
-	heartbeatPath string
-	checkInterval time.Duration
+	heartbeatPath  string
+	checkInterval  time.Duration
 	staleThreshold time.Duration
-	OnParentDeath func()
+	OnParentDeath  func()
 }
 
 func NewHeartbeatMonitor(heartbeatPath string, checkInterval, staleThreshold time.Duration) *HeartbeatMonitor {

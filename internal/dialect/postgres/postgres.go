@@ -116,6 +116,9 @@ func (PGTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 
 type PGQuoter struct{}
 
+func (PGQuoter) QuotePreserve(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 func (PGQuoter) Quote(name string) string     { return fmt.Sprintf(`"%s"`, strings.ToLower(name)) }
 func (PGQuoter) Unquote(quoted string) string { return strings.Trim(quoted, `"`) }
 
@@ -140,10 +143,7 @@ func (PGDDLBuilder) BuildCreateTable(t *md.TableDef, opts dialect.BuildOptions) 
 		if opts.NoQuoteIdentifiers {
 			return name
 		}
-		if opts.PreserveIdentifierCase {
-			return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-		}
-		return fmt.Sprintf(`"%s"`, strings.ToLower(name))
+		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
 
 	b.WriteString("CREATE TABLE ")
