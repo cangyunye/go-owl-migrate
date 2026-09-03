@@ -69,6 +69,23 @@ End-to-end pipeline: extract metadata from source → create target tables → e
 
 ## Object Types
 
+**附随对象 (attached)**:
+随所属表自动连带的对象——列、主键、索引、外键、分区（表属性）与表触发器。选择一张表即选中其全部附随对象，无需也不能单独挑选。
+_Avoid_: 子对象、依赖对象
+
+**独立对象 (standalone)**:
+schema 级、不与特定表绑定的对象——视图、物化视图、序列、同义词、函数/存储过程、包、包体。只在被显式选择或选择整个 schema 时产出；不因被某表依赖而自动上卷。
+_Avoid_: schema 级对象、全局对象
+
+**对象选择 (object selection)**:
+一次操作（元数据导出 / DDL / SELECT 生成）选取的对象集合，由“对象类型 × schema × 表名模式”三要素构成。附随对象随表连带，独立对象须显式选择或整 schema 全选。
+_Avoid_: scope、过滤、include/exclude
+
+**能力 (capability)**:
+某方言 querier 实际支持的对象类型集合（如 MySQL 无序列/同义词/包）。抽取、导出与 UI 只消费“能力 ∩ 用户选择”。
+_Avoid_: feature
+
+
 | Object | SchemaModel Storage | DDLBuilder Method | MySQL | Oracle | PostgreSQL | SQLite3 |
 |--------|-------------------|-------------------|-------|--------|------------|---------|
 | Table | Tables map (keyed by `SCHEMA.NAME`) | `BuildCreateTable` | ✅ | ✅ | ✅ | ✅ |
