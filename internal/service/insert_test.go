@@ -89,3 +89,39 @@ func TestGenerateInsertIncludeFilter(t *testing.T) {
 		t.Fatalf("include filter files = %v", fileNames(files))
 	}
 }
+
+// ── P5: 生命周期——产物目录缺失时框架自建（Ensure）──
+
+func TestGenerationCreatesMissingOutDir(t *testing.T) {
+	sm := ddlFixture(t) // SCOTT.EMP / HR.EMP
+	dataDir := t.TempDir()
+	writeCSVFile(t, dataDir, "scott.emp.csv", "EMPNO,ENAME", "1,SMITH")
+	base := filepath.Join(t.TempDir(), "nested", "out")
+
+	cases := []struct {
+		name string
+		run  func(dir string) error
+	}{
+		{"ddl", func(dir string) error { _, err := GenerateDDL(sm, ddlCfg("oracle"), nil, nil, dir); return err }},
+		{"select", func(dir string) error {
+			_, err := GenerateSelect(sm, ddlCfg("oracle"), nil, "", 0, nil, dir)
+			return err
+		}},
+		{"insert", func(dir string) error {
+			_, err := GenerateInsert(&config.Config{}, nil, dataDir, dir, InsertOptions{Dialect: "postgres"})
+			return err
+		}},
+		{"metadata", func(dir string) error { _, err := ExportMetadataFiles(dir, sm, nil); return err }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := filepath.Join(base, c.name)
+			if err := c.run(dir); err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+				t.Errorf("%s output dir not auto-created", c.name)
+			}
+		})
+	}
+}
