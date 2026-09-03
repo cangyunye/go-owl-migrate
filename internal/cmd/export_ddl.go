@@ -6,8 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
-	"github.com/cangyunye/go-owl-migrate/internal/generator"
-	"github.com/cangyunye/go-owl-migrate/internal/registry"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
 func exportDDLCmd() *cobra.Command {
@@ -34,85 +33,19 @@ func exportDDLCmd() *cobra.Command {
 			return err
 		}
 
-		d, err := registry.Get(cfg.DDL.TargetDialect)
-		if err != nil {
-			return err
-		}
-
-		opts := toBuildOptions(cfg)
+		var noQuotePtr *bool
 		if cmd.Flags().Changed("no-quote-identifiers") {
-			opts.NoQuoteIdentifiers = noQuote
+			noQuotePtr = &noQuote
 		}
-		// Qualify (same-dialect) or convert (cross-dialect) column types so
-		// bare live-extracted types (e.g. varchar, decimal) become valid
-		// target DDL instead of being emitted verbatim.
-		sm = convertSchemaModelForDDL(sm, cfg, d, opts)
-		gen := generator.NewDDLGenerator(d, opts, outputDir)
 
-		files, err := gen.GenerateTables(sm)
+		files, err := service.GenerateDDL(sm, cfg, cfg.Export.Tables.Include, noQuotePtr, outputDir)
 		if err != nil {
-			return err
+			return fmt.Errorf("generate ddl: %w", err)
 		}
 		for _, f := range files {
 			fmt.Printf("  %s\n", f)
 		}
-
-		idxFiles, _ := gen.GenerateIndexes(sm)
-		for _, f := range idxFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		viewFiles, _ := gen.GenerateViews(sm)
-		for _, f := range viewFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		// Determine schema for sequences from config or loaded metadata
-		schema := cfg.Source.Schema
-		if schema == "" {
-			if tables := sm.GetTables(); len(tables) > 0 {
-				schema = tables[0].TableSchema
-			}
-		}
-		seqFiles, _ := gen.GenerateSequences(sm, schema)
-		for _, f := range seqFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		synFiles, _ := gen.GenerateSynonyms(sm, schema)
-		for _, f := range synFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		mvFiles, _ := gen.GenerateMViews(sm)
-		for _, f := range mvFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		trgFiles, _ := gen.GenerateTriggers(sm)
-		for _, f := range trgFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		fnFiles, _ := gen.GenerateFunctions(sm, schema)
-		for _, f := range fnFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		pkgFiles, _ := gen.GeneratePackages(sm, schema)
-		for _, f := range pkgFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		pkgBodyFiles, _ := gen.GeneratePackageBodies(sm, schema)
-		for _, f := range pkgBodyFiles {
-			fmt.Printf("  %s\n", f)
-		}
-
-		total := len(files) + len(idxFiles) + len(viewFiles) + len(seqFiles) +
-			len(synFiles) + len(mvFiles) + len(trgFiles) + len(fnFiles) +
-			len(pkgFiles) + len(pkgBodyFiles)
-		fmt.Printf("Generated %d DDL files\n", total)
+		fmt.Printf("Generated %d DDL files\n", len(files))
 		return nil
 	}
 

@@ -9,9 +9,7 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
-	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
-	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
 func empTable(t *testing.T) *md.TableDef {
@@ -31,43 +29,6 @@ func empTable(t *testing.T) *md.TableDef {
 	_ = tbl.AddColumn(sal)
 	tbl.AddPrimaryKey("PK_EMP", "EMPNO")
 	return tbl
-}
-
-func TestQualifyColumnType(t *testing.T) {
-	tests := []struct {
-		name string
-		col  func() *md.ColumnDef
-		want string
-	}{
-		{"varchar with length", func() *md.ColumnDef {
-			c := mustCol(t, "s", "t", "c", 1, "VARCHAR2")
-			c.DataLength = 10
-			return c
-		}, "VARCHAR2(10)"},
-		{"number with precision only", func() *md.ColumnDef {
-			c := mustCol(t, "s", "t", "c", 1, "NUMBER")
-			c.DataPrecision = 4
-			return c
-		}, "NUMBER(4)"},
-		{"number with precision and scale", func() *md.ColumnDef {
-			c := mustCol(t, "s", "t", "c", 1, "DECIMAL")
-			c.DataPrecision, c.DataScale = 7, 2
-			return c
-		}, "DECIMAL(7,2)"},
-		{"type already qualified passes through", func() *md.ColumnDef {
-			return mustCol(t, "s", "t", "c", 1, "VARCHAR(100)")
-		}, "VARCHAR(100)"},
-		{"bare type without length stays bare", func() *md.ColumnDef {
-			return mustCol(t, "s", "t", "c", 1, "BLOB")
-		}, "BLOB"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := qualifyColumnType(tt.col(), dialect.BuildOptions{}); got != tt.want {
-				t.Errorf("qualifyColumnType() = %q, want %q", got, tt.want)
-			}
-		})
-	}
 }
 
 func TestBuildCreateTableViaDialect_CrossDialect(t *testing.T) {
@@ -135,70 +96,6 @@ func TestBuildCreateTableViaDialect_SourceDialectConfig(t *testing.T) {
 	if !strings.Contains(sql, `"ENAME" VARCHAR(10)`) {
 		t.Errorf("source_dialect should drive conversion:\n%s", sql)
 	}
-}
-
-func TestConvertSchemaModelForDDL(t *testing.T) {
-	// Build a live-extraction style model: bare data_type with length/precision
-	// in separate fields (what information_schema returns).
-	tbl, _ := md.NewTableDef("test", "t")
-	name, _ := md.NewColumnDef("test", "t", "name", 1, "VARCHAR")
-	name.DataLength = 50
-	tbl.AddColumn(name)
-	sal, _ := md.NewColumnDef("test", "t", "sal", 2, "DECIMAL")
-	sal.DataPrecision, sal.DataScale = 12, 2
-	tbl.AddColumn(sal)
-	txt, _ := md.NewColumnDef("test", "t", "note", 3, "TEXT")
-	tbl.AddColumn(txt)
-	sm := md.NewSchemaModel()
-	_ = sm.AddTable(tbl)
-
-	t.Run("same dialect qualifies", func(t *testing.T) {
-		cfg := &config.Config{}
-		cfg.Source.Type = "oceanbase-mysql"
-		cfg.DDL.TargetDialect = "oceanbase-mysql"
-		tgt, _ := registry.Get("oceanbase-mysql")
-		out := convertSchemaModelForDDL(sm, cfg, tgt, dialect.BuildOptions{})
-		if out == sm {
-			t.Fatal("expected a converted model")
-		}
-		got := out.GetTables()[0].GetColumns()
-		if got[0].DataType != "VARCHAR(50)" {
-			t.Errorf("name type = %q, want VARCHAR(50)", got[0].DataType)
-		}
-		if got[1].DataType != "DECIMAL(12,2)" {
-			t.Errorf("sal type = %q, want DECIMAL(12,2)", got[1].DataType)
-		}
-		if got[2].DataType != "TEXT" {
-			t.Errorf("note type = %q, want TEXT", got[2].DataType)
-		}
-	})
-
-	t.Run("cross dialect converts via LogicalType IR", func(t *testing.T) {
-		cfg := &config.Config{}
-		cfg.Source.Type = "mysql"
-		cfg.DDL.TargetDialect = "postgres"
-		tgt, _ := registry.Get("postgres")
-		out := convertSchemaModelForDDL(sm, cfg, tgt, dialect.BuildOptions{})
-		if out == sm {
-			t.Fatal("expected a converted model")
-		}
-		got := out.GetTables()[0].GetColumns()
-		if got[0].DataType != "VARCHAR(50)" {
-			t.Errorf("name type = %q, want VARCHAR(50)", got[0].DataType)
-		}
-		if got[1].DataType != "NUMERIC(12,2)" {
-			t.Errorf("sal type = %q, want NUMERIC(12,2)", got[1].DataType)
-		}
-	})
-
-	t.Run("no source dialect leaves model untouched", func(t *testing.T) {
-		cfg := &config.Config{}
-		cfg.DDL.TargetDialect = "postgres"
-		tgt, _ := registry.Get("postgres")
-		if out := convertSchemaModelForDDL(sm, cfg, tgt, dialect.BuildOptions{}); out != sm {
-			t.Error("model should be returned unchanged when no source dialect is known")
-		}
-	})
 }
 
 func TestBuildCreateTableViaDialect_SameFamilyPreservesDefaults(t *testing.T) {

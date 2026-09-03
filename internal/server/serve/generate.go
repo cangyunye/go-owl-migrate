@@ -171,58 +171,29 @@ func (s *Server) handleGenerateDDL(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
-	sm = filterSchemaTables(sm, resolveTableInclude(req.Tables, cfg))
-
-	d, err := registry.Get(cfg.DDL.TargetDialect)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "unknown target dialect: "+err.Error())
-		return
-	}
 
 	outDir := filepath.Join(paths.TempDir(), "ddl-"+randSuffix())
 	os.MkdirAll(outDir, 0755)
-	opts := service.ToBuildOptions(cfg)
-	if req.NoQuoteIdentifiers != nil {
-		opts.NoQuoteIdentifiers = *req.NoQuoteIdentifiers
-	}
-	gen := generator.NewDDLGenerator(d, opts, outDir)
 
-	var all []string
-	collect := func(files []string, e error) {
-		if e == nil {
-			all = append(all, files...)
-		}
-	}
-	tbls, err := gen.GenerateTables(sm)
+	// CLI export ddl 与 serve 共用 service.GenerateDDL（含跨方言类型转换、
+	// 按 owner 分组、include 过滤、no-quote 覆盖）。
+	include := resolveTableInclude(req.Tables, cfg)
+	files, err := service.GenerateDDL(sm, cfg, include, req.NoQuoteIdentifiers, outDir)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "generate tables: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "generate ddl: "+err.Error())
 		return
-	}
-	all = append(all, tbls...)
-	collect(gen.GenerateIndexes(sm))
-	collect(gen.GenerateViews(sm))
-	collect(gen.GenerateMViews(sm))
-	collect(gen.GenerateTriggers(sm))
-	// schema 级对象（序列/同义词/函数/包/包体）按模型实际 owner 分组生成，
-	// 不再依赖 cfg.Source.Schema 单一全局值（多 owner 模型正确性）。
-	for _, sch := range sm.Schemas() {
-		collect(gen.GenerateSequences(sm, sch))
-		collect(gen.GenerateSynonyms(sm, sch))
-		collect(gen.GenerateFunctions(sm, sch))
-		collect(gen.GeneratePackages(sm, sch))
-		collect(gen.GeneratePackageBodies(sm, sch))
 	}
 
 	meta := sourceMetaFrom(cfg.Source, "")
-	meta.Detail = map[string]any{"file_count": len(all)}
+	meta.Detail = map[string]any{"file_count": len(files)}
 	if err := s.recordGenOutput("ddl", outDir, meta); err != nil {
 		writeError(w, http.StatusInternalServerError, "record output: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"output_dir": outDir,
-		"count":      len(all),
-		"files":      readGenFiles(all),
+		"count":      len(files),
+		"files":      readGenFiles(files),
 	})
 }
 
