@@ -108,6 +108,7 @@ func ParseTables(r io.Reader, normalize bool) ([]*md.TableDef, error) {
 		tbl.RowCount = getInt(m, "ROW_COUNT")
 		tbl.Charset = m["CHARSET"]
 		tbl.Collation = m["COLLATION"]
+		tbl.Owner = m["OWNER"]
 		tables = append(tables, tbl)
 	}
 	return tables, nil

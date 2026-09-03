@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cangyunye/go-owl-migrate/internal/config"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
@@ -122,14 +123,14 @@ func TestExportMetadataFilesRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, want := range map[string]string{
-		"functions.csv":     "FN1",
-		"packages.csv":      "PKG1",
+		"functions.csv":      "FN1",
+		"packages.csv":       "PKG1",
 		"package_bodies.csv": "PKG1",
-		"mviews.csv":        "MV1",
-		"synonyms.csv":      "EMP_SYN",
-		"sequences.csv":     "SEQ1",
-		"triggers.csv":      "TRG1",
-		"views.csv":         "EMP_V",
+		"mviews.csv":         "MV1",
+		"synonyms.csv":       "EMP_SYN",
+		"sequences.csv":      "SEQ1",
+		"triggers.csv":       "TRG1",
+		"views.csv":          "EMP_V",
 	} {
 		b, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
@@ -139,4 +140,113 @@ func TestExportMetadataFilesRows(t *testing.T) {
 			t.Errorf("%s missing %s", name, want)
 		}
 	}
+}
+
+// ── 往返自检：规范 CSV 导出 → csv loader 读回一致 ──
+
+func TestExportMetadataRoundtrip(t *testing.T) {
+	sm := exportFixture(t)
+	dir := t.TempDir()
+	if _, err := ExportMetadataFiles(dir, sm, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// loader 支持目录 = 直接指向导出目录；校验载入的表/列核心字段
+	cfg := &config.Config{Metadata: config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{
+		Path: dir, Delimiter: ",", Encoding: "utf-8", HasHeader: true, ColumnNameMatching: "case_insensitive"}}}
+	got, err := LoadMetadata(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(got.GetTables()); n != 1 {
+		t.Fatalf("tables after roundtrip = %d, want 1", n)
+	}
+	back := got.GetTables()[0]
+	if back.TableName != "EMP" || back.Owner != "SCOTT" || back.TableComment != "员工表" {
+		t.Errorf("table fidelity lost: %+v", back)
+	}
+	if back.Partitioned != "YES" || !strings.Contains(back.PartitionInfo, "PARTITION BY HASH") {
+		t.Errorf("partition fidelity lost: %+v", back)
+	}
+	cols := back.GetColumns()
+	if len(cols) != 1 || cols[0].ColumnName != "EMPNO" || cols[0].IsIdentity != "YES" {
+		t.Errorf("column fidelity lost: %+v", cols)
+	}
+	if len(back.GetPrimaryKeys()) != 1 {
+		t.Error("primary key fidelity lost")
+	}
+	// 对象文件回读
+	for _, check := range []struct{ name, want string }{
+		{"views", "EMP_V"}, {"sequences", "SEQ1"}, {"synonyms", "EMP_SYN"},
+		{"triggers", "TRG1"}, {"functions", "FN1"}, {"packages", "PKG1"},
+		{"mviews", "MV1"}, {"package_bodies", "PKG1"},
+	} {
+		if !loaderHas(got, check.name, check.want) {
+			t.Errorf("roundtrip lost %s (%s)", check.name, check.want)
+		}
+	}
+}
+
+func loaderHas(sm *md.SchemaModel, kind, name string) bool {
+	switch kind {
+	case "views":
+		for _, v := range sm.Views {
+			if v.ViewName == name {
+				return true
+			}
+		}
+	case "mviews":
+		for _, v := range sm.GetMViews() {
+			if v.MViewName == name {
+				return true
+			}
+		}
+	case "sequences":
+		for _, sch := range sm.Schemas() {
+			for _, s := range sm.GetSequences(sch) {
+				if s.SequenceName == name {
+					return true
+				}
+			}
+		}
+	case "synonyms":
+		for _, s := range sm.Synonyms {
+			if s.SynonymName == name {
+				return true
+			}
+		}
+	case "triggers":
+		for _, tbl := range sm.GetTables() {
+			for _, trg := range sm.GetTriggers(tbl.TableSchema, tbl.TableName) {
+				if trg.TriggerName == name {
+					return true
+				}
+			}
+		}
+	case "functions":
+		for _, sch := range sm.Schemas() {
+			for _, f := range sm.GetFunctions(sch) {
+				if f.FunctionName == name {
+					return true
+				}
+			}
+		}
+	case "packages":
+		for _, sch := range sm.Schemas() {
+			for _, p := range sm.GetPackages(sch) {
+				if p.PackageName == name {
+					return true
+				}
+			}
+		}
+	case "package_bodies":
+		for _, sch := range sm.Schemas() {
+			for _, p := range sm.GetPackageBodies(sch) {
+				if p.PackageName == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }

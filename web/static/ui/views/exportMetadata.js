@@ -55,7 +55,12 @@ export async function render(root /*Element*/, params) {
         +   '<div class="field">'
         +     '<label>范围</label>'
         +     '<input type="text" id="em-scope" class="mono" value="all" placeholder="all / schema:NAME / table:T1,T2">'
-        +     '<div class="field-help"><code>all</code> = 整个 schema · <code>schema:NAME</code> = 指定 schema · <code>table:T1,T2</code> = 指定表</div>'
+        +     '<div class="field-help"><code>all</code> = 整个 schema · <code>schema:NAME</code> = 指定 schema · <code>table:T1,T2</code> = 指定表（支持 glob，如 table:EMP,T_*）</div>'
+        +   '</div>'
+        +   '<div class="field">'
+        +     '<label>对象类型</label>'
+        +     '<input type="text" id="em-objects" class="mono" value="" placeholder="留空 = 全部类型">'
+        +     '<div class="field-help">逗号分隔对象类型：<code>tables,columns,primary_keys,indexes,foreign_keys,views,mviews,sequences,synonyms,triggers,functions,packages,package_bodies</code></div>'
         +   '</div>'
         +   '<div class="form-actions">'
         +     '<button class="btn-primary" id="btn-export" type="button">'
@@ -86,6 +91,7 @@ export async function render(root /*Element*/, params) {
     const schemaInput = root.querySelector('#em-src-schema');
     const hint = root.querySelector('#em-dsn-hint');
     const scopeInput = root.querySelector('#em-scope');
+    const objectsInput = root.querySelector('#em-objects');
     const formatSel = root.querySelector('#em-format');
     const resultEl = root.querySelector('#em-result');
     const countEl = root.querySelector('#em-count');
@@ -114,6 +120,7 @@ export async function render(root /*Element*/, params) {
                 },
                 format: formatSel.value,
                 scope: scopeInput.value,
+                objects: objectsInput.value.trim(),
             });
             resultEl.style.display = 'block';
             countEl.textContent = resp.table_count + ' 张表 · ' + resp.count + ' 个文件';
