@@ -65,6 +65,27 @@ Examples:
 				if objects, err = md.ParseObjectTypes(objectsRaw); err != nil {
 					return err
 				}
+				// 能力校验（ADR-004）：不支持的对象在 CLI 直接报错并列出支持清单
+				caps := extractor.Capabilities(cfg.Source.Type)
+				var unsupported []string
+				for _, o := range md.AllObjectTypes() {
+					if objects.Contains(o) && !caps.Contains(o) {
+						unsupported = append(unsupported, string(o))
+					}
+				}
+				if len(unsupported) > 0 {
+					return fmt.Errorf("source %q does not support object type(s): %s (supported: %s)",
+						cfg.Source.Type, strings.Join(unsupported, ","), func() string {
+							var a []string
+							for _, o := range md.AllObjectTypes() {
+								a = append(a, string(o))
+							}
+							return strings.Join(a, ",")
+						}())
+				}
+			}
+			if format == "sql" && service.TargetTypeFamily(cfg.Source.Type) != "oracle" {
+				return fmt.Errorf("format sql 仅 oracle 家族有意义（当前 source=%s）；请使用 csv", cfg.Source.Type)
 			}
 
 			db, err := openDB(cfg.Source)

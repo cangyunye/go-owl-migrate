@@ -73,6 +73,22 @@ func (s *Server) handleExportMetadata(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		// 能力校验（ADR-004）：CLI 报错 / 请求返回明确错误；UI 另按能力禁用选项
+		caps := extractor.Capabilities(src.Type)
+		var unsupported []string
+		for _, o := range md.AllObjectTypes() {
+			if objects.Contains(o) && !caps.Contains(o) {
+				unsupported = append(unsupported, string(o))
+			}
+		}
+		if len(unsupported) > 0 {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("source %q does not support object type(s): %s", src.Type, strings.Join(unsupported, ",")))
+			return
+		}
+	}
+	if format == "sql" && service.TargetTypeFamily(src.Type) != "oracle" {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("format sql 仅 oracle 家族有意义（当前 source=%s）；请使用 csv", src.Type))
+		return
 	}
 
 	db, err := service.OpenDB(src)
