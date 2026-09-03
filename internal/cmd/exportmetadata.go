@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"context"
-	"encoding/csv"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -15,13 +13,15 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
 func exportMetadataCmd() *cobra.Command {
 	var (
-		outputDir string
-		format    string
-		scope     string
+		outputDir  string
+		format     string
+		scope      string
+		objectsRaw string
 	)
 
 	cmd := &cobra.Command{
@@ -54,26 +54,19 @@ Examples:
 				return fmt.Errorf("source.dsn is required for metadata export")
 			}
 
-			// Determine schema and table filters from scope
-			targetSchema := cfg.Source.Schema
-			var tableFilter []string
+			// 统一范围解析：all | schema:NAME | table:GLOB[,GLOB] | schema:NAME:table:GLOB[,GLOB]
+			extractSchema, patterns, err := service.ParseMetadataExportScope(scope, cfg.Source.Schema)
+			if err != nil {
+				return err
+			}
 
-			if scope != "" && scope != "all" {
-				if strings.HasPrefix(scope, "schema:") {
-					targetSchema = strings.TrimPrefix(scope, "schema:")
-				} else if strings.HasPrefix(scope, "table:") {
-					tables := strings.TrimPrefix(scope, "table:")
-					tableFilter = strings.Split(tables, ",")
-				} else {
-					return fmt.Errorf("invalid scope %q: use all, schema:NAME, or table:T1,T2", scope)
+			var objects md.ObjectSet
+			if objectsRaw != "" {
+				if objects, err = md.ParseObjectTypes(objectsRaw); err != nil {
+					return err
 				}
 			}
 
-			if targetSchema == "" {
-				return fmt.Errorf("no schema specified (set source.schema or use --scope schema:NAME)")
-			}
-
-			// Connect and extract metadata
 			db, err := openDB(cfg.Source)
 			if err != nil {
 				return fmt.Errorf("connect to source: %w", err)
@@ -86,219 +79,46 @@ Examples:
 				return fmt.Errorf("ping source: %w", err)
 			}
 			pingCancel()
-			fmt.Printf("Connected to %s, schema: %s\n", cfg.Source.Type, targetSchema)
+			fmt.Printf("Connected to %s, schema: %s\n", cfg.Source.Type, extractSchema)
 
-			sm, err := extractor.Extract(db, dbconn.MetadataSourceType(config.DBConfig{Type: cfg.Source.Type, DSN: cfg.Source.DSN}), targetSchema)
+			sm, err := extractor.Extract(db, dbconn.MetadataSourceType(config.DBConfig{Type: cfg.Source.Type, DSN: cfg.Source.DSN}), extractSchema)
 			if err != nil {
 				return fmt.Errorf("extract metadata: %w", err)
 			}
 
-			// Filter tables if needed
-			tables := sm.GetTables()
-			if len(tableFilter) > 0 {
-				filterSet := make(map[string]bool)
-				for _, t := range tableFilter {
-					filterSet[strings.TrimSpace(t)] = true
+			// 按范围选择模型（附随随表；独立对象仅整 schema 范围，ADR-002）
+			if len(patterns) > 0 {
+				if sm, err = (md.ObjectSelector{Schemas: patterns}).Select(sm); err != nil {
+					return err
 				}
-				var filtered []*md.TableDef
-				for _, tbl := range tables {
-					if filterSet[tbl.TableName] {
-						filtered = append(filtered, tbl)
-					}
-				}
-				tables = filtered
 			}
-
-			fmt.Printf("Exporting %d tables\n", len(tables))
+			tableCount := len(sm.GetTables())
+			fmt.Printf("Exporting %d tables\n", tableCount)
 
 			switch format {
 			case "xlsx":
-				return exportMetadataXLSX(outputDir, sm, tables, targetSchema)
+				return exportMetadataXLSX(outputDir, sm, sm.GetTables(), extractSchema)
 			case "sql":
-				return exportMetadataSQL(outputDir, cfg.Source.Type, sm, tables, targetSchema)
+				return exportMetadataSQL(outputDir, cfg.Source.Type, sm, sm.GetTables(), extractSchema)
 			default:
-				return exportMetadataCSV(outputDir, sm, tables, targetSchema)
+				files, err := service.ExportMetadataFiles(outputDir, sm, objects)
+				if err != nil {
+					return fmt.Errorf("export metadata csv: %w", err)
+				}
+				for _, f := range files {
+					fmt.Printf("  %s\n", f)
+				}
+				fmt.Printf("Metadata exported to %s/ (%d files)\n", outputDir, len(files))
+				return nil
 			}
 		},
 	}
-
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/metadata/", "output directory (CSV) or file path (XLSX/SQL)")
 	cmd.Flags().StringVar(&format, "format", "csv", "output format: csv, xlsx, sql")
-	cmd.Flags().StringVar(&scope, "scope", "all", "export scope: all, schema:NAME, or table:T1,T2")
+	cmd.Flags().StringVar(&scope, "scope", "all", "export scope: all | schema:NAME | table:GLOB[,GLOB] | schema:NAME:table:GLOB[,GLOB]")
+	cmd.Flags().StringVar(&objectsRaw, "objects", "", "metadata object types to export, comma separated (default: all)")
 
 	return cmd
-}
-
-// ── CSV export ──
-
-func exportMetadataCSV(dir string, sm *md.SchemaModel, tables []*md.TableDef, schema string) error {
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	// tables.csv
-	if err := writeCSV(filepath.Join(dir, "tables.csv"), [][]string{
-		{"TABLE_SCHEMA", "TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT"},
-	}, func() [][]string {
-		var rows [][]string
-		for _, tbl := range tables {
-			rows = append(rows, []string{tbl.TableSchema, tbl.TableName, tbl.TableType, tbl.TableComment})
-		}
-		return rows
-	}()); err != nil {
-		return err
-	}
-
-	// columns.csv
-	var colRows [][]string
-	for _, tbl := range tables {
-		for _, col := range tbl.GetColumns() {
-			colRows = append(colRows, []string{
-				col.TableSchema, col.TableName, col.ColumnName,
-				fmt.Sprintf("%d", col.OrdinalPosition), col.DataType,
-				fmt.Sprintf("%d", col.DataLength), fmt.Sprintf("%d", col.DataPrecision),
-				fmt.Sprintf("%d", col.DataScale), col.Nullable, col.DefaultValue, col.ColumnComment,
-			})
-		}
-	}
-	if err := writeCSV(filepath.Join(dir, "columns.csv"), [][]string{
-		{"TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME", "ORDINAL_POSITION", "DATA_TYPE",
-			"DATA_LENGTH", "DATA_PRECISION", "DATA_SCALE", "NULLABLE", "DEFAULT_VALUE", "COLUMN_COMMENT"},
-	}, colRows); err != nil {
-		return err
-	}
-
-	// primary_keys.csv
-	var pkRows [][]string
-	for _, tbl := range tables {
-		for _, pk := range tbl.GetPrimaryKeys() {
-			pkRows = append(pkRows, []string{
-				pk.TableSchema, pk.TableName, pk.ConstraintName, pk.ColumnName,
-				fmt.Sprintf("%d", pk.OrdinalPosition),
-			})
-		}
-	}
-	if err := writeCSV(filepath.Join(dir, "primary_keys.csv"), [][]string{
-		{"TABLE_SCHEMA", "TABLE_NAME", "CONSTRAINT_NAME", "COLUMN_NAME", "ORDINAL_POSITION"},
-	}, pkRows); err != nil {
-		return err
-	}
-
-	// indexes.csv
-	var idxRows [][]string
-	for _, tbl := range tables {
-		for _, idx := range tbl.GetIndexes() {
-			idxRows = append(idxRows, []string{
-				idx.TableSchema, idx.TableName, idx.IndexName, idx.IndexType,
-				idx.Uniqueness, idx.ColumnName, fmt.Sprintf("%d", idx.OrdinalPosition),
-				idx.Expression,
-			})
-		}
-	}
-	if err := writeCSV(filepath.Join(dir, "indexes.csv"), [][]string{
-		{"TABLE_SCHEMA", "TABLE_NAME", "INDEX_NAME", "INDEX_TYPE", "UNIQUENESS",
-			"COLUMN_NAME", "ORDINAL_POSITION", "EXPRESSION"},
-	}, idxRows); err != nil {
-		return err
-	}
-
-	// foreign_keys.csv
-	var fkRows [][]string
-	for _, tbl := range tables {
-		for _, fk := range tbl.GetForeignKeys() {
-			fkRows = append(fkRows, []string{
-				fk.ConstraintName, fk.TableSchema, fk.TableName, fk.ColumnName,
-				fk.RefSchema, fk.RefTable, fk.RefColumn, fk.DeleteRule,
-			})
-		}
-	}
-	if err := writeCSV(filepath.Join(dir, "foreign_keys.csv"), [][]string{
-		{"CONSTRAINT_NAME", "TABLE_SCHEMA", "TABLE_NAME", "COLUMN_NAME",
-			"REF_SCHEMA", "REF_TABLE", "REF_COLUMN", "DELETE_RULE"},
-	}, fkRows); err != nil {
-		return err
-	}
-
-	// views.csv
-	var viewRows [][]string
-	for _, v := range sm.GetViews() {
-		viewRows = append(viewRows, []string{
-			v.ViewSchema, v.ViewName, v.ViewDefinition, v.ViewComment,
-		})
-	}
-	if err := writeCSV(filepath.Join(dir, "views.csv"), [][]string{
-		{"VIEW_SCHEMA", "VIEW_NAME", "VIEW_DEFINITION", "VIEW_COMMENT"},
-	}, viewRows); err != nil {
-		return err
-	}
-
-	// sequences.csv
-	var seqRows [][]string
-	for _, seq := range sm.GetSequences(schema) {
-		seqRows = append(seqRows, []string{
-			seq.SequenceSchema, seq.SequenceName,
-			fmt.Sprintf("%d", seq.StartValue), fmt.Sprintf("%d", seq.IncrementBy),
-			fmt.Sprintf("%d", seq.MinValue), fmt.Sprintf("%d", seq.MaxValue),
-			seq.Cycle, fmt.Sprintf("%d", seq.CacheSize),
-		})
-	}
-	if err := writeCSV(filepath.Join(dir, "sequences.csv"), [][]string{
-		{"SEQUENCE_SCHEMA", "SEQUENCE_NAME", "START_VALUE", "INCREMENT_BY",
-			"MIN_VALUE", "MAX_VALUE", "CYCLE", "CACHE_SIZE"},
-	}, seqRows); err != nil {
-		return err
-	}
-
-	// triggers.csv
-	var trgRows [][]string
-	for _, tbl := range tables {
-		for _, trg := range sm.GetTriggers(tbl.TableSchema, tbl.TableName) {
-			trgRows = append(trgRows, []string{
-				trg.TriggerSchema, trg.TriggerName, trg.TableSchema, trg.TableName,
-				trg.TriggerType, trg.TriggerEvent, trg.TriggerBody, trg.Status,
-			})
-		}
-	}
-	if err := writeCSV(filepath.Join(dir, "triggers.csv"), [][]string{
-		{"TRIGGER_SCHEMA", "TRIGGER_NAME", "TABLE_SCHEMA", "TABLE_NAME",
-			"TRIGGER_TYPE", "TRIGGER_EVENT", "TRIGGER_BODY", "STATUS"},
-	}, trgRows); err != nil {
-		return err
-	}
-
-	// synonyms.csv
-	var synRows [][]string
-	for _, syn := range sm.GetSynonyms(schema) {
-		synRows = append(synRows, []string{
-			syn.SynonymName, syn.SynonymSchema, syn.TargetSchema, syn.TargetName, syn.IsPublic,
-		})
-	}
-	if err := writeCSV(filepath.Join(dir, "synonyms.csv"), [][]string{
-		{"SYNONYM_NAME", "SYNONYM_SCHEMA", "TARGET_SCHEMA", "TARGET_NAME", "IS_PUBLIC"},
-	}, synRows); err != nil {
-		return err
-	}
-
-	fmt.Printf("Metadata exported to %s/\n", dir)
-	return nil
-}
-
-func writeCSV(path string, headers, rows [][]string) error {
-	f, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", path, err)
-	}
-	defer f.Close()
-
-	w := csv.NewWriter(f)
-	if len(headers) > 0 {
-		w.Write(headers[0])
-	}
-	for _, row := range rows {
-		w.Write(row)
-	}
-	w.Flush()
-	return w.Error()
 }
 
 // ── XLSX export ──

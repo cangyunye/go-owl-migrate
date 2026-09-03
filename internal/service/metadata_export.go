@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
@@ -218,4 +219,61 @@ func writeMetaCSVFile(dir, name string, headers []string, rows [][]string) (stri
 		return "", err
 	}
 	return path, nil
+}
+
+// ParseMetadataExportScope 解析 export-metadata 范围（CLI 与 serve 共用）：
+//
+//	(空 | all)                       → defaultSchema 全对象
+//	schema:NAME                      → 指定 schema 全对象
+//	schema:NAME:table:G[,G...]       → 指定 schema 内表名 glob（附随随表，ADR-002）
+//	table:G[,G...]                   → defaultSchema 内表名 glob
+//
+// 返回抽取 schema 与对象选择模式；多 schema 一次导出暂不支持（分次）。
+func ParseMetadataExportScope(scope, defaultSchema string) (string, []md.SchemaPattern, error) {
+	sc := strings.TrimSpace(scope)
+	if sc == "" || strings.EqualFold(sc, "all") {
+		if defaultSchema == "" {
+			return "", nil, fmt.Errorf("no schema specified (set source.schema or use scope schema:NAME)")
+		}
+		return defaultSchema, nil, nil
+	}
+	switch {
+	case strings.HasPrefix(sc, "schema:"):
+		rest := strings.TrimPrefix(sc, "schema:")
+		schemaPart := rest
+		tablePart := ""
+		if idx := strings.Index(rest, ":table:"); idx >= 0 {
+			schemaPart = rest[:idx]
+			tablePart = rest[idx+len(":table:"):]
+		}
+		if schemaPart == "" {
+			return "", nil, fmt.Errorf("invalid scope %q: missing schema name", scope)
+		}
+		if strings.Contains(schemaPart, ",") {
+			return "", nil, fmt.Errorf("invalid scope %q: 一次抽取单个 schema（多 schema 请分次）", scope)
+		}
+		if tablePart == "" {
+			return schemaPart, nil, nil
+		}
+		var patterns []md.SchemaPattern
+		for _, t := range strings.Split(tablePart, ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				patterns = append(patterns, md.SchemaPattern{Schema: schemaPart, TablePattern: t})
+			}
+		}
+		return schemaPart, patterns, nil
+	case strings.HasPrefix(sc, "table:"):
+		if defaultSchema == "" {
+			return "", nil, fmt.Errorf("no schema specified (set source.schema or use scope schema:NAME)")
+		}
+		var patterns []md.SchemaPattern
+		for _, t := range strings.Split(strings.TrimPrefix(sc, "table:"), ",") {
+			if t = strings.TrimSpace(t); t != "" {
+				patterns = append(patterns, md.SchemaPattern{TablePattern: t})
+			}
+		}
+		return defaultSchema, patterns, nil
+	default:
+		return "", nil, fmt.Errorf("invalid scope %q: use all, schema:NAME, table:GLOB[,GLOB], or schema:NAME:table:GLOB", scope)
+	}
 }
