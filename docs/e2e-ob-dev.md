@@ -27,6 +27,9 @@ go test -tags e2e -v ./internal/e2edev/ -count=1
 # OB-Oracle 为源的出口：→ PG / MySQL / export-metadata(CSV 13 文件·SQL·objects 过滤)
 go test -tags e2e -v ./internal/cmd/ -run 'TestDevMigrate_M7_ObOracleToPostgres|TestDevMigrate_M8_ObOracleToMySQL|TestExportMetadata_Live_ObOracle' -count=1
 
+# H1 serve 层真库 e2e（HTTP API：load(database)/tables/详情大小写/ddl 生成/export csv+sql）
+go test -tags e2e -v ./internal/server/serve/ -run 'TestH1_LiveServe' -count=1
+
 # 离线全量回归（无实库依赖）
 go test ./internal/... -count=1
 ```
@@ -58,7 +61,6 @@ go test ./internal/... -count=1
   Capabilities 放开 sequences，含单测）；oracle 序列大数(10^28-1)溢出修复；
   init 默认推荐 schema 映射 `recommendSchemaMapping` + golden 单测。
 
-## 5. 待办（H1/H2 网页端与人工项，留最后）
-- H1 serve httptest：用真库 DSN 走 `/metadata/load(database)` →
-  详情(大小写)/`/ddl/generate`/`/metadata/export` 的最小 e2e；
-- H2 浏览器人工：导出页对象勾选联动、迁移任务页、ZIP 下载（逐项清单另附）。
+## 5. 待办（仅 H2 浏览器人工项）
+- H2 浏览器人工：导出页对象勾选联动、迁移任务页、ZIP 下载（H1 serve API 层已自动化，
+  浏览器页面上的人工点检清单待执行时另附）。
