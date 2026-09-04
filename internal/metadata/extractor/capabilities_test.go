@@ -16,7 +16,7 @@ func TestCapabilities(t *testing.T) {
 		{"oceanbase-oracle", []string{"tables", "sequences", "synonyms", "mviews", "packages", "functions"}, nil},
 		{"postgres", []string{"tables", "sequences", "mviews", "functions", "views"}, []string{"synonyms", "packages", "package_bodies"}},
 		{"mysql", []string{"tables", "views", "functions", "triggers"}, []string{"sequences", "mviews", "synonyms", "packages", "package_bodies"}},
-		{"oceanbase-mysql", []string{"tables", "functions"}, []string{"packages", "package_bodies", "synonyms", "mviews"}},
+		{"oceanbase-mysql", []string{"tables", "functions", "sequences"}, []string{"packages", "package_bodies", "synonyms", "mviews"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.dbType, func(t *testing.T) {

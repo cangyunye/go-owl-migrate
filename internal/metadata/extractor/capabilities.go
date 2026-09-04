@@ -1,6 +1,8 @@
 package extractor
 
 import (
+	"strings"
+
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
@@ -9,8 +11,8 @@ import (
 //   - oracle 家族：全部对象（同义词/包/包体仅 oracle）
 //   - postgres：无同义词/包/包体
 //   - mysql 家族：无序列/物化视图/同义词/包/包体（有函数/触发器）
-//   - OceanBase MySQL 租户原生支持 SEQUENCE，OB 版本/字典查询待实库验证后放开
-//     （当前随 mysql base 不计入，避免宣称未经验证的能力）。
+//   - OceanBase MySQL 租户（4.x）原生支持 SEQUENCE：已实测 CREATE SEQUENCE /
+//     NEXTVAL / oceanbase.__all_sequence_object 字典可用（HANDOFF §三.2 P6-2）。
 func Capabilities(dbType string) md.ObjectSet {
 	base := normalizeDBType(dbType)
 	out := md.ObjectSet{}
@@ -26,6 +28,9 @@ func Capabilities(dbType string) md.ObjectSet {
 		add("mviews", "sequences", "synonyms", "packages", "package_bodies")
 	case "postgres":
 		add("mviews", "sequences")
+	}
+	if strings.EqualFold(dbType, "oceanbase-mysql") {
+		add("sequences")
 	}
 	return out
 }

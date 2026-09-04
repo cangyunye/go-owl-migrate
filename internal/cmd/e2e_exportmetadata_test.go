@@ -13,6 +13,7 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
 func TestExportMetadata_Oracle_CSV(t *testing.T) {
@@ -224,4 +225,21 @@ func contains(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// exportMetadataCSV 是 P3 收编前的本地直写实现；现委托规范 writer
+// （service.ExportMetadataFiles，13 文件）。tables 参数用于收窄输出模型
+// （scope-filter 用例），空/全量时直接导出整个模型。
+func exportMetadataCSV(out string, sm *md.SchemaModel, tables []*md.TableDef, _ string) error {
+	if len(tables) > 0 && len(tables) != len(sm.GetTables()) {
+		narrowed := md.NewSchemaModel()
+		for _, tbl := range tables {
+			if err := narrowed.AddTable(tbl); err != nil {
+				return err
+			}
+		}
+		sm = narrowed
+	}
+	_, err := service.ExportMetadataFiles(out, sm, nil)
+	return err
 }

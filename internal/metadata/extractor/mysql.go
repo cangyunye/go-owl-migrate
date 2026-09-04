@@ -480,8 +480,70 @@ func (MySQLMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDef
 	return views, rows.Err()
 }
 
+// MySQLMetadataQuerier 仅 mysql base：无序列（MySQL 8.0 无原生序列对象）。
 func (MySQLMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.SequenceDef, error) {
-	return nil, nil // MySQL 8.0 does not have sequences as native objects
+	return nil, nil
+}
+
+// ── OceanBase MySQL 租户：原生 SEQUENCE（OB 4.x 实测：CREATE SEQUENCE / NEXTVAL / 内部字典可用）──
+// SHOW SEQUENCES 只给当前库的名称列表；明细经 oceanbase.__all_sequence_object
+// 关联 __all_database 读取（database_name = 当前 schema）。HANDOFF §三.2 P6-2。
+
+const queryOBMySQLSequences = `SELECT
+	s.sequence_name,
+	s.start_with,
+	s.increment_by,
+	s.min_value,
+	s.max_value,
+	s.cache_size,
+	s.order_flag,
+	s.cycle_flag
+FROM oceanbase.__all_sequence_object s
+JOIN oceanbase.__all_database d ON d.database_id = s.database_id
+WHERE d.database_name = ?
+ORDER BY s.sequence_name`
+
+// OceanBaseMySQLQuerier 在 MySQL base 上补充 OB MySQL 租户的 SEQUENCE。
+type OceanBaseMySQLQuerier struct{ MySQLMetadataQuerier }
+
+func (OceanBaseMySQLQuerier) Type() string { return "oceanbase-mysql" }
+
+// QuerySequences 覆盖 base 的"无序列"实现；内部字典不可达（非管理员租户）时
+// 按 mysql base 语义回退为"无序列"（nil, nil），避免整次抽取失败。
+func (OceanBaseMySQLQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.SequenceDef, error) {
+	rows, err := db.Query(queryOBMySQLSequences, schema)
+	if err != nil {
+		return nil, nil
+	}
+	defer rows.Close()
+	var seqs []*md.SequenceDef
+	for rows.Next() {
+		var name string
+		var start, incr, minS, maxS, cache string
+		var orderF, cycleF string
+		if err := rows.Scan(&name, &start, &incr, &minS, &maxS, &cache, &orderF, &cycleF); err != nil {
+			return nil, err
+		}
+		seqs = append(seqs, &md.SequenceDef{
+			SequenceSchema: schema,
+			SequenceName:   name,
+			StartValue:     seqInt(start),
+			IncrementBy:    seqInt(incr),
+			MinValue:       seqInt(minS),
+			MaxValue:       seqInt(maxS),
+			Cycle:          obYesNo(cycleF),
+			OrderFlag:      obYesNo(orderF),
+		})
+	}
+	return seqs, rows.Err()
+}
+
+// obYesNo 把 OB 内部字典的 0/1 标志转成 YES/NO（order_flag/cycle_flag）。
+func obYesNo(v string) string {
+	if seqInt(v) != 0 {
+		return "YES"
+	}
+	return "NO"
 }
 
 func (MySQLMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.TriggerDef, error) {

@@ -39,6 +39,7 @@ func init() {
 	Register(&MySQLMetadataQuerier{})
 	Register(&OracleMetadataQuerier{})
 	Register(OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}})
+	Register(&OceanBaseMySQLQuerier{})
 }
 
 // Register adds a querier to the global registry.
@@ -392,6 +393,9 @@ func GetQuerySQL(dbType, objectType string) string {
 		case "triggers":
 			return queryMySQLTriggers
 		}
+	}
+	if base == "mysql" && strings.EqualFold(dbType, "oceanbase-mysql") && ot == "sequences" {
+		return queryOBMySQLSequences
 	}
 	return ""
 }

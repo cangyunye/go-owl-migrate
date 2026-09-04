@@ -705,16 +705,21 @@ func (q OracleMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.
 	var seqs []*md.SequenceDef
 	for rows.Next() {
 		var seqName, cycleFlag, orderFlag string
-		var increment, minVal, maxVal, cache, lastVal int
-		if err := rows.Scan(&seqName, &increment, &minVal, &maxVal, &cycleFlag, &cache, &lastVal, &orderFlag); err != nil {
+		var increment, cache int
+		var minStr, maxStr, lastStr string
+		if err := rows.Scan(&seqName, &increment, &minStr, &maxStr, &cycleFlag, &cache, &lastStr, &orderFlag); err != nil {
 			return nil, err
 		}
+		minVal, maxVal, lastVal := seqInt(minStr), seqInt(maxStr), seqInt(lastStr)
 		// Oracle exposes no original START WITH once a sequence has been
 		// consumed; last_number is the next value to dispense. Starting the
 		// migrated sequence there avoids colliding with already-generated keys.
 		start := lastVal
 		if start <= 0 {
 			start = minVal
+		}
+		if start < 1 {
+			start = 1
 		}
 		seqs = append(seqs, &md.SequenceDef{
 			SequenceSchema: schema,
@@ -730,6 +735,25 @@ func (q OracleMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.
 		})
 	}
 	return seqs, rows.Err()
+}
+
+// seqInt 把字典返回的数值解析为 int。OB/Oracle 的 all_sequences 默认
+// MAX_VALUE 为 10^28-1（驱动以 string 返回，超出 int64）：解析失败记 0，
+// 语义为"无上限/未知"，生成侧遇 0 不输出 MAXVALUE 子句。
+func seqInt(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err == nil {
+		return int(n)
+	}
+	// 驱动可能以浮点形式给出大数（go-ora 对 NUMBER 的默认转换）
+	if f, ferr := strconv.ParseFloat(s, 64); ferr == nil && f > 0 && f < 9.2e18 {
+		return int(f)
+	}
+	return 0
 }
 
 func (q OracleMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.TriggerDef, error) {

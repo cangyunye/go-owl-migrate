@@ -725,15 +725,31 @@ func buildDDLConfig(metaType, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsx
 	return cfg
 }
 
+// recommendSchemaMapping 生成默认推荐的 schema→目标用户映射：
+//   - 未指定目标 schema → 推荐同名（迁移/DDL 通用默认，OB 目标即"默认推荐用户
+//     = 源 schema 名"，需在目标侧预建该用户）；
+//   - 显式 --target-schema → 直接使用（PG 多用户场景：源 schema 可映射到任意
+//     目标用户，如 src_hr → MIG_PG_HR）；
+//   - 嵌入式目标无 schema 概念 → 空映射。
+func recommendSchemaMapping(srcSchema, tgtSchema, tgtType string) map[string]string {
+	if srcSchema == "" {
+		return nil
+	}
+	if isEmbedded(tgtType) {
+		return nil
+	}
+	effective := tgtSchema
+	if effective == "" {
+		effective = srcSchema
+	}
+	return map[string]string{srcSchema: effective}
+}
+
 func buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema string) *config.Config {
 	if tgtSchema == "" {
 		tgtSchema = srcSchema
 	}
-
-	schemaMapping := make(map[string]string)
-	if srcSchema != "" {
-		schemaMapping[srcSchema] = tgtSchema
-	}
+	schemaMapping := recommendSchemaMapping(srcSchema, tgtSchema, tgtType)
 
 	return &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
@@ -782,10 +798,7 @@ func buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema s
 // (general, metadata, source/target, ddl, select_gen, export, import) with comments
 // explaining which commands actually use each section.
 func buildFullConfig(metaType, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, csvPath, xlsxPath string) *config.Config {
-	schemaMapping := make(map[string]string)
-	if srcSchema != "" {
-		schemaMapping[srcSchema] = tgtSchema
-	}
+	schemaMapping := recommendSchemaMapping(srcSchema, tgtSchema, tgtType)
 
 	cfg := &config.Config{
 		ForceAllSections: true,
