@@ -412,8 +412,24 @@ func TestE2E_MetadataValidateAndDetail(t *testing.T) {
 	if len(detail.Columns) == 0 {
 		t.Error("EMP has no columns")
 	}
-	if len(detail.PrimaryKeys) == 0 || detail.PrimaryKeys[0] != "EMPNO" {
-		t.Errorf("primary_keys = %v, want [EMPNO]", detail.PrimaryKeys)
+	// 表详情大小写不敏感（R5/ADR-003）：小写与混合大小写路径都命中同一张表。
+	for _, path := range []string{"/api/v1/metadata/tables/scott/emp", "/api/v1/metadata/tables/Scott/EmP"} {
+		resp, err := http.Get(ts.URL + path)
+		if err != nil {
+			t.Fatalf("detail %s: %v", path, err)
+		}
+		var got struct {
+			Name string `json:"name"`
+		}
+		json.NewDecoder(resp.Body).Decode(&got)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("GET %s status = %d, want 200", path, resp.StatusCode)
+			continue
+		}
+		if got.Name != "EMP" {
+			t.Errorf("GET %s name = %q, want EMP", path, got.Name)
+		}
 	}
 }
 

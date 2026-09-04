@@ -2,21 +2,30 @@
 
 When using `metadata.type: csv`, the tool reads table/column definitions from CSV files in the specified directory.
 
+This document is the single column specification for **both** CSV directions of this tool:
+
+- the **csv metadata loader** (`metadata.type: csv`) — reads table/column definitions from the CSV files in the configured directory; and
+- the **metadata exporter writer** — `owl-migrate export-metadata --format csv` writes exactly the same files (`service.ExportMetadataFiles`, 13 canonical files, one per object-type stem, generated in the fixed stem order below; `--objects` selects a subset). The CLI command and the serve endpoint (`POST /api/v1/metadata/export`, page `/export-metadata`) share this single implementation.
+
 ## File Inventory
+
+The 13 canonical files are listed in the fixed object-type stem order. The exporter writes all of them by default; the csv loader parses every one that is present in the metadata directory. Only `tables.csv` is load-critical (its absence aborts loading); `columns.csv` is parsed whenever present and is required for column/DDL-aware consumers; all other files may be absent without failing the load.
 
 | File | Required | Description |
 |---|---|---|
-| `tables.csv` | ✓ | Table/View/MView definitions |
-| `columns.csv` | ✓ | Column definitions with data types |
+| `tables.csv` | ✓ | Table definitions — the loader fails when this file is missing (TABLE_TYPE = TABLE / VIEW / MVIEW) |
+| `columns.csv` | ✓ | Column definitions with data types (parse errors are fatal to the load) |
 | `primary_keys.csv` | — | Primary key constraints |
 | `indexes.csv` | — | Index definitions |
 | `foreign_keys.csv` | — | Foreign key constraints |
-| `sequences.csv` | — | Sequence definitions |
-| `triggers.csv` | — | Trigger definitions |
-| `functions.csv` | — | Stored functions/procedures |
 | `views.csv` | — | View definitions (SQL text) |
 | `mviews.csv` | — | Materialized view definitions |
+| `sequences.csv` | — | Sequence definitions |
 | `synonyms.csv` | — | Synonym definitions (Oracle) |
+| `triggers.csv` | — | Trigger definitions |
+| `functions.csv` | — | Stored functions/procedures |
+| `packages.csv` | — | Package specifications (Oracle) |
+| `package_bodies.csv` | — | Package bodies (Oracle) |
 
 **Note**: File names are case-insensitive (`tables.csv` or `Tables.csv` both work).
 
@@ -106,6 +115,15 @@ When using `metadata.type: csv`, the tool reads table/column definitions from CS
 | `DELETE_RULE` | string | CASCADE / SET NULL / RESTRICT / NO ACTION |
 | `UPDATE_RULE` | string | CASCADE / SET NULL / RESTRICT / NO ACTION |
 | `DEFERRABLE` | string | DEFERRABLE / NOT DEFERRABLE |
+
+### views.csv
+
+| Column | Type | Description |
+|---|---|---|
+| `VIEW_SCHEMA` | string | Schema name |
+| `VIEW_NAME` | string | View name |
+| `VIEW_DEFINITION` | string | Full view SELECT text |
+| `VIEW_COMMENT` | string | View comment |
 
 ### sequences.csv
 

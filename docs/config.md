@@ -177,6 +177,21 @@ import:
 extensions: {}                              # Custom extension configuration (reserved)
 ```
 
+### 元数据对象导出（export-metadata）—— 非 yaml 配置键
+
+元数据对象导出（`owl-migrate export-metadata`，serve 端 `POST
+/api/v1/metadata/export` / 页面 `/export-metadata`）的**对象类型与范围不是
+yaml 配置键**（`export` 段即上面的 `ExportConfig`，不含 `objects`/`scope`
+字段），而是：
+
+- CLI：`--objects`（13 个对象类型词干）与 `--scope`
+  （`all | schema:NAME | table:GLOB[,GLOB] | schema:NAME:table:GLOB[,GLOB]`）flag；
+- serve：请求体 `objects` / `scope` 字段，语法与 CLI 相同。
+
+完整语法见 [CLI 命令参考](cli-commands.md) 的 `owl-migrate export-metadata`
+一节。`export.tables.include` 语义不变，继续用于**数据导出（export data）与
+DDL 生成**的表过滤；它不控制元数据对象导出的范围。
+
 ## Metadata Types
 
 ### `type: csv`

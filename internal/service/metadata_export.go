@@ -19,6 +19,11 @@ type csvSpec struct {
 	rows    func() [][]string
 }
 
+// exportedColumnSets 记录 13 个规范文件各自的实际表头列集（单一事实源，
+// 由 ExportMetadataFiles 构建 specs 时注册）。回归测试据此对照
+// docs/csv-format.md，保证"导出列 == 文档列"。
+var exportedColumnSets = map[string][]string{}
+
 func intS(v int) string { return strconv.Itoa(v) }
 func boolYN(b string) string {
 	if b == "" {
@@ -177,6 +182,9 @@ func ExportMetadataFiles(dir string, sm *md.SchemaModel, objects md.ObjectSet) (
 			}
 			return rows
 		}},
+	}
+	for _, sp := range specs {
+		exportedColumnSets[string(sp.typ)] = sp.headers
 	}
 
 	var files []string

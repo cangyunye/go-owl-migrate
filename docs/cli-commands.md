@@ -248,6 +248,83 @@ Key features:
 - **Binary data**: Hex-encoded BLOB/BYTEA columns are decoded during import.
 - **Oracle session setup**: Automatically sets NLS_DATE_FORMAT and NLS_TIMESTAMP_FORMAT for Oracle targets.
 
+## owl-migrate export-metadata
+
+Connect to the live source database configured in the config and export metadata (tables, columns, primary keys, indexes, foreign keys, views, materialized views, sequences, synonyms, triggers, functions, packages, package bodies) as canonical CSV files (default), a single XLSX workbook, or SQL statements.
+
+```
+Usage:
+  owl-migrate export-metadata [flags] -c <config>
+
+Flags:
+  -o, --output string   Output directory for CSV files, or file path for XLSX/SQL (default "./output/metadata/")
+      --format string   Output format: csv (default), xlsx, sql
+      --scope string    Export scope: all | schema:NAME | table:GLOB[,GLOB] | schema:NAME:table:GLOB[,GLOB] (default "all")
+      --objects string  Comma-separated object types to export (default: all types supported by the source dialect)
+```
+
+### Scope
+
+| Form | Meaning |
+|---|---|
+| `all` | The configured schema (`source.schema`) — errors when no schema is configured |
+| `schema:NAME` | All objects of the named schema (one schema per run) |
+| `table:GLOB[,GLOB]` | Tables of the configured schema whose names match the given globs |
+| `schema:NAME:table:GLOB[,GLOB]` | Tables of schema `NAME` matching the given globs |
+
+Glob matching is **case-insensitive** and supports `*`, `?`, and `[...]`
+patterns (e.g. `table:EMP,DEPT*` matches `EMP`, `DEPT`, `DEPT_X`, …).
+Table-level scopes keep the selected tables together with their attached
+objects (columns, primary keys, indexes, foreign keys, triggers); standalone
+objects (views, mviews, sequences, synonyms, functions, packages, package
+bodies) are exported only for whole-schema scopes. Invalid scope strings are
+rejected up front; a scope that matches nothing in a non-empty model fails
+with an error listing the available schemas and near-name suggestions
+(ADR-004).
+
+### Object types
+
+`--objects` takes a comma-separated list of object-type stems
+(case-insensitive, deduplicated). The 13 canonical stems, in fixed order,
+are:
+
+```
+tables, columns, primary_keys, indexes, foreign_keys, views, mviews,
+sequences, synonyms, triggers, functions, packages, package_bodies
+```
+
+When `--objects` is empty, the exporter writes every object type the source
+dialect supports. Requesting a type the source dialect cannot provide errors
+out and lists the unsupported types together with the supported stem list
+(capability matrix, ADR-004).
+
+### Output
+
+- **CSV (default)** — one file per object-type stem (`tables.csv`,
+  `columns.csv`, …, `package_bodies.csv`), written to `--output` (default
+  `./output/metadata/`). Column layout per file is specified in
+  [CSV Metadata Format](csv-format.md) — the single spec shared by the csv
+  exporter writer and the csv metadata loader.
+- **XLSX** — a single workbook; `--output` is then a file path (one sheet per
+  exported type).
+- **SQL** — INSERT statements targeting the system metadata tables. Only
+  meaningful for Oracle-family sources; any other source dialect is rejected
+  (`--format sql` errors per ADR-004).
+
+The Web UI exposes the identical export through `POST
+/api/v1/metadata/export` (page `/export-metadata`) with request fields
+`source` / `format` / `scope` / `objects`; the CLI command and the serve
+endpoint share one implementation (`service.ExportMetadataFiles`,
+`service.ParseMetadataExportScope`).
+
+Example:
+
+```bash
+owl-migrate export-metadata -c ./migrate.yaml --format csv \
+  --scope schema:SCOTT:table:EMP,DEPT* --objects tables,columns,views \
+  -o ./output/metadata/
+```
+
 ## owl-migrate migrate
 
 End-to-end migration: source database → target database in a single command.

@@ -2,6 +2,8 @@
 
 > 评审日期：2026-07-29
 > 目的：对比 `owl-migrate serve` Web 服务与命令行基础功能的覆盖情况
+>
+> 复核日期：2026-09-04（§2.10 export-metadata 同步为 13 文件词干与统一 `--scope`/`--objects` 语法）
 
 ---
 
@@ -173,11 +175,13 @@ Web 端额外提供了 CLI 不具备的任务管理、实时进度、配置库�
 
 | CLI | serve |
 |-----|-------|
-| `owl-migrate export-metadata -c config.yaml --format csv/xlsx/sql` | `POST /api/v1/metadata/export` |
-| 连接源库提取元数据 → 输出 CSV/XLSX/SQL | 请求体指定 source/format/scope |
-| `--scope all/schema:NAME/table:T1,T2` | 请求体 `scope` 字段 |
+| `owl-migrate export-metadata -c config.yaml --format csv/xlsx/sql -o ./output/metadata/` | `POST /api/v1/metadata/export` |
+| 连接源库提取元数据 → 输出 CSV/XLSX/SQL；CSV 为 13 个规范文件（tables.csv … package_bodies.csv，词干同 `--objects` 清单） | 请求体指定 source/format/scope/objects；CLI 与 serve 共用同一实现（service.ExportMetadataFiles / ParseMetadataExportScope） |
+| `--scope` 统一语法：`all \| schema:NAME \| table:GLOB[,GLOB] \| schema:NAME:table:GLOB[,GLOB]`（glob 大小写不敏感；零命中报错 + 相近名建议） | 请求体 `scope` 字段，同语法 |
+| `--objects` 13 个对象类型词干：tables,columns,primary_keys,indexes,foreign_keys,views,mviews,sequences,synonyms,triggers,functions,packages,package_bodies（缺省 = 源方言支持的全部；超出源方言能力的对象报错并列支持清单，ADR-004） | 请求体 `objects` 字段 |
+| `--format sql` 仅 oracle 家族方言允许，其余报错（ADR-004） | 同能力校验（P4） |
 
-**结论：✅ 已覆盖（2026-07-29 补充）**
+**结论：✅ 已覆盖（2026-07-29 补充；2026-09-04 按 13 文件词干 / 统一 scope 语法再核对）**
 
 新增"元数据导出"页面（`/export-metadata`），支持 CSV 和 SQL 格式导出 + ZIP 下载。
 

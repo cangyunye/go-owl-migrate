@@ -53,6 +53,22 @@ func (s *Server) requireMetadata() (*md.SchemaModel, error) {
 	return s.schemaModel, nil
 }
 
+// findTableCaseInsensitive resolves schema.table with an exact-key hit first,
+// then a case-insensitive scan (schema and name must both fold-match). Table
+// detail lookups come from user-typed names, so matching follows the unified
+// case-insensitive selection semantics (ADR-003) instead of raw map keys.
+func findTableCaseInsensitive(sm *md.SchemaModel, schema, name string) *md.TableDef {
+	if t := sm.GetTable(schema, name); t != nil {
+		return t
+	}
+	for _, t := range sm.GetTables() {
+		if strings.EqualFold(t.TableSchema, schema) && strings.EqualFold(t.TableName, name) {
+			return t
+		}
+	}
+	return nil
+}
+
 // resolveTableInclude merges the request's comma-separated table spec with the
 // saved config. Precedence: request body > config.export.tables.include > all.
 // "*" or an empty spec means "all tables" (nil filter).
@@ -278,7 +294,7 @@ func (s *Server) handleMetadataTableDetail(w http.ResponseWriter, r *http.Reques
 	}
 	schema := r.PathValue("schema")
 	name := r.PathValue("table")
-	tbl := sm.GetTable(schema, name)
+	tbl := findTableCaseInsensitive(sm, schema, name)
 	if tbl == nil {
 		writeError(w, http.StatusNotFound, "table not found")
 		return

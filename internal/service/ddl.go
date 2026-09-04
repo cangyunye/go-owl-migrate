@@ -230,8 +230,8 @@ func isNumericTypeName(t string) bool {
 
 // GenerateDDL 从 SchemaModel 生成目标方言 DDL 文件到 outDir，返回文件列表。
 //   - include：表清单模式（nil/空 = 全部）；大小写不敏感、支持 glob（ADR-003）；
-//     仅过滤表及其索引/触发器，schema 级对象（视图/序列/函数/包）不随表过滤（ADR-002 边界，
-//     对象类型级选择由 P3 导出/生成层接入）。
+//     过滤表及其附随对象；视图/物化视图收窄到选中表所属 owner（与其他 schema 级对象
+//     按 owner 分组生成一致，避免单表请求带出无关 owner 的对象）。
 //   - noQuote：非 nil 时覆盖配置的 no_quote_identifiers。
 //   - 列类型按源→目标方言在 LogicalType 边界转换（跨类型族）或补限定（同族）。
 //   - 序列/同义词/函数/包/包体按模型实际 owner 分组生成（多 owner 正确性）。
@@ -290,7 +290,8 @@ func GenerateDDL(sm *md.SchemaModel, cfg *config.Config, include []string, noQuo
 }
 
 // filterSchemaTables returns a shallow copy keeping only matched tables.
-// 附随对象随表指针保留；独立对象（视图/序列等）保持原模型不变。
+// 附随对象随表指针保留；视图/物化视图按"选中表所属 owner"收窄（与序列/函数等
+// schema 级对象按 owner 分组生成一致），不再整模型泄漏（R2：单表输入带出无关对象）。
 func filterSchemaTables(sm *md.SchemaModel, include []string) *md.SchemaModel {
 	sel := md.SelectorFromInclude(include)
 	out := *sm
@@ -300,5 +301,23 @@ func filterSchemaTables(sm *md.SchemaModel, include []string) *md.SchemaModel {
 			out.Tables[key] = t
 		}
 	}
+	owners := make(map[string]bool, len(out.Tables))
+	for _, t := range out.Tables {
+		owners[t.TableSchema] = true
+	}
+	viewKeep := make([]*md.ViewDef, 0, len(sm.Views))
+	for _, v := range sm.Views {
+		if owners[v.ViewSchema] {
+			viewKeep = append(viewKeep, v)
+		}
+	}
+	out.Views = viewKeep
+	mvKeep := make([]*md.MViewDef, 0, len(sm.MViews))
+	for _, mv := range sm.MViews {
+		if owners[mv.MViewSchema] {
+			mvKeep = append(mvKeep, mv)
+		}
+	}
+	out.MViews = mvKeep
 	return &out
 }

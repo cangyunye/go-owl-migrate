@@ -57,6 +57,15 @@ export:
   tables:
     include: ["*"]
 
+# ── 元数据对象导出（export-metadata；与上方 export 数据导出相互独立）──
+# 用法示例：owl-migrate export-metadata -c migrate.example.yaml --format csv --scope all \
+#           --objects views,sequences -o /tmp/meta
+# 也可走 Web 端“元数据导出”页（等价 POST /api/v1/metadata/export）。
+# 对象类型与范围是命令行 flag（--objects/--scope），不是 yaml 键（ExportConfig 无 objects/scope 字段）；
+# export.tables.include 仍只用于数据导出与 DDL 表过滤，不作用于元数据导出。
+# CSV 输出为 13 个规范文件词干：tables,columns,primary_keys,indexes,foreign_keys,views,mviews,
+# sequences,synonyms,triggers,functions,packages,package_bodies（列规范见 docs/csv-format.md）。
+
 import:  # 数据导入配置（仅 import 命令使用）
   # CSV 数据目录 —— 注意三个命令的入口不同：
   #   import        → 读本配置项 import.source_dir
