@@ -286,6 +286,40 @@ ddl:
 		t.Errorf("tables.csv content missing row:\n%.200s", fm["tables.csv"])
 	}
 
+	// 4b) /select/generate：同一已加载模型，逐表 SELECT（引用保真）
+	sresp, sout := e2ePost(t, ts, "/api/v1/select/generate", `{"tables":"dept"}`)
+	if sresp.StatusCode != http.StatusOK {
+		t.Fatalf("select generate status=%d body=%v", sresp.StatusCode, sout)
+	}
+	sfiles := genFilesMap(t, sout)
+	var hasSelect bool
+	for _, c := range sfiles {
+		if strings.Contains(strings.ToUpper(c), "SELECT") {
+			hasSelect = true
+		}
+	}
+	if !hasSelect {
+		t.Errorf("select generate produced no SELECT content: %d files", len(sfiles))
+	}
+
+	// 4c) /metadata/validate：真库模型校验 0 错误
+	vresp, err := http.Get(ts.URL + "/api/v1/metadata/validate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vout map[string]any
+	if err := json.NewDecoder(vresp.Body).Decode(&vout); err != nil {
+		vresp.Body.Close()
+		t.Fatalf("decode validate: %v", err)
+	}
+	vresp.Body.Close()
+	if vresp.StatusCode != http.StatusOK {
+		t.Fatalf("validate status=%d body=%v", vresp.StatusCode, vout)
+	}
+	if n, _ := vout["count"].(float64); n != 0 {
+		t.Errorf("validate errors = %v, want 0 (真库模型): %v", vout["count"], vout["errors"])
+	}
+
 	// 6) mysql 源 --format sql：能力门应拒绝（仅 oracle 族）
 	resp, out = e2ePost(t, ts, "/api/v1/metadata/export",
 		fmt.Sprintf(`{"source":{"type":"mysql","dsn":%q,"schema":%q},"format":"sql","scope":"all"}`, dsn, db))
