@@ -30,6 +30,9 @@ go test -tags e2e -v ./internal/cmd/ -run 'TestDevMigrate_M7_ObOracleToPostgres|
 # H1 serve 层真库 e2e（HTTP API：load(database)/tables/详情大小写/ddl 生成/export csv+sql）
 go test -tags e2e -v ./internal/server/serve/ -run 'TestH1_LiveServe' -count=1
 
+# CLI 命令本体 × 真库冒烟（export data / export ddl / gen-select / validate）
+go test -tags e2e -v ./internal/cmd/ -run 'TestCLISmoke' -count=1
+
 # 离线全量回归（无实库依赖）
 go test ./internal/... -count=1
 ```
@@ -57,6 +60,9 @@ go test ./internal/... -count=1
   CSV 13 文件全出（含 MIGSRC 表/SEQ_EMP/V_EMP 内容断言）、`--format sql`
   产出 dba_tables/dba_tab_columns INSERT、`--objects views,sequences` 过滤
   只出 2 文件 —— 三个子场景均绿；
+- CLI 命令本体冒烟（`TestCLISmoke_*`，mysql + OB-Oracle）：`export data` 落
+  CSV 含表头+行、`export ddl` 落文件含映射建表、`gen-select` 每表一 SELECT、
+  `validate` 真库模型 0 错误 —— 命令级出口补齐；
 - 新落地：OB-MySQL SEQUENCE querier（`oceanbase.__all_sequence_object`，
   Capabilities 放开 sequences，含单测）；oracle 序列大数(10^28-1)溢出修复；
   init 默认推荐 schema 映射 `recommendSchemaMapping` + golden 单测。
