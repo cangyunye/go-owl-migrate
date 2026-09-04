@@ -67,6 +67,11 @@ go test ./internal/... -count=1
   Capabilities 放开 sequences，含单测）；oracle 序列大数(10^28-1)溢出修复；
   init 默认推荐 schema 映射 `recommendSchemaMapping` + golden 单测。
 
-## 5. 待办（仅 H2 浏览器人工项）
-- H2 浏览器人工：导出页对象勾选联动、迁移任务页、ZIP 下载（H1 serve API 层已自动化，
-  浏览器页面上的人工点检清单待执行时另附）。
+## 5. H2 进展与浏览器人工项
+- 已完成（2026-09-05）：serve 作业端点×真库全链路（POST /api/v1/migrate → master →
+  真实 worker 子进程，mysql migsrc_mysql → OB-Oracle MIG_UI 2/2+3/3，SUCCESS；SPA 壳 /、/ui 200）。
+  完整步骤见 `docs/scenario-cli-web-matrix.md` §migrate。
+- 剩余半自动/人工：
+  1. serve `/export`、`/import` 作业端点按同一流程各跑一次（与 /migrate 同通路，未执行）；
+  2. 浏览器像素级点检（导出页填写、迁移任务进度 WebSocket、ZIP 下载）需带 GUI 环境人工执行，
+     清单执行时另附。
