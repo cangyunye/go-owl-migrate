@@ -32,6 +32,8 @@ func init() {
 	Register("panweidb-mysql", panweidb.NewMySQL())
 	Register("panweidb-oracle", panweidb.NewOracle())
 	Register("opengaussdb", opengaussdb.New())
+	Register("opengaussdb-oracle", opengaussdb.NewOracle())
+	Register("opengaussdb-mysql", opengaussdb.NewMySQL())
 }
 
 // Register adds a dialect to the global registry.

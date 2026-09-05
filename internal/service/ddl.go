@@ -19,8 +19,9 @@ func TargetTypeFamily(dbType string) string {
 	t := strings.ToLower(strings.TrimSpace(dbType))
 	t = registry.Normalize(t)
 	switch {
-	case t == "panweidb" || strings.HasPrefix(t, "panweidb-"):
-		// PanWeiDB speaks the PostgreSQL wire protocol in all SQL modes.
+	case t == "panweidb" || strings.HasPrefix(t, "panweidb-") ||
+			t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
+		// PanWeiDB / openGauss speak the PostgreSQL wire protocol in all SQL modes.
 		return "postgres"
 	case t == "mysql" || strings.HasSuffix(t, "-mysql"):
 		return "mysql"

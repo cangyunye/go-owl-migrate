@@ -68,6 +68,8 @@ func Get(dbType string) (MetadataQuerier, error) {
 // to their base querier type.
 func normalizeDBType(t string) string {
 	switch {
+	case t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
+		return "postgres"
 	case strings.HasSuffix(t, "-mysql"):
 		return "mysql"
 	case t == "oceanbase-oracle-wire":
@@ -76,7 +78,7 @@ func normalizeDBType(t string) string {
 		return "oracle"
 	case t == "goldendb", t == "oceanbase":
 		return "mysql"
-	case t == "panweidb", t == "opengaussdb":
+	case t == "panweidb":
 		return "postgres"
 	default:
 		return t

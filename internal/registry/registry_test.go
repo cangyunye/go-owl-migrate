@@ -7,7 +7,7 @@ import (
 )
 
 func TestGet(t *testing.T) {
-	for _, name := range []string{"oracle", "postgres", "mysql", "goldendb-mysql", "oceanbase-oracle", "panweidb", "opengaussdb"} {
+	for _, name := range []string{"oracle", "postgres", "mysql", "goldendb-mysql", "oceanbase-oracle", "panweidb", "opengaussdb", "opengaussdb-oracle", "opengaussdb-mysql"} {
 		if _, err := Get(name); err != nil {
 			t.Errorf("Get(%q) error: %v", name, err)
 		}

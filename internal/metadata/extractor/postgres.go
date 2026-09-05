@@ -3,6 +3,7 @@ package extractor
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
@@ -176,7 +177,8 @@ func (PGMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef,
 
 	var tables []*md.TableDef
 	for rows.Next() {
-		var tableName, tableType, tableComment, partitioned string
+		var tableName, tableType, partitioned string
+		var tableComment sql.NullString
 		if err := rows.Scan(&tableName, &tableType, &tableComment, &partitioned); err != nil {
 			return nil, err
 		}
@@ -186,7 +188,7 @@ func (PGMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef,
 		}
 		tbl.Owner = schema
 		tbl.TableType = "TABLE"
-		tbl.TableComment = tableComment
+		tbl.TableComment = tableComment.String
 		tbl.Partitioned = partitioned
 		tables = append(tables, tbl)
 	}
@@ -226,7 +228,8 @@ func (PGMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDe
 
 	var columns []*md.ColumnDef
 	for rows.Next() {
-		var tableName, colName, dataType, nullable, defaultVal, comment, identityGen, charset, collation string
+		var tableName, colName, dataType, nullable string
+		var defaultVal, comment, identityGen, charset, collation sql.NullString
 		var ordinal, charLen, numPrec, numScale int
 		if err := rows.Scan(&tableName, &colName, &ordinal, &dataType,
 			&charLen, &numPrec, &numScale, &nullable, &defaultVal, &comment,
@@ -243,14 +246,14 @@ func (PGMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDe
 		col.DataPrecision = numPrec
 		col.DataScale = numScale
 		col.Nullable = nullable
-		col.DefaultValue = defaultVal
-		col.ColumnComment = comment
-		col.CharacterSet = charset
-		col.Collation = collation
+		col.DefaultValue = defaultVal.String
+		col.ColumnComment = comment.String
+		col.CharacterSet = charset.String
+		col.Collation = collation.String
 
-		if identityGen != "" {
+		if identityGen.String != "" {
 			col.IsIdentity = "YES"
-			col.IdentityGeneration = identityGen
+			col.IdentityGeneration = identityGen.String
 		}
 
 		columns = append(columns, col)
@@ -352,7 +355,8 @@ func (PGMetadataQuerier) QueryFunctions(db *sql.DB, schema string) ([]*md.Functi
 
 	var funcs []*md.FunctionDef
 	for rows.Next() {
-		var name, kind, def, resultType, language string
+		var name, kind, def, resultType string
+		var language sql.NullString
 		if err := rows.Scan(&name, &kind, &def, &resultType, &language); err != nil {
 			return nil, err
 		}
@@ -362,7 +366,7 @@ func (PGMetadataQuerier) QueryFunctions(db *sql.DB, schema string) ([]*md.Functi
 			FunctionType:   kind,
 			ReturnType:     resultType,
 			FunctionBody:   def,
-			Language:       language,
+			Language:       language.String,
 			Status:         "ENABLED",
 		})
 	}
@@ -375,11 +379,28 @@ func (PGMetadataQuerier) QueryMViews(db *sql.DB, schema string) ([]*md.MViewDef,
 		FROM pg_matviews
 		WHERE schemaname = $1
 		ORDER BY matviewname`, schema)
+	if err == nil {
+		defer rows.Close()
+		return scanPGMViews(rows, schema)
+	}
+	// openGauss 6.x has no pg_matviews view; query pg_class (relkind='m') +
+	// pg_get_viewdef directly, which works in PostgreSQL 10+ and openGauss.
+	rows, err = db.Query(`
+		SELECT c.relname AS matviewname,
+			pg_get_viewdef(c.oid, true) AS definition
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1
+		  AND c.relkind = 'm'
+		ORDER BY c.relname`, schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanPGMViews(rows, schema)
+}
 
+func scanPGMViews(rows *sql.Rows, schema string) ([]*md.MViewDef, error) {
 	var mviews []*md.MViewDef
 	for rows.Next() {
 		var name, definition string
@@ -497,7 +518,8 @@ func (PGMetadataQuerier) QueryIndexes(db *sql.DB, schema string) ([]*md.IndexDef
 
 	var indexes []*md.IndexDef
 	for rows.Next() {
-		var schemaName, tableName, indexName, indexType, uniqueness, columnName, expr string
+		var schemaName, tableName, indexName, indexType, uniqueness, columnName string
+		var expr sql.NullString
 		var ordinal int
 		if err := rows.Scan(&schemaName, &tableName, &indexName, &indexType,
 			&uniqueness, &columnName, &ordinal, &expr); err != nil {
@@ -514,7 +536,7 @@ func (PGMetadataQuerier) QueryIndexes(db *sql.DB, schema string) ([]*md.IndexDef
 			Uniqueness:      uniqueness,
 			ColumnName:      columnName,
 			OrdinalPosition: ordinal,
-			Expression:      expr,
+			Expression:      expr.String,
 		})
 	}
 	return indexes, rows.Err()
@@ -556,7 +578,8 @@ func (PGMetadataQuerier) QueryForeignKeys(db *sql.DB, schema string) ([]*md.Fore
 
 	var fks []*md.ForeignKeyDef
 	for rows.Next() {
-		var tableName, constraintName, columnName, refSchema, refTable, refColumn, deleteRule, updateRule, deferrable string
+		var tableName, constraintName, columnName, refSchema, refTable, refColumn, deferrable string
+		var deleteRule, updateRule sql.NullString
 		if err := rows.Scan(&tableName, &constraintName, &columnName, &refSchema, &refTable, &refColumn,
 			&deleteRule, &updateRule, &deferrable); err != nil {
 			return nil, err
@@ -569,8 +592,8 @@ func (PGMetadataQuerier) QueryForeignKeys(db *sql.DB, schema string) ([]*md.Fore
 			RefSchema:      refSchema,
 			RefTable:       refTable,
 			RefColumn:      refColumn,
-			DeleteRule:     deleteRule,
-			UpdateRule:     updateRule,
+			DeleteRule:     deleteRule.String,
+			UpdateRule:     updateRule.String,
 			Deferrable:     deferrable,
 		})
 	}
@@ -595,7 +618,8 @@ func (PGMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDef, e
 
 	var views []*md.ViewDef
 	for rows.Next() {
-		var viewName, viewDef, comment, updatable, checkOption string
+		var viewName, viewDef, updatable, checkOption string
+		var comment sql.NullString
 		if err := rows.Scan(&viewName, &viewDef, &comment, &updatable, &checkOption); err != nil {
 			return nil, err
 		}
@@ -603,7 +627,7 @@ func (PGMetadataQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDef, e
 			ViewSchema:     schema,
 			ViewName:       viewName,
 			ViewDefinition: viewDef,
-			ViewComment:    comment,
+			ViewComment:    comment.String,
 			IsUpdatable:    updatable,
 			CheckOption:    checkOption,
 			Owner:          schema,
@@ -627,11 +651,28 @@ func (PGMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.Sequen
 		FROM pg_sequences
 		WHERE schemaname = $1
 		ORDER BY sequencename`, schema)
+	if err == nil {
+		defer rows.Close()
+		return scanPGSequences(rows, schema)
+	}
+	// openGauss 6.x has no pg_sequences view; fall back to the SQL-standard
+	// information_schema.sequences (present in PostgreSQL 10+ and openGauss).
+	// cache_size / last_value are not exposed there, so they default to 1 /
+	// start_value.
+	rows, err = db.Query(`
+		SELECT sequence_name, start_value, increment, minimum_value, maximum_value,
+			cycle_option, data_type
+		FROM information_schema.sequences
+		WHERE sequence_schema = $1
+		ORDER BY sequence_name`, schema)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanInfoSequences(rows, schema)
+}
 
+func scanPGSequences(rows *sql.Rows, schema string) ([]*md.SequenceDef, error) {
 	var seqs []*md.SequenceDef
 	for rows.Next() {
 		var seqName, dataType string
@@ -651,6 +692,37 @@ func (PGMetadataQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.Sequen
 			CacheSize:      cache,
 			CurrentValue:   lastVal,
 			DataType:       dataType,
+		})
+	}
+	return seqs, rows.Err()
+}
+
+// scanInfoSequences scans information_schema.sequences rows. Values arrive as
+// strings (and are NULL under openGauss A-mode, hence sql.NullString); the
+// int fields default to 0 when unparsable/absent.
+func scanInfoSequences(rows *sql.Rows, schema string) ([]*md.SequenceDef, error) {
+	var seqs []*md.SequenceDef
+	for rows.Next() {
+		var seqName string
+		var startV, incV, minV, maxV, cycle, dataType sql.NullString
+		if err := rows.Scan(&seqName, &startV, &incV, &minV, &maxV, &cycle, &dataType); err != nil {
+			return nil, err
+		}
+		start, _ := strconv.Atoi(startV.String)
+		increment, _ := strconv.Atoi(incV.String)
+		minVal, _ := strconv.Atoi(minV.String)
+		maxVal, _ := strconv.Atoi(maxV.String)
+		seqs = append(seqs, &md.SequenceDef{
+			SequenceSchema: schema,
+			SequenceName:   seqName,
+			StartValue:     start,
+			IncrementBy:    increment,
+			MinValue:       minVal,
+			MaxValue:       maxVal,
+			Cycle:          cycle.String,
+			CacheSize:      1,
+			CurrentValue:   start,
+			DataType:       dataType.String,
 		})
 	}
 	return seqs, rows.Err()
@@ -695,7 +767,8 @@ func (PGMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trigger
 
 	var triggers []*md.TriggerDef
 	for rows.Next() {
-		var triggerName, tableSchema, tableName, triggerType, triggerEvent, triggerBody, status, forEach, whenClause, description, language string
+		var triggerName, tableSchema, tableName, triggerType, triggerEvent, triggerBody, status, forEach, language string
+		var whenClause, description sql.NullString
 		if err := rows.Scan(&triggerName, &tableSchema, &tableName, &triggerType,
 			&triggerEvent, &triggerBody, &status, &forEach, &whenClause, &description, &language); err != nil {
 			return nil, err
@@ -710,8 +783,8 @@ func (PGMetadataQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.Trigger
 			TriggerBody:   triggerBody,
 			Status:        status,
 			ForEach:       forEach,
-			WhenClause:    whenClause,
-			Description:   description,
+			WhenClause:    whenClause.String,
+			Description:   description.String,
 			Language:      language,
 		})
 	}

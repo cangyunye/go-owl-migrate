@@ -152,6 +152,8 @@ var ValidDialects = map[string]bool{
 	"panweidb-mysql":   true,
 	"panweidb-oracle":  true,
 	"opengaussdb":      true,
+	"opengaussdb-oracle": true,
+	"opengaussdb-mysql":  true,
 }
 
 // dialectAliases maps target.type spellings accepted by the connection layer

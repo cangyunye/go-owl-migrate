@@ -64,6 +64,7 @@ func TestOracle_FromLogicalType(t *testing.T) {
 		{"float", dialect.LogicalType{Base: dialect.LBFloat}, "BINARY_FLOAT"},
 		{"double", dialect.LogicalType{Base: dialect.LBDouble}, "BINARY_DOUBLE"},
 		{"datetime", dialect.LogicalType{Base: dialect.LBDatetime}, "DATE"},
+		{"date", dialect.LogicalType{Base: dialect.LBDate}, "DATE"},
 		{"timestamp", dialect.LogicalType{Base: dialect.LBTimestamp}, "TIMESTAMP"},
 		{"timestamptz", dialect.LogicalType{Base: dialect.LBTimestampTZ}, "TIMESTAMP WITH TIME ZONE"},
 		{"clob", dialect.LogicalType{Base: dialect.LBCLOB}, "CLOB"},

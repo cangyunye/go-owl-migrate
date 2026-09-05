@@ -102,7 +102,8 @@ func dsnFamily(dialect string) string {
 		return familyOceanBaseOracle
 	case "oceanbase", "oceanbase-mysql":
 		return familyOceanBaseMySQL
-	case "postgres", "postgresql", "opengaussdb", "panweidb", "panweidb-mysql", "panweidb-oracle":
+	case "postgres", "postgresql", "opengaussdb", "opengaussdb-mysql", "opengaussdb-oracle",
+		"panweidb", "panweidb-mysql", "panweidb-oracle":
 		return familyPostgres
 	case "sqlite3", "duckdb":
 		return familyFile

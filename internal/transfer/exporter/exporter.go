@@ -376,13 +376,17 @@ func (e *Exporter) getColumns(ctx context.Context, tbl *md.TableDef) ([]ColumnIn
 
 func (e *Exporter) isMySQL() bool {
 	t := strings.ToLower(e.cfg.DBType)
+	// openGauss / PanWeiDB use PG wire protocol ($N placeholders), not MySQL
+	if t == "opengaussdb-mysql" || t == "panweidb-mysql" {
+		return false
+	}
 	return t == "mysql" || t == "goldendb" || strings.HasSuffix(t, "-mysql")
 }
 
 func (e *Exporter) isOracle() bool {
 	t := strings.ToLower(e.cfg.DBType)
-	// PanWeiDB uses PG wire protocol ($N placeholders), not Oracle's :N
-	if t == "panweidb-oracle" {
+	// openGauss / PanWeiDB use PG wire protocol ($N placeholders), not Oracle's :N
+	if t == "opengaussdb-oracle" || t == "panweidb-oracle" {
 		return false
 	}
 	return t == "oracle" || strings.HasSuffix(t, "-oracle")
@@ -390,7 +394,8 @@ func (e *Exporter) isOracle() bool {
 
 func (e *Exporter) isPostgres() bool {
 	t := strings.ToLower(e.cfg.DBType)
-	return t == "postgres" || t == "postgresql" || t == "opengaussdb" ||
+	return t == "postgres" || t == "postgresql" ||
+		t == "opengaussdb" || t == "opengaussdb-mysql" || t == "opengaussdb-oracle" ||
 		t == "panweidb" || t == "panweidb-mysql" || t == "panweidb-oracle"
 }
 

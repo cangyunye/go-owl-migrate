@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/helingjun/obconnector-go"
+	_ "gitcode.com/opengauss/openGauss-connector-go-pq"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
@@ -22,7 +23,8 @@ func Family(dbType string) string {
 	t := strings.ToLower(strings.TrimSpace(dbType))
 	t = registry.Normalize(t)
 	switch {
-	case t == "panweidb" || strings.HasPrefix(t, "panweidb-"):
+	case t == "panweidb" || strings.HasPrefix(t, "panweidb-") ||
+			t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
 		return "postgres"
 	case t == "mysql" || t == "mariadb" || strings.HasSuffix(t, "-mysql"):
 		return "mysql"
@@ -40,7 +42,8 @@ func Family(dbType string) string {
 var knownTypes = map[string]bool{
 	"mysql": true, "mariadb": true, "postgres": true, "postgresql": true,
 	"oracle": true, "sqlite3": true, "duckdb": true,
-	"opengaussdb": true, "panweidb": true, "panweidb-mysql": true, "panweidb-oracle": true,
+	"opengaussdb": true, "opengaussdb-oracle": true, "opengaussdb-mysql": true,
+	"panweidb": true, "panweidb-mysql": true, "panweidb-oracle": true,
 	"goldendb-mysql": true, "goldendb-oracle": true,
 	"oceanbase-mysql": true, "oceanbase-oracle": true,
 }
@@ -50,6 +53,14 @@ func driverName(dbType string) (string, error) {
 	t := registry.Normalize(strings.ToLower(strings.TrimSpace(dbType)))
 	if !knownTypes[t] {
 		return "", fmt.Errorf("unsupported database type: %s", dbType)
+	}
+	switch t {
+	case "opengaussdb", "opengaussdb-oracle", "opengaussdb-mysql",
+		"panweidb", "panweidb-mysql", "panweidb-oracle":
+		// openGauss and PanWeiDB (openGauss-derived) use the dedicated
+		// openGauss driver — a lib/pq fork adding openGauss SHA256/SM3
+		// password auth — while still speaking the PostgreSQL wire protocol.
+		return "opengauss", nil
 	}
 	switch Family(t) {
 	case "mysql":

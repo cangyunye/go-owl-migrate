@@ -3,6 +3,7 @@ module github.com/cangyunye/go-owl-migrate
 go 1.25.0
 
 require (
+	gitcode.com/opengauss/openGauss-connector-go-pq v1.0.8
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/helingjun/obconnector-go v0.4.2
@@ -38,6 +39,7 @@ require (
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
+	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect

@@ -94,6 +94,8 @@ func (OracleTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 		return "BINARY_DOUBLE"
 	case dialect.LBDatetime:
 		return "DATE"
+	case dialect.LBDate:
+		return "DATE"
 	case dialect.LBTimestamp:
 		return "TIMESTAMP"
 	case dialect.LBTimestampTZ:

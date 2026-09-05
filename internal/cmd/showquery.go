@@ -50,7 +50,8 @@ Examples:
 						"oracle", "postgres", "mysql",
 						"goldendb", "goldendb-mysql", "goldendb-oracle",
 						"oceanbase", "oceanbase-mysql", "oceanbase-oracle",
-						"panweidb", "panweidb-mysql", "panweidb-oracle", "opengaussdb",
+						"panweidb", "panweidb-mysql", "panweidb-oracle",
+						"opengaussdb", "opengaussdb-mysql", "opengaussdb-oracle",
 					}
 					fmt.Fprintf(os.Stderr, "Error: unsupported dialect %q\nSupported dialects: %s\n",
 						dialect, strings.Join(supportedDialects, ", "))
