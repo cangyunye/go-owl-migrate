@@ -7,7 +7,7 @@
 
 ## 1. 范围与矩阵
 
-### 1.1 连接（dev-only，统一口令 `REDACTED` 于新建对象）
+### 1.1 连接（dev-only，统一口令见本地 `testdata/db/.local-dev.env` 的 `OWL_E2E_DEV_PW`）
 | 标识 | 连接 | repo dbType | 用途 |
 |---|---|---|---|
 | OB-Oracle | `oceanbase-oracle://sys@oratest:…@127.0.0.1:2881/oratest` | oceanbase-oracle | 主目标；MIGSRC→MIGTGT 内部迁移 |
@@ -33,7 +33,7 @@
 - goldendb / opengauss / duckdb / sqlite / panweidb：无实库连接 → 仅离线单测。
 
 ## 2. 命名与凭据约定（统一、可重复、幂等）
-- 新建用户/角色口令统一 `REDACTED`（仅写进 `.local-dev.env` 与测试引导，不硬编码在断言）。
+- 新建用户/角色口令统一取 `OWL_E2E_DEV_PW`（真实值仅写进 `.local-dev.env` 与测试引导，不硬编码在断言/文档）。
 - OB-Oracle（sys@oratest 下建）：user `MIGSRC`（fixture：EMP/DEPT + PK/FK/索引/视图/序列/同义词/触发器/函数/包，后三项视 4.x 实测放宽）、`MIGTGT`、`MIG_MYSQL`、`MIG_PG_HR`、`MIG_PG_FIN`、`MIG_OBM`；缺省 tablespace/默认表空间即可。
 - OB-MySQL：库 `migsrc_obm`（+表），目标库同 mysql 主线（同库名重建）。
 - MySQL 独立：库 `migsrc_mysql`。
