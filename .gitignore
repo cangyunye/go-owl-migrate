@@ -62,3 +62,17 @@ web/docsite/*
 !web/docsite/docs/
 web/docsite/docs/*
 !web/docsite/docs/index.md
+
+# Java sidecar agent build output
+jvm/owl-agent/out/
+jvm/owl-agent/out-test/
+jvm/owl-agent/owl-agent.jar
+
+# test-only JDBC driver jars (downloaded, not committed)
+/mysql-connector-j-*.jar
+/postgresql-*.jar
+/oceanbase-client-*.jar
+
+# superpowers SDD scratch (never commit)
+.superpowers/
+/fake_agent
