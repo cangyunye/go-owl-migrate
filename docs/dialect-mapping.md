@@ -20,10 +20,12 @@ go-owl-migrate supports a dialect system built from composable interfaces. Each 
 | **GoldenDB (Oracle)** | `goldendb-oracle` | Oracle | Same as Oracle |
 | **OceanBase (MySQL)** | `oceanbase`, `oceanbase-mysql` | MySQL | TRUNCATE is transactional, no FULLTEXT indexes, no MyISAM engine, supports SEQUENCE |
 | **OceanBase (Oracle)** | `oceanbase-oracle` | Oracle | TRUNCATE is transactional, no BFILE support, partition syntax differences, no Bitmap indexes. Driver is auto-selected: `oracle://` DSN → go-ora TNS; otherwise → obconnector-go MySQL wire (`preset=oboracle`). Compat mode is probed at connect and must match `compat_mode` config. |
-| **PanWeiDB (PG)** | `panweidb` | PostgreSQL | Uses PG driver, same DML syntax |
-| **PanWeiDB (MySQL B)** | `panweidb-mysql` | MySQL | Dolphin plugin, backtick quoting, ENGINE= ignored, uses PG driver/port |
-| **PanWeiDB (Oracle A)** | `panweidb-oracle` | Oracle | Oracle DDL/DML syntax, TRUNCATE transactional, uses PG driver/port |
-| **OpenGaussDB** | `opengaussdb` | PostgreSQL | Uses PG driver, same DML syntax |
+| **PanWeiDB (PG)** | `panweidb` | PostgreSQL | Uses openGauss driver (lib/pq fork, SHA256/SM3 auth) over PG wire protocol, same DML syntax |
+| **PanWeiDB (MySQL B)** | `panweidb-mysql` | MySQL | Dolphin plugin, backtick quoting, ENGINE= ignored, uses openGauss driver/PG port |
+| **PanWeiDB (Oracle A)** | `panweidb-oracle` | Oracle | Oracle DDL/DML syntax, TRUNCATE transactional, uses openGauss driver/PG port |
+| **OpenGaussDB** | `opengaussdb` | PostgreSQL | Uses openGauss driver (lib/pq fork, SHA256/SM3 auth) over PG wire protocol, same DML syntax |
+| **OpenGaussDB (Oracle A)** | `opengaussdb-oracle` | Oracle | Oracle DDL/DML/quoting, TRUNCATE transactional (PG feature), uses openGauss driver/PG port (`$N` placeholders) |
+| **OpenGaussDB (MySQL B)** | `opengaussdb-mysql` | MySQL | Dolphin plugin, backtick quoting, ENGINE= ignored, uses openGauss driver/PG port (`$N` placeholders) |
 
 ### Embedded Dialects
 
