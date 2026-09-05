@@ -11,7 +11,7 @@
 |---|---|---|
 | `OWL_E2E_OB_ORACLE_DSN` | `oceanbase-oracle://sys@oratest:REDACTED@127.0.0.1:2881/` | OB Oracle 引导连接（sys） |
 | `OWL_E2E_OB_MYSQL_DSN` | `root@obmysql:REDACTED@tcp(127.0.0.1:2881)/` | OB MySQL 租户 |
-| `OWL_E2E_MYSQL_DSN` | `root:REDACTED@tcp(172.20.208.1:3306)/` | 独立 MySQL |
+| `OWL_E2E_MYSQL_DSN` | `root:REDACTED@tcp(172.20.208.1:3306)/` | 独立 MySQL（真实口令见本地 `.local-dev.env`，勿提交） |
 | `OWL_E2E_PG_DSN` | `postgres://superme:REDACTED@172.20.208.1:5432/test?connect_timeout=5` | PostgreSQL（本机不可达时自动 skip） |
 | `OWL_E2E_DEV_PW` | `REDACTED` | 引导新建用户/库统一口令 |
 
