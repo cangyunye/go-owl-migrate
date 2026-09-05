@@ -10,9 +10,6 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/helingjun/obconnector-go"
-	_ "gitcode.com/opengauss/openGauss-connector-go-pq"
-
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
@@ -24,7 +21,7 @@ func Family(dbType string) string {
 	t = registry.Normalize(t)
 	switch {
 	case t == "panweidb" || strings.HasPrefix(t, "panweidb-") ||
-			t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
+		t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
 		return "postgres"
 	case t == "mysql" || t == "mariadb" || strings.HasSuffix(t, "-mysql"):
 		return "mysql"
@@ -102,8 +99,11 @@ func Open(cfg config.DBConfig) (*sql.DB, error) {
 		}
 	}
 
-	if Family(name) == "postgres" && strings.TrimSpace(cfg.Schema) != "" {
-		dsn = InjectPGSearchPath(dsn, cfg.Schema)
+	if !driverLinked(driver) {
+		if tag, ok := driverBuildTag[driver]; ok {
+			return nil, fmt.Errorf("database/sql driver %q is not compiled into this binary (type %q); rebuild with -tags %s", driver, name, tag)
+		}
+		return nil, fmt.Errorf("database/sql driver %q is not linked into this binary", driver)
 	}
 
 	db, err := sql.Open(driver, dsn)
@@ -244,4 +244,24 @@ func ParseDuration(s string, fallback time.Duration) (time.Duration, error) {
 		return fallback, nil
 	}
 	return time.ParseDuration(s)
+}
+
+// driverBuildTag maps database/sql driver names that are linked only when the
+// matching build tag is set (see driver_ob.go / driver_og.go).
+var driverBuildTag = map[string]string{
+	"oboracle":  "ob",
+	"opengauss": "og",
+	"sqlite3":   "sqlite3",
+	"duckdb":    "duckdb",
+}
+
+// driverLinked reports whether the named database/sql driver is registered in
+// this binary.
+func driverLinked(driver string) bool {
+	for _, d := range sql.Drivers() {
+		if d == driver {
+			return true
+		}
+	}
+	return false
 }

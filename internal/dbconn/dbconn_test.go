@@ -8,20 +8,20 @@ import (
 
 func TestFamily(t *testing.T) {
 	tests := map[string]string{
-		"mysql":            "mysql",
-		"goldendb":         "mysql",
-		"goldendb-mysql":   "mysql",
-		"oceanbase-mysql":  "mysql",
-		"oracle":           "oracle",
-		"oceanbase-oracle": "oracle",
-		"postgres":         "postgres",
-		"opengaussdb":      "postgres",
+		"mysql":              "mysql",
+		"goldendb":           "mysql",
+		"goldendb-mysql":     "mysql",
+		"oceanbase-mysql":    "mysql",
+		"oracle":             "oracle",
+		"oceanbase-oracle":   "oracle",
+		"postgres":           "postgres",
+		"opengaussdb":        "postgres",
 		"opengaussdb-oracle": "postgres",
 		"opengaussdb-mysql":  "postgres",
-		"panweidb":         "postgres",
-		"panweidb-oracle":  "postgres",
-		"sqlite3":          "sqlite3",
-		"duckdb":           "duckdb",
+		"panweidb":           "postgres",
+		"panweidb-oracle":    "postgres",
+		"sqlite3":            "sqlite3",
+		"duckdb":             "duckdb",
 	}
 	for in, want := range tests {
 		if got := Family(in); got != want {
@@ -32,18 +32,18 @@ func TestFamily(t *testing.T) {
 
 func TestDriverName(t *testing.T) {
 	tests := map[string]string{
-		"mysql":            "mysql",
-		"goldendb":         "mysql",
-		"oceanbase-oracle": "oracle",
-		"postgres":         "postgres",
-		"opengaussdb":      "opengauss",
+		"mysql":              "mysql",
+		"goldendb":           "mysql",
+		"oceanbase-oracle":   "oracle",
+		"postgres":           "postgres",
+		"opengaussdb":        "opengauss",
 		"opengaussdb-oracle": "opengauss",
 		"opengaussdb-mysql":  "opengauss",
-		"panweidb":         "opengauss",
-		"panweidb-mysql":   "opengauss",
-		"panweidb-oracle":  "opengauss",
-		"sqlite3":          "sqlite3",
-		"duckdb":           "duckdb",
+		"panweidb":           "opengauss",
+		"panweidb-mysql":     "opengauss",
+		"panweidb-oracle":    "opengauss",
+		"sqlite3":            "sqlite3",
+		"duckdb":             "duckdb",
 	}
 	for in, want := range tests {
 		got, err := driverName(in)

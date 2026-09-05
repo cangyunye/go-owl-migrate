@@ -36,7 +36,12 @@ Serverless, in-process databases:
 | **SQLite3** | `sqlite3` | `"name"` (double-quote) | mattn/go-sqlite3 | sqlite_master + PRAGMA |
 | **DuckDB** | `duckdb` | `"name"` (double-quote) | duckdb/duckdb-go | information_schema |
 
-> **Build tags**: SQLite3 and DuckDB support is compile-time optional. They are gated behind the `sqlite3` and `duckdb` build tags respectively and are **not** included in the default build. Build with `go build -tags "sqlite3 duckdb" ...` (or `make test/full`) to enable them.
+> **Build tags**: Oracle, PostgreSQL and MySQL are always compiled in. All other
+> dialects are opt-in: product dialects via `ob` (OceanBase), `og` (OpenGaussDB,
+> PanWeiDB) and `gdb` (GoldenDB); embedded dialects via `sqlite3` and `duckdb`
+> (both CGo). Build e.g. `go build -tags "ob og gdb sqlite3 duckdb" ...` for
+> everything (`make build/full` for the pure-Go product set). A base binary
+> rejects un-compiled dialect configs at runtime with `rebuild with -tags <tag>`.
 
 ### Metadata Extraction Steps
 

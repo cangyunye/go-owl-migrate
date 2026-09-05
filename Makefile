@@ -12,12 +12,19 @@ LDFLAGS := -ldflags "-s -w -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.
 .PHONY: build test lint fmt deps clean run web/docsite
 
 # Build tags for optional dialects:
-#   sqlite3    — include SQLite3 support (CGo, requires gcc)
-#   duckdb     — include DuckDB support (CGo, requires libduckdb)
+#   ob         — OceanBase (MySQL/Oracle mode)
+#   og         — OpenGaussDB, PanWeiDB
+#   gdb        — GoldenDB (MySQL/Oracle mode)
+#   sqlite3    — SQLite3 support (CGo, requires gcc)
+#   duckdb     — DuckDB support (CGo, requires libduckdb)
 #
-# Compound dialects (goldendb, oceanbase, panweidb, opengaussdb) are
-# included by default. Exclude with:
-#   go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb"
+# Oracle, PostgreSQL and MySQL are always compiled in. Product dialects are
+# opt-in, e.g.:
+#   go build -tags ob   ./cmd/migrate/main.go   # base + OceanBase
+#   go build -tags og   ./cmd/migrate/main.go   # base + OpenGaussDB/PanWeiDB
+#   go build -tags gdb  ./cmd/migrate/main.go   # base + GoldenDB
+#   go build -tags "ob og gdb" ./cmd/migrate/main.go
+# See the build/<flavor> targets below.
 
 # Stage the docs portal + markdown into web/docsite/ so go:embed can bundle
 # them (go:embed cannot reference parent directories). Regenerated on build.
@@ -29,7 +36,8 @@ web/docsite:
 	@cp docs/*.md web/docsite/docs/
 	@echo "Docs staged into web/docsite/ (placeholders overwritten; git restore web/docsite/ before committing)"
 
-# Default build: all dialects (core + compound + optional with tags)
+# Default build: base dialects only (oracle, postgres, mysql). Product
+# dialects are opt-in — see the build/ob, build/og, build/gdb flavors below.
 build: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
 	CGO_ENABLED=0 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME) $(MAIN_PATH)
@@ -75,25 +83,30 @@ duckdb/download:
 	@echo "libduckdb extracted to ./lib/"
 	@echo "Build with: CGO_LDFLAGS="-L./lib" make build/duckdb-lib"
 
-# Core-only: 3 dialects (oracle, postgres, mysql) + compound dialects
-build/core: web/docsite
+# Product flavors: base + one dialect group (suffixes on the output binary).
+#   make build/ob   — base + OceanBase
+#   make build/og   — base + OpenGaussDB/PanWeiDB
+#   make build/gdb  — base + GoldenDB
+#   make build/full — base + ob + og + gdb
+build/ob: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	CGO_ENABLED=0 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core $(MAIN_PATH)
-	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-core"
+	CGO_ENABLED=0 $(GO) build -tags ob $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-ob $(MAIN_PATH)
+	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-ob (base + OceanBase)"
 
-# Minimal: only oracle, postgres, mysql (no compound dialects)
-build/minimal: web/docsite
+build/og: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	CGO_ENABLED=0 $(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
-	  -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-minimal $(MAIN_PATH)
-	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-minimal"
+	CGO_ENABLED=0 $(GO) build -tags og $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-og $(MAIN_PATH)
+	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-og (base + OpenGaussDB/PanWeiDB)"
 
-# Oracle-only: single dialect build
-build/oracle: web/docsite
+build/gdb: web/docsite
 	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
-	CGO_ENABLED=0 $(GO) build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" $(LDFLAGS) \
-	  -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-oracle $(MAIN_PATH)
-	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-oracle"
+	CGO_ENABLED=0 $(GO) build -tags gdb $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-gdb $(MAIN_PATH)
+	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-gdb (base + GoldenDB)"
+
+build/full: web/docsite
+	@mkdir -p $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)
+	CGO_ENABLED=0 $(GO) build -tags "ob og gdb" $(LDFLAGS) -o $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-full $(MAIN_PATH)
+	@echo "Built: $(BUILD_DIR)/$(shell go env GOOS)-$(shell go env GOARCH)/$(BINARY_NAME)-full (base + ob + og + gdb)"
 
 build/linux: web/docsite
 	@mkdir -p $(BUILD_DIR)/linux-amd64
@@ -116,9 +129,14 @@ test:
 test/full:
 	$(GO) test -tags "sqlite3 duckdb" -v ./...
 
+# Run tests including product dialects (OceanBase / OpenGaussDB+PanWeiDB / GoldenDB)
+test/products:
+	$(GO) test -tags "ob og gdb" -v ./...
+
 # Run E2E tests against docker-compose databases (requires: docker compose up)
+# Product dialect e2e needs the ob/og registration tags compiled in.
 test/e2e:
-	$(GO) test -tags e2e -v -count=1 ./internal/cmd/ ./internal/transfer/importer/ ./internal/transfer/exporter/ ./internal/metadata/extractor/
+	$(GO) test -tags "e2e ob og" -v -count=1 ./internal/cmd/ ./internal/transfer/importer/ ./internal/transfer/exporter/ ./internal/metadata/extractor/ ./internal/e2eob/
 
 test-quick:
 	$(GO) test ./...

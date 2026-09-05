@@ -2,7 +2,7 @@
 #
 # Usage:
 #   task                  # alias for `task build`
-#   task build            # default build (all dialects, current platform)
+#   task build            # default build (base dialects, current platform)
 #   task build/windows    # cross-compile for Windows AMD64
 #   task test             # go test -v ./...
 #   task run -- --help    # extra args after `--` are forwarded to the binary
@@ -40,12 +40,15 @@ vars:
     -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime={{.BUILD_TIME}}'
 
 # Build tags for optional dialects:
-#   sqlite3    — include SQLite3 support (CGo, requires gcc)
-#   duckdb     — include DuckDB support (CGo, requires libduckdb)
+#   ob         — OceanBase (MySQL/Oracle mode)
+#   og         — OpenGaussDB, PanWeiDB
+#   gdb        — GoldenDB (MySQL/Oracle mode)
+#   sqlite3    — SQLite3 support (CGo, requires gcc)
+#   duckdb     — DuckDB support (CGo, requires libduckdb)
 #
-# Compound dialects (goldendb, oceanbase, panweidb, opengaussdb) are included
-# by default. Exclude with:
-#   go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb"
+# Oracle, PostgreSQL and MySQL are always compiled in. Product dialects are
+# opt-in; combine tags freely, e.g. task build/full for base + ob + og + gdb.
+# (The default `build` task produces the base binary.)
 
 tasks:
   # `task` with no arguments builds the current platform.
@@ -68,9 +71,10 @@ tasks:
       - cp docs/*.md web/docsite/docs/
       - echo "Docs staged into web/docsite/ (git restore web/docsite/ before committing)"
 
-  # Default build: all dialects (core + compound + optional with tags).
+  # Default build: base dialects only (oracle, postgres, mysql). Product
+  # dialects are opt-in via build/ob, build/og, build/gdb, build/full below.
   build:
-    desc: Build all dialects for the current platform
+    desc: Build base dialects (oracle, postgres, mysql)
     deps: [docsite]
     env:
       CGO_ENABLED: "0"
@@ -132,42 +136,54 @@ tasks:
       - echo "libduckdb extracted to ./lib/"
       - 'echo "Build with: CGO_LDFLAGS=\"-L./lib\" task build/duckdb-lib"'
 
-  # Core-only: 3 dialects (oracle, postgres, mysql) + compound dialects.
-  # (Same tags as the default build; distinguished only by output name.)
-  build/core:
-    desc: Build core (3 dialects + compound), separate -core binary
+  # Product flavors: base + one dialect group (output suffix on the binary).
+  #   task build/ob   — base + OceanBase
+  #   task build/og   — base + OpenGaussDB/PanWeiDB
+  #   task build/gdb  — base + GoldenDB
+  #   task build/full — base + ob + og + gdb
+  build/ob:
+    desc: Build base + OceanBase (-tags ob)
     deps: [docsite]
     env:
       CGO_ENABLED: "0"
     silent: true
     cmds:
       - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
-      - go build -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-core {{.MAIN_PATH}}
-      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-core"'
+      - go build -tags ob -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-ob {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-ob (base + OceanBase)"'
 
-  # Minimal: only oracle, postgres, mysql (no compound dialects).
-  build/minimal:
-    desc: Build minimal (3 dialects, no compound dialects)
+  build/og:
+    desc: Build base + OpenGaussDB/PanWeiDB (-tags og)
     deps: [docsite]
     env:
       CGO_ENABLED: "0"
     silent: true
     cmds:
       - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
-      - go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-minimal {{.MAIN_PATH}}
-      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-minimal"'
+      - go build -tags og -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-og {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-og (base + OpenGaussDB/PanWeiDB)"'
 
-  # Oracle-only: single dialect build.
-  build/oracle:
-    desc: Build Oracle-only binary
+  build/gdb:
+    desc: Build base + GoldenDB (-tags gdb)
     deps: [docsite]
     env:
       CGO_ENABLED: "0"
     silent: true
     cmds:
       - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
-      - go build -tags "nogoldendb,nooceanbase,nopanweidb,noopengaussdb" -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-oracle {{.MAIN_PATH}}
-      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-oracle"'
+      - go build -tags gdb -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-gdb {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-gdb (base + GoldenDB)"'
+
+  build/full:
+    desc: Build base + ob + og + gdb
+    deps: [docsite]
+    env:
+      CGO_ENABLED: "0"
+    silent: true
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/{{OS}}-{{ARCH}}
+      - go build -tags "ob og gdb" -ldflags "{{.LDFLAGS}}" -o {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-full {{.MAIN_PATH}}
+      - 'echo "Built: {{.BUILD_DIR}}/{{OS}}-{{ARCH}}/{{.BINARY_NAME}}-full (base + ob + og + gdb)"'
 
   # Cross-compile: Linux AMD64.
   build/linux:
@@ -224,11 +240,18 @@ tasks:
     cmds:
       - go test -tags "sqlite3 duckdb" -v ./...
 
+  # Run tests including product dialects (OceanBase / OpenGaussDB+PanWeiDB / GoldenDB).
+  test/products:
+    desc: Run tests including ob/og/gdb dialects
+    cmds:
+      - go test -tags "ob og gdb" -v ./...
+
   # Run E2E tests against docker-compose databases (requires: docker compose up).
+  # Product-dialect e2e needs the ob/og registration tags compiled in.
   test/e2e:
     desc: Run E2E tests (requires docker compose up)
     cmds:
-      - go test -tags e2e -v -count=1 ./internal/cmd/ ./internal/transfer/importer/ ./internal/transfer/exporter/ ./internal/metadata/extractor/
+      - go test -tags "e2e ob og" -v -count=1 ./internal/cmd/ ./internal/transfer/importer/ ./internal/transfer/exporter/ ./internal/metadata/extractor/ ./internal/e2eob/
 
   test-quick:
     desc: Run all tests without verbose output

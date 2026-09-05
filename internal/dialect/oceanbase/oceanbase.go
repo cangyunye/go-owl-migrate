@@ -1,3 +1,5 @@
+//go:build ob
+
 package oceanbase
 
 import (

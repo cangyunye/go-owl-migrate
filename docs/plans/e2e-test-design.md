@@ -4,6 +4,11 @@
 
 All E2E tests use `//go:build e2e` build tags and require Docker Compose to provide real databases. The pattern follows existing E2E tests in `internal/cmd/e2e_conn_test.go` and `internal/transfer/importer/importer_e2e_test.go`.
 
+> Product dialects are opt-in at build time, so E2E suites that exercise
+> OceanBase / OpenGaussDB / PanWeiDB must add the matching tag to the build
+> line, e.g. `go test -tags "e2e ob" -v ./internal/e2eob/` (see README).
+> Suites limited to oracle/postgres/mysql keep plain `-tags e2e`.
+
 ## Prerequisites
 
 ```bash

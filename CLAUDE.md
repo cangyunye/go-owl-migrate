@@ -19,9 +19,19 @@ Part of the `owl` family:
 ## Build & Test Commands
 
 ```bash
-# Build
+# Build (default = base dialects oracle/postgres/mysql)
 make build                          # Current platform → build/<os>-<arch>/owl-migrate
 go build -o owl-migrate ./cmd/migrate/main.go
+
+# Product dialects are opt-in via build tags (or make/task flavors):
+make build/ob                       # base + OceanBase            (-tags ob)
+make build/og                       # base + OpenGaussDB/PanWeiDB (-tags og)
+make build/gdb                      # base + GoldenDB             (-tags gdb)
+make build/full                     # base + ob og gdb
+go build -tags "ob og gdb" -o owl-migrate-full ./cmd/migrate/main.go
+# SQLite3/DuckDB (CGo) keep their own tags: sqlite3, duckdb.
+# A binary without a product tag rejects that product's configs at runtime
+# with "rebuild with -tags <tag>".
 
 # Cross-platform
 make build/linux                    # Linux AMD64
@@ -67,7 +77,10 @@ internal/
     mysql/                   # MySQL dialect
     goldendb/                # GoldenDB dialect (embeds mysql + oracle)
     oceanbase/               # OceanBase dialect (embeds oracle + mysql)
-  registry/                  # Global dialect registry (auto-registers built-in dialects)
+  registry/                  # Dialect registry — base (oracle/postgres/mysql) always;
+                             # product dialects register from per-tag plugin files:
+                             # plugin_ob.go (ob), plugin_og.go (og), plugin_gdb.go (gdb),
+                             # plugin_duckdb.go (duckdb), plugin_sqlite3.go (sqlite3)
   generator/                 # DDL, SELECT, and INSERT statement generators
     ddl.go                   # DDLGenerator — orchestrates DDL per object type
     select.go                # SelectGenerator — paginated SELECT generation

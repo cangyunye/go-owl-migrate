@@ -73,16 +73,37 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 | Oracle | ✓ | ✓ | ✓ | ✓ | ✓ |
 | PostgreSQL | ✓ | ✓ | ✓ | ✓ | ✓ |
 | MySQL | ✓ | ✓ | ✓ | ✓ | ✓ |
-| GoldenDB (MySQL mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| GoldenDB (Oracle mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| OceanBase (MySQL mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| OceanBase (Oracle mode) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| PanWeiDB | ✓ | ✓ | ✓ | ✓ | ✓ |
-| OpenGaussDB | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SQLite3 | ✓ | ✓ | ✓ | ✓ | ✓ |
-| DuckDB | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GoldenDB (MySQL mode)* | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GoldenDB (Oracle mode)* | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OceanBase (MySQL mode)† | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OceanBase (Oracle mode)† | ✓ | ✓ | ✓ | ✓ | ✓ |
+| PanWeiDB‡ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OpenGaussDB‡ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SQLite3§ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| DuckDB§ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-> **Note**: SQLite3 and DuckDB are compile-time optional and gated behind the `sqlite3` / `duckdb` build tags. Build with `go build -tags "sqlite3 duckdb" ...` to enable them.
+Dialect support is selected at build time. Oracle, PostgreSQL and MySQL are
+always compiled in; every other dialect is opt-in via a build tag:
+
+| Tag | Adds | database/sql driver |
+|---|---|---|
+| `ob` | OceanBase (MySQL/Oracle mode)† | obconnector-go (`oboracle`) |
+| `og` | PanWeiDB, OpenGaussDB‡ | openGauss-connector-go-pq (`opengauss`) |
+| `gdb` | GoldenDB (MySQL/Oracle mode)* | reuses the base mysql driver |
+| `sqlite3` | SQLite3§ (CGo) | mattn/go-sqlite3 |
+| `duckdb` | DuckDB§ (CGo) | go-duckdb |
+
+Build flavors:
+
+```bash
+go build -tags ob ./cmd/migrate/main.go                        # base + OceanBase
+go build -tags "og gdb" ./cmd/migrate/main.go                  # base + PanWeiDB/OpenGaussDB + GoldenDB
+go build -tags "ob og gdb sqlite3 duckdb" ./cmd/migrate/main.go # everything
+make build/ob                                                  # Makefile/Taskfile flavors below
+```
+
+A base binary rejects configs for un-compiled dialects with an error naming
+the required tag (e.g. `rebuild with -tags ob`).
 
 ## Documentation
 

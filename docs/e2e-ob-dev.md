@@ -22,16 +22,17 @@
 
 ```bash
 # OB Oracle/MySQL 字典族与源侧抽取探针（Phase A-D，含 OB-MySQL SEQUENCE 验证）
-go test -tags e2e -v ./internal/e2edev/ -count=1
+#（OB 方言按 build tag 编译控制：-tags "e2e ob"）
+go test -tags "e2e ob" -v ./internal/e2edev/ -count=1
 
 # OB-Oracle 为源的出口：→ PG / MySQL / export-metadata(CSV 13 文件·SQL·objects 过滤)
-go test -tags e2e -v ./internal/cmd/ -run 'TestDevMigrate_M7_ObOracleToPostgres|TestDevMigrate_M8_ObOracleToMySQL|TestExportMetadata_Live_ObOracle' -count=1
+go test -tags "e2e ob" -v ./internal/cmd/ -run 'TestDevMigrate_M7_ObOracleToPostgres|TestDevMigrate_M8_ObOracleToMySQL|TestExportMetadata_Live_ObOracle' -count=1
 
 # H1 serve 层真库 e2e（HTTP API：load(database)/tables/详情大小写/ddl 生成/export csv+sql）
-go test -tags e2e -v ./internal/server/serve/ -run 'TestH1_LiveServe' -count=1
+go test -tags "e2e ob" -v ./internal/server/serve/ -run 'TestH1_LiveServe' -count=1
 
 # CLI 命令本体 × 真库冒烟（export data / export ddl / gen-select / validate）
-go test -tags e2e -v ./internal/cmd/ -run 'TestCLISmoke' -count=1
+go test -tags "e2e ob" -v ./internal/cmd/ -run 'TestCLISmoke' -count=1
 
 # 离线全量回归（无实库依赖）
 go test ./internal/... -count=1

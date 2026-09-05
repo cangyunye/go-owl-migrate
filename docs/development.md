@@ -213,8 +213,17 @@ The logger is configured per-command:
 ## Build
 
 ```bash
-# Current platform
+# Current platform (base dialects: oracle, postgres, mysql)
 make build
+
+# Product dialects are opt-in via build tags (make/task flavors):
+make build/ob     # base + OceanBase            (-tags ob)
+make build/og     # base + OpenGaussDB/PanWeiDB (-tags og)
+make build/gdb    # base + GoldenDB             (-tags gdb)
+make build/full   # base + ob og gdb
+go build -tags "ob og gdb" -o owl-migrate-full ./cmd/migrate/main.go
+# SQLite3/DuckDB (CGo) keep their own tags: sqlite3, duckdb.
+# Un-compiled dialects are rejected at runtime with "rebuild with -tags <tag>".
 
 # Cross-platform
 make build/linux   # Linux AMD64

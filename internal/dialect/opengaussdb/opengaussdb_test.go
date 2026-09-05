@@ -1,3 +1,5 @@
+//go:build og
+
 package opengaussdb
 
 import (
@@ -90,10 +92,10 @@ func TestOpenGaussDBOracle_Name(t *testing.T) {
 func TestOpenGaussDBOracle_InheritsOracleTypeMapping(t *testing.T) {
 	d := NewOracle()
 	tests := []struct {
-		raw      string
-		prec     int
-		scale    int
-		want     dialect.LogicalBase
+		raw   string
+		prec  int
+		scale int
+		want  dialect.LogicalBase
 	}{
 		{"VARCHAR2", 0, 0, dialect.LBVarchar},
 		{"NUMBER", 4, 0, dialect.LBSmallInt},

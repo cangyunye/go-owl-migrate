@@ -1,3 +1,5 @@
+//go:build gdb
+
 package goldendb
 
 import (

@@ -7,7 +7,7 @@ import (
 )
 
 func TestGet(t *testing.T) {
-	for _, name := range []string{"oracle", "postgres", "mysql", "goldendb-mysql", "oceanbase-oracle", "panweidb", "opengaussdb", "opengaussdb-oracle", "opengaussdb-mysql"} {
+	for _, name := range []string{"oracle", "postgres", "mysql"} {
 		if _, err := Get(name); err != nil {
 			t.Errorf("Get(%q) error: %v", name, err)
 		}
@@ -28,16 +28,6 @@ func TestNormalize(t *testing.T) {
 		if got := Normalize(tt.in); got != tt.want {
 			t.Errorf("Normalize(%q) = %q, want %q", tt.in, got, tt.want)
 		}
-	}
-}
-
-func TestGetNormalizesBareNames(t *testing.T) {
-	d, err := Get("goldendb")
-	if err != nil {
-		t.Fatalf("Get(goldendb) error: %v", err)
-	}
-	if d.Name() != "goldendb-mysql" {
-		t.Errorf("Get(goldendb).Name() = %q, want goldendb-mysql", d.Name())
 	}
 }
 

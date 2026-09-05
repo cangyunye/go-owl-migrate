@@ -1,3 +1,10 @@
+// Package registry holds the dialect registry shared by every command.
+// The base build always registers oracle/postgres/mysql. Product dialects are
+// opt-in via build tags and register from per-tag plugin files:
+//
+//	-tags ob  — oceanbase (oceanbase-mysql, oceanbase-oracle)
+//	-tags og  — opengaussdb, panweidb (each with -mysql/-oracle variants)
+//	-tags gdb — goldendb (goldendb-mysql, goldendb-oracle)
 package registry
 
 import (
@@ -6,12 +13,8 @@ import (
 	"sync"
 
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
-	goldendb "github.com/cangyunye/go-owl-migrate/internal/dialect/goldendb"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/mysql"
-	oceanbase "github.com/cangyunye/go-owl-migrate/internal/dialect/oceanbase"
-	opengaussdb "github.com/cangyunye/go-owl-migrate/internal/dialect/opengaussdb"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/oracle"
-	panweidb "github.com/cangyunye/go-owl-migrate/internal/dialect/panweidb"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect/postgres"
 )
 
@@ -24,16 +27,6 @@ func init() {
 	Register("oracle", oracle.New())
 	Register("postgres", postgres.New())
 	Register("mysql", mysql.New())
-	Register("goldendb-mysql", goldendb.NewMySQL())
-	Register("goldendb-oracle", goldendb.NewOracle())
-	Register("oceanbase-mysql", oceanbase.NewMySQL())
-	Register("oceanbase-oracle", oceanbase.NewOracle())
-	Register("panweidb", panweidb.New())
-	Register("panweidb-mysql", panweidb.NewMySQL())
-	Register("panweidb-oracle", panweidb.NewOracle())
-	Register("opengaussdb", opengaussdb.New())
-	Register("opengaussdb-oracle", opengaussdb.NewOracle())
-	Register("opengaussdb-mysql", opengaussdb.NewMySQL())
 }
 
 // Register adds a dialect to the global registry.
@@ -62,6 +55,15 @@ func Normalize(name string) string {
 	}
 }
 
+// dialectTag maps a dialect name to the build tag that provides it. Used to
+// make "unknown dialect" errors actionable when a product was not compiled in.
+var dialectTag = map[string]string{
+	"goldendb-mysql": "gdb", "goldendb-oracle": "gdb",
+	"oceanbase-mysql": "ob", "oceanbase-oracle": "ob",
+	"panweidb": "og", "panweidb-mysql": "og", "panweidb-oracle": "og",
+	"opengaussdb": "og", "opengaussdb-mysql": "og", "opengaussdb-oracle": "og",
+}
+
 // Get returns a registered dialect by name.
 // Bare compound names (e.g. "goldendb") are normalized automatically.
 func Get(name string) (dialect.Dialect, error) {
@@ -70,6 +72,9 @@ func Get(name string) (dialect.Dialect, error) {
 	defer mu.RUnlock()
 	d, ok := reg[name]
 	if !ok {
+		if tag, known := dialectTag[name]; known {
+			return dialect.Dialect{}, fmt.Errorf("unknown dialect %q: %s support is not compiled into this binary; rebuild with -tags %s", name, name, tag)
+		}
 		return dialect.Dialect{}, fmt.Errorf("unknown dialect %q", name)
 	}
 	return d, nil

@@ -38,8 +38,7 @@ func init() {
 	Register(&PGMetadataQuerier{})
 	Register(&MySQLMetadataQuerier{})
 	Register(&OracleMetadataQuerier{})
-	Register(OceanBaseOracleWireQuerier{OracleMetadataQuerier{Placeholder: "?", OceanBase: true}})
-	Register(&OceanBaseMySQLQuerier{})
+	// OceanBase queriers register from plugin_ob.go (build tag: ob).
 }
 
 // Register adds a querier to the global registry.

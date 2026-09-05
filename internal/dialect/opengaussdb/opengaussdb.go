@@ -1,3 +1,5 @@
+//go:build og
+
 package opengaussdb
 
 import (

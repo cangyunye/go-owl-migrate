@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build e2e && ob
 
 // Package e2eob is an environment-driven acceptance test for the
 // OceanBase-Oracle migration feature set. It connects to a live OceanBase

@@ -24,7 +24,7 @@
 ## 每场景证据与复现命令（真库 e2e）
 
 ### migrate
-- CLI 真库：`go test -tags e2e ./internal/cmd/ -run TestDevMigrate`（M1–M8：mysql/pg/obmysql/OB-Oracle 为源 × OB-Oracle/OB-MySQL/PG/MySQL 为目标，行数与值保真全绿）。
+- CLI 真库：`go test -tags "e2e ob" ./internal/cmd/ -run TestDevMigrate`（M1–M8：mysql/pg/obmysql/OB-Oracle 为源 × OB-Oracle/OB-MySQL/PG/MySQL 为目标，行数与值保真全绿；OB 方言按 build tag 编译控制）。
 - serve 作业全链路（H2，2026-09-05 实测）：
   1. `go build -o /tmp/owl-migrate ./cmd/migrate`
   2. `OWL_MIGRATE_HOME=/tmp/owlhome /tmp/owl-migrate serve --host 127.0.0.1 --port 18991 --temp-dir /tmp/owltmp`
@@ -36,15 +36,15 @@
   `Created table MIG_UI.dept/emp`、`✅ MIG_UI.dept: 2/2 rows`、`Status: SUCCESS`。
 
 ### export ddl / gen-select / export data / validate
-- 命令本体真库冒烟：`go test -tags e2e ./internal/cmd/ -run TestCLISmoke`
+- 命令本体真库冒烟：`go test -tags "e2e ob" ./internal/cmd/ -run TestCLISmoke`
   （export data 落 CSV 含表头+行；export ddl 落映射建表；gen-select 每表一 SELECT；validate 0 错误）。
-- serve API 真库：`go test -tags e2e ./internal/server/serve/ -run TestH1_LiveServe`
+- serve API 真库：`go test -tags "e2e ob" ./internal/server/serve/ -run TestH1_LiveServe`
   （/metadata/load(database) → /metadata/tables → 详情大小写 → /ddl/generate → /select/generate → /metadata/validate → /metadata/export csv+sql 能力门）。
 
 ### export-metadata（CLI 与 serve 双端实库）
-- CLI：`go test -tags e2e ./internal/cmd/ -run TestExportMetadata_Live_ObOracle`
+- CLI：`go test -tags "e2e ob" ./internal/cmd/ -run TestExportMetadata_Live_ObOracle`
   （CSV 13 文件含 MIGSRC 表/SEQ_EMP/V_EMP；--format sql 产出 dba_tables/dba_tab_columns；--objects views,sequences 只出 2 文件）。
-- serve：`go test -tags e2e ./internal/server/serve/ -run TestH1_LiveServe_ObOracleSQLExport`。
+- serve：`go test -tags "e2e ob" ./internal/server/serve/ -run TestH1_LiveServe_ObOracleSQLExport`。
 
 ## 已确认缺口的性质
 1. serve `/export` 与 `/import` 作业端点：与 `/migrate` 完全同一条 master→worker 通路

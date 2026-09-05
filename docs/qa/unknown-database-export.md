@@ -44,8 +44,11 @@
   - Oracle 系自动注入 `PREFETCH_ROWS=25`、`LOB FETCH=POST`（LOB 流式读取）；
   - PG 系自动注入 `search_path=<schema>`。
 - **没有任意 "custom" type**。新增工具不认识的数据类型 = 改代码注册
-  （`registry.Register` 注册方言、`extractor.Register` 注册元数据查询器，均为编译期；
-  仅 sqlite3/duckdb 通过 build tag 可选启用）。
+  （`registry.Register` 注册方言、`extractor.Register` 注册元数据查询器）。
+- **方言按 build tag 编译控制**：基础必含 oracle/mysql/postgres；
+  `ob`=OceanBase、`og`=OpenGaussDB+PanWeiDB、`gdb`=GoldenDB、
+  `sqlite3`/`duckdb`=嵌入式(CGo)。未编译的方言在运行时被拒并提示
+  `rebuild with -tags <tag>`（registry.Get / dbconn.Open 两级拦截）。
 - 线协议只支持四族：MySQL wire / PG wire / Oracle TNS / 嵌入式（sqlite3、duckdb）。
 - 各方言 DSN 格式见 `docs/config.md`「Connection Strings (DSN)」一节。
 

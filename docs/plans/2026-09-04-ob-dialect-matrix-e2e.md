@@ -45,7 +45,7 @@
 - **环境变量门控**：`OWL_E2E_OB_ORACLE_DSN` / `OWL_E2E_OB_MYSQL_DSN` / `OWL_E2E_MYSQL_DSN` / `OWL_E2E_PG_DSN`（及各自 SCHEMA/USER 覆盖变量）；未设时回退读 `testdata/db/.local-dev.env`（KEY=VALUE/export 行解析）；仍缺 → 对应用例 skip 并计入报告。
 - 统一报告 `output/e2e/dev_matrix_report.json`（按 e2eob 的 checkResult/report 结构）。
 - 辅助：`connect(t, type, dsn)`（ping 失败 skip）、幂等 fixture bootstrap/drop（驱动直连，无 docker）、seed 常量内联于 `fixture_*.go`。
-- 启动方式（文档见 §7）：`export OWL_E2E_OB_ORACLE_DSN=…` 或直接 `go test -tags e2e -v ./internal/e2edev/`（自动读 dotenv）。
+- 启动方式（文档见 §7）：`export OWL_E2E_OB_ORACLE_DSN=…` 或直接 `go test -tags "e2e ob" -v ./internal/e2edev/`（自动读 dotenv）。
 
 ## 4. 用例矩阵（按阶段）
 
@@ -100,20 +100,21 @@ H2 浏览器人工项（留到最后，我给出逐项操作清单）：OB 源/�
 
 ## 6. 验收
 - `go test ./internal/... -count=1`（无 e2e tag）保持全绿（离线回归基线）。
-- `go test -tags e2e -v ./internal/e2edev/` 输出 `output/e2e/dev_matrix_report.json`，M1–M6 全 pass；缺 env 时逐项 skip 不失败。
+- `go test -tags "e2e ob" -v ./internal/e2edev/` 输出 `output/e2e/dev_matrix_report.json`，M1–M6 全 pass；缺 env 时逐项 skip 不失败。
+- （OB 方言按 build tag 编译控制；产物要求见 README 构建矩阵。）
 - 单元测试：init 映射规则 golden；任何实库暴露的查询/类型缺口回补 sqlmock/单测。
 
 ## 7. 启动方式（runbook）
 前置：本机可达 4 库；`testdata/db/.local-dev.env` 存在（或导出等价环境变量）。
 ```bash
 # 全量（自动读 .local-dev.env；也可逐项 export OWL_E2E_* 覆盖）
-go test -tags e2e -v ./internal/e2edev/ -count=1
+go test -tags "e2e ob" -v ./internal/e2edev/ -count=1
 # 单 Phase/用例
-go test -tags e2e -v ./internal/e2edev/ -run 'TestPhaseA|TestM1_MysqlToObOracle' -count=1
+go test -tags "e2e ob" -v ./internal/e2edev/ -run 'TestPhaseA|TestM1_MysqlToObOracle' -count=1
 # 报告
 cat output/e2e/dev_matrix_report.json
 # 手工引导先行（仅建对象，幂等；也可由 A5/A6/B 用例自动完成）
-go test -tags e2e -run 'TestFixtureBootstrap' ./internal/e2edev/
+go test -tags "e2e ob" -run 'TestFixtureBootstrap' ./internal/e2edev/
 ```
 清理：各用例自带 drop/teardown；整租户清理命令见 fixture 注释（不删除 MIGSRC 外的预置对象）。
 

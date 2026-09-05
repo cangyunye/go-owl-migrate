@@ -36,7 +36,7 @@ export OWL_E2E_REPORT='./my-report.json'
 ## 运行
 
 ```bash
-go test -tags e2e -v ./internal/e2eob/
+go test -tags "e2e ob" -v ./internal/e2eob/
 ```
 
 成功输出结尾：
