@@ -43,7 +43,9 @@ owl-migrate migrate -c ./migrate.yaml
 | GoldenDB (Oracle) | ✓ | ✓ | ✓ | ✓ | ✓ (embeds Oracle) |
 | OceanBase (MySQL) | ✓ | ✓ | ✓ | ✓ | ✓ (embeds MySQL) |
 | OceanBase (Oracle) | ✓ | ✓ | ✓ | ✓ | ✓ (embeds Oracle) |
-| PanWeiDB | ✓ | ✓ | ✓ | ✓ | ✓ (same as PG driver) |
-| OpenGaussDB | ✓ | ✓ | ✓ | ✓ | ✓ (same as PG driver) |
+| PanWeiDB | ✓ | ✓ | ✓ | ✓ | ✓ (openGauss driver, PG wire) |
+| OpenGaussDB | ✓ | ✓ | ✓ | ✓ | ✓ (openGauss driver, PG wire) |
+| OpenGaussDB (Oracle A) | ✓ | ✓ | ✓ | ✓ | ✓ (openGauss driver, Oracle dialect, PG wire) |
+| OpenGaussDB (MySQL B) | ✓ | ✓ | ✓ | ✓ | ✓ (openGauss driver, MySQL dialect, PG wire) |
 | SQLite3 | ✓ | ✓ | ✓ | ✓ | — (embedded) |
 | DuckDB | ✓ | ✓ | ✓ | ✓ | — (embedded) |
