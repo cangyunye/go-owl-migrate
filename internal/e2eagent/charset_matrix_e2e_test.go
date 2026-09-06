@@ -388,3 +388,161 @@ func TestE2E_CharsetMatrixMySQLUnsupportedRune(t *testing.T) {
 		})
 	}
 }
+
+// ── §4.4 矩阵 · oceanbase-mysql 切片 ──
+// 探针实测：OB MySQL 模式支持租户内按库指定 gbk（无需 GBK 租户）。结构与
+// MySQL 切片一致：三库（gbk/gbk/utf8mb4）× S1/S2/S3 × 4 通道组合。native =
+// go-sql-driver（OB MySQL wire），agent = owljdbc + oceanbase-client jar。
+
+func csOBMatrixEnv(t *testing.T) (map[string]string, *sql.DB, string) {
+	t.Helper()
+	env := csEnv(t)
+	root := csGet(t, env, "OWL_E2E_OB_MYSQL_DSN")
+	admin, err := sql.Open("mysql", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	return env, admin, root
+}
+
+func TestE2E_CharsetMatrixOceanBaseMySQL(t *testing.T) {
+	env, admin, rootDSN := csOBMatrixEnv(t)
+
+	for _, spec := range []struct{ name, charset string }{
+		{"owl_ob_gbk_a", "gbk"}, {"owl_ob_gbk_b", "gbk"}, {"owl_ob_utf8_t", "utf8mb4"},
+	} {
+		csMatrixCreateDB(t, admin, spec.name, spec.charset)
+	}
+	// 三库同一份 GBK 安全集（emoji 失败语义已在 MySQL 切片专测覆盖）。
+	csMatrixSeed(t, admin, "owl_ob_gbk_a", "gbk", false)
+	csMatrixSeed(t, admin, "owl_ob_gbk_b", "gbk", false)
+	csMatrixSeed(t, admin, "owl_ob_utf8_t", "utf8mb4", false)
+
+	f, err := dsnfields.Decompose("oceanbase-mysql", rootDSN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obJar := env["OWL_E2E_OB_JAR"]
+	if obJar == "" {
+		obJar = "../../oceanbase-client-2.4.1.jar"
+	}
+	if _, err := os.Stat(obJar); err != nil {
+		t.Skipf("oceanbase client jar missing (%s)", obJar)
+	}
+
+	openOB := func(db, channel string) *sql.DB {
+		if channel == "native" {
+			d, err := sql.Open("mysql", rootDSN+db)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = d.Close() })
+			return d
+		}
+		cfg := map[string]any{
+			"driverClass": "com.oceanbase.jdbc.Driver",
+			"url": fmt.Sprintf("jdbc:oceanbase://%s:%s/%s?useSSL=false&characterEncoding=UTF-8",
+				f.Host, f.Port, db),
+			"user":      f.Username,
+			"password":  f.Password,
+			"family":    "mysql",
+			"classpath": []string{obJar},
+			"agentJar":  env["OWL_AGENT_JAR"],
+		}
+		delete(cfg, "agentJar")
+		if v := env["OWL_AGENT_JAR"]; v != "" {
+			cfg["agentJar"] = v
+		} else {
+			cfg["agentJar"] = "../../jvm/owl-agent/owl-agent.jar"
+		}
+		b, _ := json.Marshal(cfg)
+		d, err := sql.Open("owljdbc", string(b))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = d.Close() })
+		return d
+	}
+
+	tblDef := func(db string) *md.TableDef {
+		tbl, err := md.NewTableDef(db, "t1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, c := range []string{"id", "txt", "amt", "ts"} {
+			cd, err := md.NewColumnDef(db, "t1", c, i+1, map[string]string{"id": "INT", "txt": "VARCHAR", "amt": "DECIMAL", "ts": "DATETIME"}[c])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tbl.AddColumn(cd); err != nil {
+				t.Fatal(err)
+			}
+		}
+		tbl.AddPrimaryKey("pk_t1", "id")
+		return tbl
+	}
+
+	scenarios := []struct{ name, srcDB, tgtDB string }{
+		{"S1_gbk_to_gbk", "owl_ob_gbk_a", "owl_ob_gbk_b"},
+		{"S2_utf8_to_gbk", "owl_ob_utf8_t", "owl_ob_gbk_b"},
+		{"S3_gbk_to_utf8", "owl_ob_gbk_a", "owl_ob_utf8_t"},
+	}
+	for _, sc := range scenarios {
+		sc := sc
+		t.Run(sc.name, func(t *testing.T) {
+			dumps := map[string]string{}
+			for _, srcCh := range []string{"native", "agent"} {
+				for _, tgtCh := range []string{"native", "agent"} {
+					label := srcCh + "->" + tgtCh
+					t.Run(label, func(t *testing.T) {
+						srcDB := openOB(sc.srcDB, srcCh)
+						tgtDB := openOB(sc.tgtDB, tgtCh)
+
+						dir := t.TempDir()
+						tables := []*md.TableDef{tblDef(sc.srcDB)}
+						pks := map[string][]string{sc.srcDB + ".t1": {"id"}}
+						res, err := exporter.New(srcDB, exporter.Config{
+							OutputDir: dir, Format: "csv", CSVHeader: true,
+							CSVDelimiter: ",", CSVNullRep: "\\N",
+							PageSize: 500, MaxWorkers: 1, DBType: "mysql",
+							PlaceholderFamily: "qmark",
+						}).ExportTables(context.Background(), tables, pks)
+						if err != nil {
+							t.Fatalf("export: %v", err)
+						}
+						for _, r := range res {
+							if r.Error != nil {
+								t.Fatalf("export: %v", r.Error)
+							}
+						}
+						impRes, err := importer.New(tgtDB, importer.Config{
+							SourceDir: dir, CSVDelimiter: ",", CSVNullMarker: "\\N",
+							NullIf: []string{"NULL", "null", "\\N"},
+							CommitInterval: 100, ErrorPolicy: "stop",
+							MaxWorkers: 1, TargetDBType: "mysql",
+							PlaceholderFamily: "qmark",
+							TruncateBefore:    true,
+						}).ImportTables(context.Background(),
+							[]*md.TableDef{tblDef(sc.srcDB)},
+							map[string]string{sc.srcDB: sc.tgtDB})
+						if err != nil {
+							t.Fatalf("import: %v", err)
+						}
+						for _, r := range impRes {
+							if r.Err != nil {
+								t.Fatalf("import: %v", r.Err)
+							}
+						}
+						dump := dumpMatrixTable(t, admin, sc.tgtDB)
+						if prev, ok := dumps["__any__"]; ok && prev != dump {
+							t.Fatalf("%s: target dump differs across channel combos:\n%q\nvs\n%q", label, prev, dump)
+						}
+						dumps[label] = dump
+						dumps["__any__"] = dump
+					})
+				}
+			}
+		})
+	}
+}
