@@ -99,13 +99,13 @@ func TestBuildAgentConfigProfiles(t *testing.T) {
 		{
 			"mysql wire dsn",
 			config.DBConfig{Type: "mysql", DSN: "user:pw@tcp(db1:3306)/app?parseTime=true", Agent: ag},
-			"jdbc:mysql://db1:3306/app?useSSL=false&allowPublicKeyRetrieval=true",
+			"jdbc:mysql://db1:3306/app?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8",
 			"com.mysql.cj.jdbc.Driver", "mysql", "user",
 		},
 		{
 			"oceanbase-mysql tenant dsn",
 			config.DBConfig{Type: "oceanbase-mysql", DSN: "root:pw@tcp(127.0.0.1:2881)/app", Agent: ag},
-			"jdbc:oceanbase://127.0.0.1:2881/app?useSSL=false",
+			"jdbc:oceanbase://127.0.0.1:2881/app?useSSL=false&characterEncoding=UTF-8",
 			"com.oceanbase.jdbc.Driver", "mysql", "root",
 		},
 		{

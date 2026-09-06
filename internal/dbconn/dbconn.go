@@ -120,6 +120,8 @@ func openNative(cfg config.DBConfig) (*sql.DB, error) {
 		return nil, fmt.Errorf("database/sql driver %q is not linked into this binary", driver)
 	}
 
+	dsn = injectEncodingDefaults(name, driver, dsn)
+
 	db, err := sql.Open(driver, dsn)
 	if err != nil {
 		return nil, err

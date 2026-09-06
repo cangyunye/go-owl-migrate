@@ -242,6 +242,12 @@ func EncodeRowBatch(conn, id uint32, row []any) []byte {
 	return out
 }
 
+// DecodeRowBatch 是 decodeRowBatch 的导出对称面（EncodeRowBatch 的逆操作），
+// 供测试 harness 与工具进程解码 ROW_BATCH payload。
+func DecodeRowBatch(p []byte) (conn, id uint32, rows [][]any, err error) {
+	return decodeRowBatch(p)
+}
+
 // decodeRowBatch 解码 ROW_BATCH payload。
 // 值解码失败时仍返回已解析的 conn/id 头：头独立于值区域，即使值损坏也必须
 // 能把错误路由回对应会话的在读流（readLoop 依赖这一点做 fail-fast）。

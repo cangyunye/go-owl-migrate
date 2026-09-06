@@ -55,7 +55,7 @@ var agentProfiles = map[string]agentProfile{
 		family:      "mysql",
 		jarGlobs:    []string{"oceanbase-client-*.jar"},
 		buildURL: func(f dsnfields.Fields) (string, error) {
-			return fmt.Sprintf("jdbc:oceanbase://%s/%s?useSSL=false", jdbcHost(f), f.Database), nil
+			return fmt.Sprintf("jdbc:oceanbase://%s/%s?useSSL=false&characterEncoding=UTF-8", jdbcHost(f), f.Database), nil
 		},
 	},
 	"oceanbase-oracle": {
@@ -71,7 +71,7 @@ var agentProfiles = map[string]agentProfile{
 		family:      "mysql",
 		jarGlobs:    []string{"mysql-connector-j-*.jar"},
 		buildURL: func(f dsnfields.Fields) (string, error) {
-			return fmt.Sprintf("jdbc:mysql://%s/%s?useSSL=false&allowPublicKeyRetrieval=true", jdbcHost(f), f.Database), nil
+			return fmt.Sprintf("jdbc:mysql://%s/%s?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8", jdbcHost(f), f.Database), nil
 		},
 	},
 	"postgres": {
@@ -97,7 +97,7 @@ var agentProfiles = map[string]agentProfile{
 		family:      "mysql",
 		jarGlobs:    []string{"mysql-connector-j-*.jar"},
 		buildURL: func(f dsnfields.Fields) (string, error) {
-			return fmt.Sprintf("jdbc:mysql://%s/%s?useSSL=false&allowPublicKeyRetrieval=true", jdbcHost(f), f.Database), nil
+			return fmt.Sprintf("jdbc:mysql://%s/%s?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8", jdbcHost(f), f.Database), nil
 		},
 	},
 	"dm": {
