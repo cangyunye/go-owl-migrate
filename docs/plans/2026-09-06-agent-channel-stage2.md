@@ -164,6 +164,8 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 | M1 | `DBConfig.Channel` 字段 + dbconn.Open 通道分发 + 内置类型目录 + 决策表单测 | 决策表全绿；默认路径现有测试零 diff |
 | M2 | CLI/config 面：`--channel` / `agent:` 配置段 / `--jars-dir` / DSN 打码复用 config/mask；**编码不变量（§2.5）**：mysql 族 charset 校验、postgres 族 `client_encoding=UTF8` 注入、agent URL `characterEncoding` 注入、可选探测告警 | `owl-migrate export-metadata --channel agent` 可对 OB 跑通；对 GBK 实例的非 UTF8 DSN 告警/拦截有单测 |
 | M3 | 产品级对拍 e2e：export-metadata / migrate / import / export 在 OB 双租户 + MySQL/PG 上 agent vs native；**字符集矩阵（§4.4）P0 先行，P1 跟进** | 元数据一致、CSV 逐字节一致、导入计数一致（复用 harness 断言）；P0 字符集矩阵 4 通道组合回读彼此一致 |
+
+> **M3 进展（2026-09-06）**：产品级 CLI 双通道对拍首切片已落地并通过——`export-metadata` 与 `export data` 在 MySQL fixture 上 native vs `channel: agent` 产物逐字节一致（`internal/cmd/e2e_channel_test.go`，`-tags e2e`）。过程中修复两个通道等价性缺口：sidecar 对常量列 `getColumnTypeName=null` 的 NPE（information_schema 内省查询必踩）、mysql 族 DATETIME 的渲染差异（family 分治：mysql getString / oracle getObject）。`migrate` / `import` 的产品级对拍与 §4.4 矩阵 MySQL 切片（GBK 库 × 4 通道组合）为下一切片。
 | M4 | 模块抽取 `owljdbc` 独立仓库 + owl-migrate 切依赖 | owl-migrate 构建/测试全绿；新项目两行接入 demo |
 | M5（可选） | `fallback_on_error` 开关 + 回退结构化日志 + 吞吐优化（row batching，见风险） | 回退路径有日志有断言；吞吐 ≥ native/3 目标重新评估 |
 
