@@ -40,6 +40,10 @@ public final class Main {
 
     static void handle(byte[] payload, OutputStream out) {
         Protocol.Request req = Protocol.parseRequest(payload);
+        if (System.getenv("OWL_AGENT_DEBUG") != null) {
+            System.err.println("[agent] op=" + req.op + " sqlNull=" + (req.sql == null)
+                + " sqlLen=" + (req.sql == null ? -1 : req.sql.length()));
+        }
         try {
             switch (req.op) {
                 case "CONNECT": {
@@ -87,8 +91,12 @@ public final class Main {
                             StringBuilder cols = new StringBuilder("[");
                             for (int i = 1; i <= md.getColumnCount(); i++) {
                                 if (i > 1) cols.append(',');
-                                cols.append("{\"name\":\"").append(Json.escape(md.getColumnLabel(i)))
-                                    .append("\",\"type\":\"").append(Json.escape(md.getColumnTypeName(i))).append("\"}");
+                                // 常量列（如 information_schema 查询里的 '' / 'SQL'）的
+                                // label/typeName 可能为 null（Connector/J 实测），必须兜底。
+                                String label = md.getColumnLabel(i);
+                                String typeName = md.getColumnTypeName(i);
+                                cols.append("{\"name\":\"").append(Json.escape(label == null ? "" : label))
+                                    .append("\",\"type\":\"").append(Json.escape(typeName == null ? "" : typeName)).append("\"}");
                             }
                             cols.append(']');
                             sendRespRaw(out, req, true, cols.toString(), null, 0, 0);
@@ -98,7 +106,7 @@ public final class Main {
                                 // 先把整行编码进字节数组，再按 12 字节头 + 行负载精确分配缓冲
                                 java.io.ByteArrayOutputStream row = new java.io.ByteArrayOutputStream();
                                 for (int i = 1; i <= nCols; i++) {
-                                    row.write(ValueCodec.encodeValue(columnValue(rs, md, i)));
+                                    row.write(ValueCodec.encodeValue(columnValue(rs, md, i, req.family)));
                                 }
                                 byte[] rowBytes = row.toByteArray();
                                 ByteBuffer bb = ByteBuffer.allocate(12 + rowBytes.length).order(ByteOrder.LITTLE_ENDIAN);
@@ -128,6 +136,9 @@ public final class Main {
                     sendResp(out, req, false, null, "unknown op " + req.op, 0, 0);
             }
         } catch (Exception e) {
+            if (System.getenv("OWL_AGENT_DEBUG") != null) {
+                e.printStackTrace();
+            }
             try {
                 sendResp(out, req, false, null, String.valueOf(e.getMessage()), 0, 0);
             } catch (Exception ignored) { }
@@ -135,7 +146,7 @@ public final class Main {
     }
 
     /** 类型感知取值：BLOB/二进制 → getBytes；CLOB/文本大对象/数值 → getString（保留驱动原始渲染）；其余 getObject。 */
-    static Object columnValue(ResultSet rs, ResultSetMetaData md, int i) throws Exception {
+    static Object columnValue(ResultSet rs, ResultSetMetaData md, int i, String family) throws Exception {
         int type = md.getColumnType(i);
         switch (type) {
             case Types.BINARY: case Types.VARBINARY: case Types.LONGVARBINARY:
@@ -143,7 +154,14 @@ public final class Main {
                 return rs.getBytes(i);
             case Types.CLOB: case Types.NCLOB: case Types.LONGVARCHAR: case Types.LONGNVARCHAR:
             case Types.NUMERIC: case Types.DECIMAL: case Types.FLOAT: case Types.DOUBLE: case Types.REAL:
-                return rs.getString(i);
+            case Types.DATE: case Types.TIME: case Types.TIMESTAMP:
+                // 日期时间按 family 分治：mysql 族用驱动原样渲染（"2006-01-02
+                // 15:04:05"，与 native 无 parseTime 的原始字符串一致）；oracle 族
+                // 的 getObject→LocalDateTime 已被 parity 验证与 native 等价。
+                if ("mysql".equals(family)) {
+                    return rs.getString(i);
+                }
+                return rs.getObject(i);
             default:
                 return rs.getObject(i);
         }
