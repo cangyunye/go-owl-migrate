@@ -109,6 +109,8 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 
 **目的**：现有对拍矩阵全部是 UTF-8 系库，native（驱动转换栈）与 agent（JDBC 转换栈）在非 UTF-8 源上是否逐字节一致属于盲区；同时验证 2.5 注入项的正确性（不注入时 PG GBK 实例现行为即乱码）。矩阵重心按**入口解析优先**设计：只要源端字节被正确解码为进程内 UTF-8（native 各转换栈 + agent JDBC 转换栈都验证到），出口转码由目标端服务端/驱动承担，可控性随之成立——因此源角色的覆盖比目标角色组合更重要，目标端不追求 7×7 全配对。覆盖用户指定 7 个类型（`opengauss-postgresql` 对应仓库 type `opengaussdb`）：
 
+> **待处理（2026-09-06）**：OB GBK 租户因资源不足暂缓构建。替代先行项：① fake_agent 增加探针剧本（假定 OB-Oracle UTF8 租户 / MySQL utf8mb4 返回），锁 mock 契约；② 在现有 **UTF8 租户**上用真实 e2e 确认 `dbconn.ProbeServerEncoding` 判断服务端编码（native/agent 双通道同值）且 GBK 出口转码逐字节一致（`charset_e2e_test.go`）。GBK 租户到位后补跑 S1 的真 GBK 入口场景与 S2-o。
+
 | 类型 | 角色 | GBK 实例准备 |
 |---|---|---|
 | mysql | 源/目标 | `CREATE DATABASE … CHARACTER SET gbk`（e2edev fixture 机制已支持建库，`fixture_sources.go` 现为 utf8mb4，扩展 gbk 即可） |
