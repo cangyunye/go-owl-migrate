@@ -76,3 +76,9 @@ owljdbc/jvm/owl-agent/owl-agent.jar
 # superpowers SDD scratch (never commit)
 .superpowers/
 /fake_agent
+
+# 验收配置生成物（含真实 DSN，禁止提交）
+testdata/acceptance/gen/
+
+# archify 产物暂不入库（本地保留查看）
+docs/archify/

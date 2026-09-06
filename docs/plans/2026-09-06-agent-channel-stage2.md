@@ -92,7 +92,9 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 | 类别 | type | 默认通道 |
 |---|---|---|
 | native 已覆盖 | mysql / mariadb / postgres / oracle / sqlite3† / duckdb† / opengaussdb* / panweidb* / goldendb-mysql† / oceanbase-mysql† / oceanbase-oracle† | native |
-| agent 保底（新增 type） | dm / kingbase / yashandb / timesten / goldendb-oracle | agent（无 native 可言） |
+| agent 保底（新增 type） | dm / kingbase / timesten / goldendb-oracle（catalog 已登记，驱动类待厂商确认） | agent；goldendb-oracle 另有 native go-ora 路径（未实测，auto 下不回退） |
+
+> yashandb 经确认不纳入 catalog（决策 2026-09-06）。
 
 †=build-tag 门控（sqlite3/duckdb/ob/og/gdb）；`auto` 下未编译时回退 agent。
 
@@ -204,3 +206,17 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 - agent 连接池独立调参（复用 PoolConfig，profile 复用已摊薄成本）。
 - online/CDC adapter 与 agent 通道合并（沿用阶段一边界，仅因走 dbconn 而「顺带可用」）。
 - 多 JVM 负载均衡 / agent 集群。
+
+## 9. 遗留跟进清单（合并后逐项消化）
+
+| # | 事项 | 来源/理由 | 优先级 |
+|---|---|---|---|
+| 1 | **LOB chunk 流式**：阶段一架构 §3 承诺 BLOB/CLOB 按帧分块流式（对齐 go-ora LOB FETCH=POST 的有界内存语义），agent 通道尚未实现，当前受单帧 16 MiB 上限约束；阶段二计划此前既未排期也未列非目标，本行即补记录 | 阶段一架构 §3 / 测试指南 §4.2 | 高 |
+| 2 | oracle 族字符集探测接线：`ProbeServerEncoding` 已实现，产品路径（连接后探测 + 可选开关 + 日志）未接 | §2.5 | 中 |
+| 3 | mysql 非 UTF-8 charset 的 strict-error 可配置报错（现仅 warn+覆盖） | §2.5 | 中 |
+| 4 | `fallback_on_error` 开关（native 连接失败可选回退） | §2.1/§2.3，M5 | 中 |
+| 5 | MaskDSN 接线（agent DSN 错误/日志路径的口令打码） | M2 遗留 | 中 |
+| 6 | `[channel]`/`[encoding]` 提示改走 zap 结构化日志（现为 stderr 文本） | §2.3"结构化日志"承诺 | 低 |
+| 7 | `characterEncoding` 幂等/保留语义：postgres/mysql 族 URL 参数由 catalog 构造、用户 DSN 原参数不透传——与 §2.5"已有则不覆盖"的措辞对齐 | 规格评审 | 低 |
+| 8 | e2e_conn_test.go / e2e_migrate_test.go 硬编码 127.0.0.1:3306/5432 改为读 .local-dev.env + skip（存量） | 测试实践 | 低 |
+| 9 | 小型重构：probeFamily/Family 合并、utf8 charset 判重 helper、`BuildConfig` 参数聚拢、`Main.java` sendResp/sendEnd 去重 | 规范评审 | 低 |

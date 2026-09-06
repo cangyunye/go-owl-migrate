@@ -95,6 +95,12 @@ func buildAgentConfig(cfg config.DBConfig) (owljdbc.Config, error) {
 	return owljdbc.BuildConfig(t, endpoint, cfg.DSN, cfg.Agent.JarsDir, cfg.Agent.AgentJar, cfg.Agent.JavaHome)
 }
 
+// ResolveChannel 是 resolveChannel 的导出入口（内部按已链接驱动判定），
+// 供 cmd 层在构造 SQL 占位符等决策时复用同一份通道结论。
+func ResolveChannel(cfg config.DBConfig) (string, error) {
+	return resolveChannel(cfg, driverLinked)
+}
+
 // openAgentChannel opens a *sql.DB through the owljdbc driver. The sidecar
 // JVM is spawned lazily on first connection and shared per classpath profile.
 func openAgentChannel(cfg config.DBConfig) (*sql.DB, error) {

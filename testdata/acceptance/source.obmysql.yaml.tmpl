@@ -1,0 +1,25 @@
+# MySQL 源 · 验收配置（channel 由命令行 --channel 切换，见 README）
+general:
+  log_level: info
+metadata:
+  type: database
+ddl:
+  target_dialect: postgres
+agent:
+  jars_dir: "."
+  agent_jar: "owljdbc/jvm/owl-agent/owl-agent.jar"
+source:
+  type: oceanbase-mysql
+  dsn: "__DSN__owl_accept"
+  schema: "owl_accept"
+export:
+  format: csv
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    header: true
+    null_representation: "\\N"
+  batch:
+    page_size: 500
+  tables:
+    include: ["*"]

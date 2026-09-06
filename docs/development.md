@@ -237,3 +237,9 @@ go fmt ./...
 go vet ./...
 make lint          # golangci-lint (if installed)
 ```
+
+## owljdbc 嵌套模块
+
+`owljdbc/` 是独立 Go module（`github.com/cangyunye/owljdbc`，JDBC agent 通道），
+父仓库通过 `replace => ./owljdbc` 引用。测试需单独执行：`cd owljdbc && go test ./...`；
+sidecar jar 构建与驱动 jar 下载见模块 README。

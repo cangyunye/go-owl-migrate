@@ -37,13 +37,13 @@ func (m *Manager) Acquire(ctx context.Context, cfg Config) (*Session, error) {
 
 	s, err := e.proc.NewSession(cfg)
 	if err != nil {
-		m.Release(cfg, 0)
+		m.Release(cfg)
 		return nil, err
 	}
 	return s, nil
 }
 
-func (m *Manager) Release(cfg Config, connID uint32) {
+func (m *Manager) Release(cfg Config) {
 	key := profileKey(cfg)
 	m.mu.Lock()
 	e := m.procs[key]

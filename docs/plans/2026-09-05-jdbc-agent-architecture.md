@@ -16,7 +16,7 @@ go-owl-migrate 已通过 `database/sql` 驱动支撑 MySQL / Oracle / PostgreSQL
 
 ## 1. 总体架构
 
-沿用参考文档 `go_agent_driver.md` 的「统一抽象 + 双引擎」思想，但落进本仓库的 `database/sql` 形态——**不重写分层，只在驱动层补一条通道**。
+沿用参考文档 `docs/dev/go-agent-driver.md` 的「统一抽象 + 双引擎」思想，但落进本仓库的 `database/sql` 形态——**不重写分层，只在驱动层补一条通道**。
 
 ```plaintext
 业务层（零改动）

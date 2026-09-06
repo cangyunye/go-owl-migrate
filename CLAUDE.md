@@ -10,6 +10,10 @@ User-facing documentation lives in `docs/` — see [docs/index.md](docs/index.md
 
 go-owl-migrate is a database migration tool for Oracle, PostgreSQL, MySQL, GoldenDB, OceanBase, PanWeiDB, OpenGaussDB. Offline-first: generate DDL, INSERT, and data migration scripts from CSV metadata or live database introspection.
 
+The JDBC agent channel lives in the **`owljdbc/` nested module**
+(`github.com/cangyunye/owljdbc`, own go.mod + `jvm/owl-agent` sidecar); owl-migrate
+consumes it via a `replace` directive. Run its tests separately (see Test section).
+
 Part of the `owl` family:
 - **go-owl** (`github.com/cangyunye/go-owl`) — Main CLI: node management, batch exec, file transfer, playbooks, SSH sessions
 - **go-owl-metrics** (`github.com/sinvigil/go-owl-metrics`) — node_exporter metrics scraping and terminal dashboard
@@ -38,7 +42,8 @@ make build/linux                    # Linux AMD64
 make build/windows                  # Windows AMD64
 
 # Test
-go test ./...                       # All packages
+go test ./...                       # All packages (nested module needs its own run)
+(cd owljdbc && go test ./...)       # owljdbc nested module (JDBC agent channel)
 go test -v ./internal/metadata/csv/ # Single package
 go test -run TestNewColumnDef -v    # Single test
 make test                           # go test -v ./...

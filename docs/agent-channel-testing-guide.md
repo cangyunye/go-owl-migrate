@@ -56,8 +56,8 @@ bash owljdbc/scripts/fetch-jars.sh   # 下载到当前目录：mysql-connector-j
 java -version                    # JRE 8+ 即可
 ```
 
-`jars_dir` 解析顺序：`agent.jars_dir`（yaml）→ `--jars-dir`（flag）→ 当前工作目录。
-owl-agent.jar 同理（`agent.agent_jar` 可显式给路径）。
+`--jars-dir`（flag）**覆盖** `agent.jars_dir`（yaml）；两者都缺省时搜索当前工作目录。
+`agent.agent_jar` 可显式给 owl-agent.jar 路径（显式路径直接校验存在）。
 
 ---
 

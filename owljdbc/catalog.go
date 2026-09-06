@@ -94,6 +94,16 @@ var profiles = map[string]Profile{
 			return fmt.Sprintf("jdbc:mysql://%s/%s?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8", e.HostPort(), e.Database), nil
 		},
 	},
+	// goldendb-oracle：登记未测——GoldenDB Oracle 兼容模式的 JDBC 驱动类
+	// 待厂商最终确认，先按 Oracle 兼容系登记，首次接入时实测修订。
+	"goldendb-oracle": {
+		DriverClass: "oracle.jdbc.OracleDriver",
+		Family:      "oracle",
+		JarGlobs:    []string{"goldendb-jdbc-*.jar", "ojdbc*.jar"},
+		BuildURL: func(e Endpoint) (string, error) {
+			return fmt.Sprintf("jdbc:oracle:thin:@//%s/%s", e.HostPort(), e.Database), nil
+		},
+	},
 	"dm": {
 		DriverClass: "dm.jdbc.driver.DmDriver",
 		Family:      "oracle",

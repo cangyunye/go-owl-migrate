@@ -1,0 +1,26 @@
+# OceanBase-Oracle 租户（MIGSRC）· 验收配置
+# native 通道需 -tags ob 构建的二进制；agent 通道无需 tag。
+general:
+  log_level: info
+metadata:
+  type: database
+ddl:
+  target_dialect: oceanbase-oracle
+agent:
+  jars_dir: "."
+  agent_jar: "owljdbc/jvm/owl-agent/owl-agent.jar"
+source:
+  type: oceanbase-oracle
+  dsn: "__MIGSRC_DSN__"
+  schema: "MIGSRC"
+export:
+  format: csv
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    header: true
+    null_representation: "\\N"
+  batch:
+    page_size: 500
+  tables:
+    include: ["*"]

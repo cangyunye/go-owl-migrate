@@ -53,7 +53,7 @@ func (c *Conn) Prepare(query string) (driver.Stmt, error) {
 
 func (c *Conn) Close() error {
 	err := c.sess.Close()
-	DefaultManager.Release(c.cfg, c.sess.connID)
+	DefaultManager.Release(c.cfg)
 	return err
 }
 

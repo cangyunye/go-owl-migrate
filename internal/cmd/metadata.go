@@ -142,7 +142,7 @@ func openDB(cfg config.DBConfig) (*sql.DB, error) {
 	if channelFlag != "" {
 		cfg.Channel = channelFlag
 	}
-	if jarsDirFlag != "" && cfg.Agent.JarsDir == "" {
+	if jarsDirFlag != "" { // flag 覆盖 yaml（阶段二计划 §2.1）
 		cfg.Agent.JarsDir = jarsDirFlag
 	}
 	return dbconn.Open(cfg)
