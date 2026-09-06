@@ -155,9 +155,11 @@ public final class Main {
             case Types.CLOB: case Types.NCLOB: case Types.LONGVARCHAR: case Types.LONGNVARCHAR:
             case Types.NUMERIC: case Types.DECIMAL: case Types.FLOAT: case Types.DOUBLE: case Types.REAL:
             case Types.DATE: case Types.TIME: case Types.TIMESTAMP:
-                // 日期时间按 family 分治：mysql 族用驱动原样渲染（"2006-01-02
-                // 15:04:05"，与 native 无 parseTime 的原始字符串一致）；oracle 族
-                // 的 getObject→LocalDateTime 已被 parity 验证与 native 等价。
+                // 日期时间按 family 分治：仅 mysql 族用驱动原样渲染（native
+                // go-sql-driver 无 parseTime 时返回原样字符串）；postgres 族
+                // （lib/pq 系 native 返回 time.Time）与 oracle 族保持
+                // getObject→LocalDateTime→datetime tag→Go time.Time，两侧
+                // CSV 均落 exporter 的紧凑 datetime 格式。
                 if ("mysql".equals(family)) {
                     return rs.getString(i);
                 }

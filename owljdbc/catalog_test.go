@@ -26,7 +26,7 @@ func TestProfileURLs(t *testing.T) {
 		{"mysql", "jdbc:mysql://h1:2881/app?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8", "mysql"},
 		{"oceanbase-mysql", "jdbc:oceanbase://h1:2881/app?useSSL=false&characterEncoding=UTF-8", "mysql"},
 		{"oceanbase-oracle", "jdbc:oceanbase://h1:2881?useSSL=false", "oracle"},
-		{"postgres", "jdbc:postgresql://h1:2881/app", "postgres"},
+		{"postgres", "jdbc:postgresql://h1:2881/app?stringtype=unspecified", "postgres"},
 		{"dm", "jdbc:dm://h1:2881", "oracle"},
 	}
 	for _, tc := range cases {

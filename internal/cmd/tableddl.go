@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
@@ -17,6 +18,16 @@ func targetTypeFamily(dbType string) string { return service.TargetTypeFamily(db
 // connection, e.g. "?" for OceanBase Oracle tenants reached over MySQL wire.
 func placeholderFamilyFor(cfg config.DBConfig) string {
 	if dbconn.OceanBaseOracleUsesMySQLWire(cfg) {
+		return "qmark"
+	}
+	// agent 通道经 JDBC：postgres 族的 $N 是服务端 PREPARE 语义，PG JDBC
+	// 只认 ?，强制 qmark（native pq 系维持 $N）。mysql 族本就 ?；oracle 族
+	// 由 sidecar BindRewriter 承接，不受影响。
+	ch := strings.ToLower(strings.TrimSpace(cfg.Channel))
+	if ch == "" {
+		ch = strings.ToLower(strings.TrimSpace(channelFlag))
+	}
+	if ch == "agent" && dbconn.Family(cfg.Type) == "postgres" {
 		return "qmark"
 	}
 	return ""

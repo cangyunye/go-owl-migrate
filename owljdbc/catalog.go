@@ -71,7 +71,10 @@ var profiles = map[string]Profile{
 		Family:      "postgres",
 		JarGlobs:    []string{"postgresql-*.jar"},
 		BuildURL: func(e Endpoint) (string, error) {
-			return fmt.Sprintf("jdbc:postgresql://%s/%s", e.HostPort(), e.Database), nil
+			// stringtype=unspecified：字符串参数以 unspecified 类型发给服务端，
+			// 由目标列推断类型——与 native pq 的 unknown-oid 行为一致（迁移
+			// 场景的宽松隐式转换正是对拍等价所需要的）。
+			return fmt.Sprintf("jdbc:postgresql://%s/%s?stringtype=unspecified", e.HostPort(), e.Database), nil
 		},
 	},
 	// 登记未测：driverClass/URL 来自架构文档 §11 与厂商公开文档。
@@ -105,6 +108,17 @@ var profiles = map[string]Profile{
 		JarGlobs:    []string{"kingbase8-*.jar"},
 		BuildURL: func(e Endpoint) (string, error) {
 			return fmt.Sprintf("jdbc:kingbase8://%s/%s", e.HostPort(), e.Database), nil
+		},
+	},
+	// openGauss JDBC 6.x（驱动类 org.opengauss.Driver；JarGlobs 覆盖官方
+	// opengauss-jdbc-*.jar 命名）。兼容模式（-mysql/-oracle）只影响方言，
+	// wire 与 JDBC 路径相同。
+	"opengaussdb": {
+		DriverClass: "org.opengauss.Driver",
+		Family:      "postgres",
+		JarGlobs:    []string{"opengauss-jdbc-*.jar"},
+		BuildURL: func(e Endpoint) (string, error) {
+			return fmt.Sprintf("jdbc:opengauss://%s/%s", e.HostPort(), e.Database), nil
 		},
 	},
 	"timesten": {

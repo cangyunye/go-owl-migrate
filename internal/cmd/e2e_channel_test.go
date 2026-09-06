@@ -127,3 +127,33 @@ func TestE2E_CLI_ChannelParity(t *testing.T) {
 		assertCSVDirsEqual(t, csvDirContents(t, outN), csvDirContents(t, outA), "agent export data")
 	})
 }
+
+// TestE2E_CLI_NewConnectorJar 验证 agent 通道与驱动 jar 版本解耦：换用更新的
+// mysql-connector-j（26.7.0）时导出产物仍与 native 一致。
+func TestE2E_CLI_NewConnectorJar(t *testing.T) {
+	jarDir := "../../jdbcdrivers/mysql-connector-j-26.7.0"
+	if _, err := os.Stat(filepath.Join(jarDir, "mysql-connector-j-26.7.0.jar")); err != nil {
+		t.Skipf("connector jar missing (%s)", jarDir)
+	}
+	env := devEnv(t)
+	mysqlRoot := devGet(t, env, "OWL_E2E_MYSQL_DSN")
+	src := seedMySQLSource(t, "mysql", mysqlRoot, "migsrc_chan")
+	t.Cleanup(func() { src.Close() })
+	dsn := mysqlRoot + "migsrc_chan"
+
+	newJarYAML := func(channel string) string {
+		body := channelCLIYAML(t, dsn, "migsrc_chan", channel)
+		// 指向新版连接器所在目录（jars_dir 覆盖）。
+		return strings.Replace(body, `jars_dir: "../../"`, `jars_dir: "`+jarDir+`"`, 1)
+	}
+
+	outN := t.TempDir()
+	outA := t.TempDir()
+	if err := runCLI(t, "export", "data", "-c", writeCLICfg(t, newJarYAML("native")), "-o", outN, "--format", "csv"); err != nil {
+		t.Fatalf("native export: %v", err)
+	}
+	if err := runCLI(t, "export", "data", "-c", writeCLICfg(t, newJarYAML("agent")), "-o", outA, "--format", "csv"); err != nil {
+		t.Fatalf("agent export (connector 26.7.0): %v", err)
+	}
+	assertCSVDirsEqual(t, csvDirContents(t, outN), csvDirContents(t, outA), "agent(26.7.0) export data")
+}

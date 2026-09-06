@@ -118,13 +118,13 @@ func TestBuildAgentConfigProfiles(t *testing.T) {
 		{
 			"postgres url dsn",
 			config.DBConfig{Type: "postgres", DSN: "postgres://u:p@h1:5432/db", Agent: ag},
-			"jdbc:postgresql://h1:5432/db",
+			"jdbc:postgresql://h1:5432/db?stringtype=unspecified",
 			"org.postgresql.Driver", "postgres", "u",
 		},
 		{
 			"postgres keyword dsn",
 			config.DBConfig{Type: "postgres", DSN: "host=h2 port=5433 user=u2 password=p2 dbname=db2", Agent: ag},
-			"jdbc:postgresql://h2:5433/db2",
+			"jdbc:postgresql://h2:5433/db2?stringtype=unspecified",
 			"org.postgresql.Driver", "postgres", "u2",
 		},
 		{

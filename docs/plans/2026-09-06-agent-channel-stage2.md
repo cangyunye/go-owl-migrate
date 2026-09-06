@@ -176,7 +176,13 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 | M2 | CLI/config 面：`--channel` / `agent:` 配置段 / `--jars-dir` / DSN 打码复用 config/mask；**编码不变量（§2.5）**：mysql 族 charset 校验、postgres 族 `client_encoding=UTF8` 注入、agent URL `characterEncoding` 注入、可选探测告警 | `owl-migrate export-metadata --channel agent` 可对 OB 跑通；对 GBK 实例的非 UTF8 DSN 告警/拦截有单测 |
 | M3 | 产品级对拍 e2e：export-metadata / migrate / import / export 在 OB 双租户 + MySQL/PG 上 agent vs native；**字符集矩阵（§4.4）P0 先行，P1 跟进** | 元数据一致、CSV 逐字节一致、导入计数一致（复用 harness 断言）；P0 字符集矩阵 4 通道组合回读彼此一致 |
 
-> **M3 进展（2026-09-06）**：产品级 CLI 双通道对拍首切片已落地并通过——`export-metadata` 与 `export data` 在 MySQL fixture 上 native vs `channel: agent` 产物逐字节一致（`internal/cmd/e2e_channel_test.go`，`-tags e2e`）。过程中修复两个通道等价性缺口：sidecar 对常量列 `getColumnTypeName=null` 的 NPE（information_schema 内省查询必踩）、mysql 族 DATETIME 的渲染差异（family 分治：mysql getString / oracle getObject）。**同日续**：`migrate`（源→目标全流程，内建建表）与 `import`（CSV→目标，`CREATE TABLE … LIKE` 预建 + 整库清理）的产品级双通道对拍已通过（`e2e_channel_migrate_test.go`）；§4.4 矩阵 **MySQL 切片完成**——GBK 库 × S1/S2/S3 × native/agent 源目标通道 4 组合共 12 组全部目标回读一致，emoji 超集字符双通道一致失败（native 3988 collation 拒绝 / agent 1366 incorrect string，均不静默替换）（`charset_matrix_e2e_test.go`）。剩余：PG/openGauss 切片（待 GBK locale 实例）、OB-MySQL 切片（环境已确认可行）、OB-Oracle（待 GBK 租户）。
+> **M3 进展（2026-09-06）**：产品级 CLI 双通道对拍首切片已落地并通过——`export-metadata` 与 `export data` 在 MySQL fixture 上 native vs `channel: agent` 产物逐字节一致（`internal/cmd/e2e_channel_test.go`，`-tags e2e`）。过程中修复两个通道等价性缺口：sidecar 对常量列 `getColumnTypeName=null` 的 NPE（information_schema 内省查询必踩）、mysql 族 DATETIME 的渲染差异（family 分治：mysql getString / oracle getObject）。**同日续**：`migrate`（源→目标全流程，内建建表）与 `import`（CSV→目标，`CREATE TABLE … LIKE` 预建 + 整库清理）的产品级双通道对拍已通过（`e2e_channel_migrate_test.go`）；§4.4 矩阵 **MySQL 切片完成**——GBK 库 × S1/S2/S3 × native/agent 源目标通道 4 组合共 12 组全部目标回读一致，emoji 超集字符双通道一致失败（native 3988 collation 拒绝 / agent 1366 incorrect string，均不静默替换）（`charset_matrix_e2e_test.go`）。
+
+**同日再续**：**oceanbase-mysql 切片完成**（现有租户内 gbk 库 × 12 组合全绿，`charset_matrix_e2e_test.go`）；**PostgreSQL 切片完成**（UTF8 实例：探针双通道一致 + `client_encoding=UTF8` 注入实测生效 + 4 通道组合目标回读一致，`charset_matrix_postgres_e2e_test.go`）；**openGauss 切片完成**（UTF8 实例：探针一致 + 4 通道组合，`charset_matrix_opengauss_e2e_test.go`，`-tags "e2e og"`）。过程中两个产品级修复：
+1. **PG 族占位符按通道分治**——`$N` 是服务端 PREPARE 语义，PG JDBC 只认 `?`：`placeholderFamilyFor` 在 channel=agent 且 postgres 族时强制 qmark（flag 覆盖同效，含单测）；矩阵测试按通道显式分治。
+2. **PG JDBC `stringtype=unspecified`**——importer 全 string 绑定在 PG 严格类型下被拒（varchar→int），native pq 的 unknown-oid 则宽松；postgres profile 的 URL 追加该参数使 agent 参数语义与 native 对齐。
+驱动 jar 版本独立性冒烟通过：mysql-connector-j 26.7.0（新版连接器）经 agent 通道导出与 native 逐字节一致。
+剩余：PG/openGauss **GBK** 切片（待 GBK locale 实例，环境结论见上表）、OB-Oracle 切片（待 GBK 租户）、M5 可选项。
 | M4 | 模块抽取 `owljdbc` 独立仓库 + owl-migrate 切依赖 | owl-migrate 构建/测试全绿；新项目两行接入 demo |
 | M5（可选） | `fallback_on_error` 开关 + 回退结构化日志 + 吞吐优化（row batching，见风险） | 回退路径有日志有断言；吞吐 ≥ native/3 目标重新评估 |
 
