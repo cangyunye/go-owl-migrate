@@ -157,6 +157,17 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 - owl-migrate：`go.mod` require + 开发期 `replace`；dbconn 的通道分发与目录查询指向该模块。
 - 其他项目复用 = import `owljdbc` + `sql.Open("owljdbc", cfg)` 两行，或仅引 catalog 数据。
 
+> **M4 完成（2026-09-06）**：抽取为**仓库内嵌套模块** `owljdbc/`（module
+> `github.com/cangyunye/owljdbc`，独立 go.mod、零第三方依赖），父模块
+> `replace => ./owljdbc` 本地引用——未来拆独立仓库只需改 module 路径一行。
+> 内容：驱动核心（driver/config/client/manager/proto，`package owljdbc`）、
+> Java sidecar（`owljdbc/jvm/owl-agent`，build.sh 同步迁移）、catalog
+> （`owljdbc/catalog.go`：Profile/Endpoint/BuildConfig/ResolveJars；调用方用
+> `dsnfields` 解析 DSN 后传入 `Endpoint`）、README/LICENSE/example/fetch-jars
+> 脚本。owl-migrate 侧 dbconn 只保留通道决策策略（resolveChannel/
+> nativeDriverName/FallbackHook）；Makefile test 目标含嵌套模块。验收：
+> 父模块 25 包全绿 + 嵌套模块全绿 + e2e（e2e+ob）全绿。
+
 ## 6. 里程碑
 
 | # | 内容 | 验收 |

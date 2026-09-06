@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cangyunye/go-owl-migrate/internal/agent"
+	agent "github.com/cangyunye/owljdbc"
 )
 
 func main() {

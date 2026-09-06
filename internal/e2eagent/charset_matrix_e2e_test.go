@@ -172,7 +172,7 @@ func csMatrixOpen(t *testing.T, env map[string]string, db, channel string) *sql.
 		"password":  f.Password,
 		"family":    "mysql",
 		"classpath": []string{driverJar},
-		"agentJar":  "../../jvm/owl-agent/owl-agent.jar",
+		"agentJar":  "../../owljdbc/jvm/owl-agent/owl-agent.jar",
 	}
 	b, _ := json.Marshal(cfg)
 	db2, err := sql.Open("owljdbc", string(b))
@@ -454,7 +454,7 @@ func TestE2E_CharsetMatrixOceanBaseMySQL(t *testing.T) {
 		if v := env["OWL_AGENT_JAR"]; v != "" {
 			cfg["agentJar"] = v
 		} else {
-			cfg["agentJar"] = "../../jvm/owl-agent/owl-agent.jar"
+			cfg["agentJar"] = "../../owljdbc/jvm/owl-agent/owl-agent.jar"
 		}
 		b, _ := json.Marshal(cfg)
 		d, err := sql.Open("owljdbc", string(b))

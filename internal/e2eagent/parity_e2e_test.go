@@ -37,7 +37,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cangyunye/go-owl-migrate/internal/agent"
+	agent "github.com/cangyunye/owljdbc"
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"

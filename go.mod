@@ -23,6 +23,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/apache/arrow/go/v14 v14.0.2 // indirect
+	github.com/cangyunye/owljdbc v0.0.0
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/flatbuffers v25.1.24+incompatible // indirect
@@ -58,3 +59,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace github.com/cangyunye/owljdbc => ./owljdbc

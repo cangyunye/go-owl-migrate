@@ -28,7 +28,7 @@ ddl:
     %s: %s
 agent:
   jars_dir: "../../"
-  agent_jar: "../../jvm/owl-agent/owl-agent.jar"
+  agent_jar: "../../owljdbc/jvm/owl-agent/owl-agent.jar"
 export:
   format: csv
   csv:
@@ -61,7 +61,7 @@ ddl:
     migsrc_chan: %s
 agent:
   jars_dir: "../../"
-  agent_jar: "../../jvm/owl-agent/owl-agent.jar"
+  agent_jar: "../../owljdbc/jvm/owl-agent/owl-agent.jar"
 source:
   type: mysql
   dsn: "%s"

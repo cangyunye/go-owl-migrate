@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/owljdbc"
 )
 
 // linkedSet fakes driverLinked for decision-table tests: dbconn itself links
@@ -194,8 +195,8 @@ func TestBuildAgentConfigErrors(t *testing.T) {
 
 	t.Run("unsupported type", func(t *testing.T) {
 		_, err := buildAgentConfig(config.DBConfig{Type: "yashandb", DSN: "x", Agent: config.AgentConfig{JarsDir: dir}})
-		if err == nil || !strings.Contains(err.Error(), "no owljdbc catalog profile") {
-			t.Fatalf("err = %v, want catalog profile error", err)
+		if err == nil || !strings.Contains(err.Error(), "no catalog profile") {
+			t.Fatalf("err = %v, want catalog profile error (module wording)", err)
 		}
 	})
 
@@ -234,14 +235,14 @@ func TestResolveAgentJarExplicitPath(t *testing.T) {
 	if err := os.WriteFile(custom, []byte("jar"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := resolveAgentJar([]string{dir}, custom)
+	got, err := owljdbc.ResolveAgentJar([]string{dir}, custom)
 	if err != nil {
 		t.Fatalf("resolveAgentJar: %v", err)
 	}
 	if got != custom {
 		t.Fatalf("agentJar = %q, want %q", got, custom)
 	}
-	if _, err := resolveAgentJar([]string{dir}, filepath.Join(dir, "nope.jar")); err == nil {
+	if _, err := owljdbc.ResolveAgentJar([]string{dir}, filepath.Join(dir, "nope.jar")); err == nil {
 		t.Fatalf("missing explicit agent jar must error")
 	}
 }

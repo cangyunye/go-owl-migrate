@@ -35,7 +35,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cangyunye/go-owl-migrate/internal/agent"
+	agent "github.com/cangyunye/owljdbc"
 )
 
 // ── config assembly (OB-free: driver jars for the extension targets) ──

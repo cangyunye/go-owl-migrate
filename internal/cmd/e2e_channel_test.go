@@ -23,7 +23,7 @@ func channelCLIYAML(t *testing.T, dsn, schema, channel string) string {
 		agentBlock = `
 agent:
   jars_dir: "../../"
-  agent_jar: "../../jvm/owl-agent/owl-agent.jar"`
+  agent_jar: "../../owljdbc/jvm/owl-agent/owl-agent.jar"`
 	}
 	ch := ""
 	if channel != "" {

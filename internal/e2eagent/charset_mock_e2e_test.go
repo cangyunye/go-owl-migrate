@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cangyunye/go-owl-migrate/internal/agent"
+	agent "github.com/cangyunye/owljdbc"
 )
 
 // TestE2E_CharsetMockProbe 驱动 fake_agent 的字符集探针剧本：它假定一个
@@ -51,7 +51,7 @@ type csFakeAgent struct {
 func csStartFakeAgent(t *testing.T) *csFakeAgent {
 	t.Helper()
 	cmd := exec.Command("go", "run", "./testdata/fake_agent")
-	cmd.Dir = "../agent"
+	cmd.Dir = "../../owljdbc"
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
