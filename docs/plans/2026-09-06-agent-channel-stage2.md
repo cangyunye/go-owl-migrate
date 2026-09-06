@@ -113,13 +113,13 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 
 | 类型 | 角色 | GBK 实例准备 |
 |---|---|---|
-| mysql | 源/目标 | `CREATE DATABASE … CHARACTER SET gbk`（e2edev fixture 机制已支持建库，`fixture_sources.go` 现为 utf8mb4，扩展 gbk 即可） |
-| oceanbase-mysql | 源/目标 | gbk 库（租户 character_set_server=gbk 或按库指定） |
-| oceanbase-oracle | 源/目标 | GBK 字符集专用租户（建租户时指定），探测 `NLS_CHARACTERSET` |
-| postgresql | 源/目标 | 独立 GBK/GB18030 初始化实例（`initdb -E GB18030`；UTF8 集群内不能建 GBK 库） |
-| opengaussdb（=opengauss-postgresql） | 源/目标 | 同上，独立 GBK/GB18030 实例 |
-| opengaussdb-mysql | 源/目标 | 同上（兼容模式影响方言，wire 仍 postgres 协议，client_encoding 路径不变） |
-| opengaussdb-oracle | 源/目标 | 同上 |
+| mysql | 源/目标 | `CREATE DATABASE … CHARACTER SET gbk`（e2edev fixture 机制已支持建库）**实测 ✅（2026-09-06）** |
+| oceanbase-mysql | 源/目标 | 现有租户内 `CREATE DATABASE … CHARSET gbk` **实测 ✅（2026-09-06：无需新建 GBK 租户，MySQL 模式按库指定字符集即可）** |
+| oceanbase-oracle | 源/目标 | GBK 字符集专用租户（建租户时指定，涉资源单元），探测 `NLS_CHARACTERSET`——**延后（资源不足）** |
+| postgresql | 源/目标 | 独立 GBK/GB18030 初始化实例。**实测 ❌ 非重启可解**：UTF8 locale 集群建 GBK 库被拒（`encoding "GBK" does not match locale "en_US.UTF-8"`，22023）——encoding 由 initdb/locale 决定，需重新 initdb 一个 GBK/GB18030 实例（重建而非改配置重启） |
+| opengaussdb（=opengauss-postgresql） | 源/目标 | 同上，实测同错误（en_US.UTF-8 集群），需 GBK locale 初始化的实例 |
+| opengaussdb-mysql | 源/目标 | 同 opengaussdb（兼容模式影响方言，wire 仍 postgres 协议，client_encoding 路径不变） |
+| opengaussdb-oracle | 源/目标 | 同 opengaussdb |
 
 **场景定义**（每类型 T 遍历；源/目标各含 GBK、UTF8 两份实例）：
 
@@ -165,7 +165,7 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 | M2 | CLI/config 面：`--channel` / `agent:` 配置段 / `--jars-dir` / DSN 打码复用 config/mask；**编码不变量（§2.5）**：mysql 族 charset 校验、postgres 族 `client_encoding=UTF8` 注入、agent URL `characterEncoding` 注入、可选探测告警 | `owl-migrate export-metadata --channel agent` 可对 OB 跑通；对 GBK 实例的非 UTF8 DSN 告警/拦截有单测 |
 | M3 | 产品级对拍 e2e：export-metadata / migrate / import / export 在 OB 双租户 + MySQL/PG 上 agent vs native；**字符集矩阵（§4.4）P0 先行，P1 跟进** | 元数据一致、CSV 逐字节一致、导入计数一致（复用 harness 断言）；P0 字符集矩阵 4 通道组合回读彼此一致 |
 
-> **M3 进展（2026-09-06）**：产品级 CLI 双通道对拍首切片已落地并通过——`export-metadata` 与 `export data` 在 MySQL fixture 上 native vs `channel: agent` 产物逐字节一致（`internal/cmd/e2e_channel_test.go`，`-tags e2e`）。过程中修复两个通道等价性缺口：sidecar 对常量列 `getColumnTypeName=null` 的 NPE（information_schema 内省查询必踩）、mysql 族 DATETIME 的渲染差异（family 分治：mysql getString / oracle getObject）。`migrate` / `import` 的产品级对拍与 §4.4 矩阵 MySQL 切片（GBK 库 × 4 通道组合）为下一切片。
+> **M3 进展（2026-09-06）**：产品级 CLI 双通道对拍首切片已落地并通过——`export-metadata` 与 `export data` 在 MySQL fixture 上 native vs `channel: agent` 产物逐字节一致（`internal/cmd/e2e_channel_test.go`，`-tags e2e`）。过程中修复两个通道等价性缺口：sidecar 对常量列 `getColumnTypeName=null` 的 NPE（information_schema 内省查询必踩）、mysql 族 DATETIME 的渲染差异（family 分治：mysql getString / oracle getObject）。**同日续**：`migrate`（源→目标全流程，内建建表）与 `import`（CSV→目标，`CREATE TABLE … LIKE` 预建 + 整库清理）的产品级双通道对拍已通过（`e2e_channel_migrate_test.go`）；§4.4 矩阵 **MySQL 切片完成**——GBK 库 × S1/S2/S3 × native/agent 源目标通道 4 组合共 12 组全部目标回读一致，emoji 超集字符双通道一致失败（native 3988 collation 拒绝 / agent 1366 incorrect string，均不静默替换）（`charset_matrix_e2e_test.go`）。剩余：PG/openGauss 切片（待 GBK locale 实例）、OB-MySQL 切片（环境已确认可行）、OB-Oracle（待 GBK 租户）。
 | M4 | 模块抽取 `owljdbc` 独立仓库 + owl-migrate 切依赖 | owl-migrate 构建/测试全绿；新项目两行接入 demo |
 | M5（可选） | `fallback_on_error` 开关 + 回退结构化日志 + 吞吐优化（row batching，见风险） | 回退路径有日志有断言；吞吐 ≥ native/3 目标重新评估 |
 
