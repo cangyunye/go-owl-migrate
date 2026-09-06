@@ -107,7 +107,7 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 
 ### 4.4 字符集矩阵（GBK ↔ UTF-8，native/agent 双通道，新增）
 
-**目的**：现有对拍矩阵全部是 UTF-8 系库，native（驱动转换栈）与 agent（JDBC 转换栈）在非 UTF-8 源上是否逐字节一致属于盲区；同时验证 2.5 注入项的正确性（不注入时 PG GBK 实例现行为即乱码）。覆盖用户指定 7 个类型（`opengauss-postgresql` 对应仓库 type `opengaussdb`）：
+**目的**：现有对拍矩阵全部是 UTF-8 系库，native（驱动转换栈）与 agent（JDBC 转换栈）在非 UTF-8 源上是否逐字节一致属于盲区；同时验证 2.5 注入项的正确性（不注入时 PG GBK 实例现行为即乱码）。矩阵重心按**入口解析优先**设计：只要源端字节被正确解码为进程内 UTF-8（native 各转换栈 + agent JDBC 转换栈都验证到），出口转码由目标端服务端/驱动承担，可控性随之成立——因此源角色的覆盖比目标角色组合更重要，目标端不追求 7×7 全配对。覆盖用户指定 7 个类型（`opengauss-postgresql` 对应仓库 type `opengaussdb`）：
 
 | 类型 | 角色 | GBK 实例准备 |
 |---|---|---|
@@ -127,6 +127,8 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 | S2 | mysql（utf8mb4，固定基准源） | T 的 GBK 实例 | UTF8→GBK 落地：转换发生在目标端服务端；GBK 不可表示字符的预期语义（报错/替换）按引擎断言 |
 | S3 | T 的 GBK 实例 | postgresql（UTF8，固定基准目标） | GBK→UTF8 抽取：源端正确转出 UTF-8（2.5 注入的核心受益场景） |
 
+**补充交叉源场景 S2-o（源端 OceanBase-Oracle GBK）**：源=oceanbase-oracle(GBK) → 目标 ∈ {mysql(GBK), opengaussdb(GBK)}，通道组合仅 {native×native, agent×agent}。理由：oceanbase-oracle 的 GBK 源已在 S3（→postgresql UTF8）覆盖「入口解码 + UTF8 出口」，S2-o 补「入口解码 + GBK 出口」跨栈一对即可；两套源端转换栈（native=go-ora、agent=JDBC）各验证一次，无需 4 组合全跑。
+
 **通道组合**（每场景 4 组，体现保底切换）：`native×native`、`native×agent`、`agent×native`、`agent×agent`（源通道 × 目标通道独立选择）。mixed 组合（native×agent / agent×native）正是真实保底部署形态——一端无 native 时。
 
 **数据集与断言**：
@@ -138,7 +140,7 @@ CLI 同名 flag（`--channel`、`--jars-dir`）覆盖配置，便于临时验证
 
 | 层级 | 范围 | 数量级 |
 |---|---|---|
-| P0（必跑） | mysql、oceanbase-oracle × S1/S2/S3 × 4 通道组合 | 24 |
+| P0（必跑） | mysql、oceanbase-oracle × S1/S2/S3 × 4 通道组合；**S2-o**（oceanbase-oracle GBK 源 → mysql/opengaussdb GBK，2 组合） | 24 + 4 |
 | P1（全量覆盖） | 其余 5 类型 × S1/S2/S3 × {native×native, agent×agent} | 30 |
 | P2（抽样） | 其余类型 × mixed 通道组合 + 跨族配对（如 oceanbase-oracle(GBK) → opengaussdb(GBK)） | 按需 |
 
