@@ -74,8 +74,22 @@ func driverName(dbType string) (string, error) {
 }
 
 // Open opens a database connection for the configured type and applies pool
-// settings. Oracle-family DSNs are post-processed for LOB-friendly streaming.
+// settings. The channel is decided by cfg.Channel (native-first; see
+// resolveChannel): the native path keeps the pre-channel behavior, including
+// Oracle-family DSN post-processing for LOB-friendly streaming.
 func Open(cfg config.DBConfig) (*sql.DB, error) {
+	ch, err := resolveChannel(cfg, driverLinked)
+	if err != nil {
+		return nil, err
+	}
+	if ch == ChannelAgent {
+		return openAgentChannel(cfg)
+	}
+	return openNative(cfg)
+}
+
+// openNative opens the connection through the compiled-in native drivers.
+func openNative(cfg config.DBConfig) (*sql.DB, error) {
 	name := registry.Normalize(strings.ToLower(strings.TrimSpace(cfg.Type)))
 
 	var (
