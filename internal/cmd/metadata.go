@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
@@ -113,8 +114,37 @@ func loadDBModel(src config.DBConfig) (*md.SchemaModel, error) {
 	return sm, nil
 }
 
-// openDB opens a database connection by type and configures the connection pool.
+// channelFlag / jarsDirFlag override the yaml `channel` / `agent.jars_dir`
+// settings from the command line (root persistent flags; "" = no override).
+var (
+	channelFlag string
+	jarsDirFlag string
+	hooksWired  sync.Once
+)
+
+// wireDBConnHooks routes dbconn channel/encoding decisions to stderr so an
+// auto-fallback or a charset override never happens silently.
+func wireDBConnHooks() {
+	hooksWired.Do(func() {
+		dbconn.FallbackHook = func(dbType, reason string) {
+			fmt.Fprintf(os.Stderr, "[channel] %s: %s, using owljdbc agent\n", dbType, reason)
+		}
+		dbconn.EncodingWarnHook = func(dbType, message string) {
+			fmt.Fprintf(os.Stderr, "[encoding] %s: %s\n", dbType, message)
+		}
+	})
+}
+
+// openDB opens a database connection by type and configures the connection
+// pool. CLI channel/jars overrides win over the yaml config.
 func openDB(cfg config.DBConfig) (*sql.DB, error) {
+	wireDBConnHooks()
+	if channelFlag != "" {
+		cfg.Channel = channelFlag
+	}
+	if jarsDirFlag != "" && cfg.Agent.JarsDir == "" {
+		cfg.Agent.JarsDir = jarsDirFlag
+	}
 	return dbconn.Open(cfg)
 }
 

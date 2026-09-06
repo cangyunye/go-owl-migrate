@@ -50,6 +50,8 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default: ./migrate.yaml or ~/.owl/migrate/migrate.yaml)")
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "", "override log level (debug/info/warn/error)")
+	rootCmd.PersistentFlags().StringVar(&channelFlag, "channel", "", "database channel override for source/target: native (default), agent, auto")
+	rootCmd.PersistentFlags().StringVar(&jarsDirFlag, "jars-dir", "", "directory searched for owl-agent.jar and JDBC driver jars (agent channel)")
 
 	rootCmd.PersistentFlags().StringVar(&progressDB, "progress-db", "", "path to shared SQLite database for progress events (worker mode)")
 	rootCmd.PersistentFlags().StringVar(&jobID, "job-id", "", "job identifier for progress reporting (worker mode)")

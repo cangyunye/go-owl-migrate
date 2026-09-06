@@ -137,21 +137,21 @@ func (t TableListConfig) isZero() bool { return len(t.Include) == 0 }
 
 // ValidDialects lists supported target dialects.
 var ValidDialects = map[string]bool{
-	"oracle":           true,
-	"postgres":         true,
-	"mysql":            true,
-	"sqlite3":          true,
-	"duckdb":           true,
-	"goldendb":         true,
-	"goldendb-mysql":   true,
-	"goldendb-oracle":  true,
-	"oceanbase":        true,
-	"oceanbase-mysql":  true,
-	"oceanbase-oracle": true,
-	"panweidb":         true,
-	"panweidb-mysql":   true,
-	"panweidb-oracle":  true,
-	"opengaussdb":      true,
+	"oracle":             true,
+	"postgres":           true,
+	"mysql":              true,
+	"sqlite3":            true,
+	"duckdb":             true,
+	"goldendb":           true,
+	"goldendb-mysql":     true,
+	"goldendb-oracle":    true,
+	"oceanbase":          true,
+	"oceanbase-mysql":    true,
+	"oceanbase-oracle":   true,
+	"panweidb":           true,
+	"panweidb-mysql":     true,
+	"panweidb-oracle":    true,
+	"opengaussdb":        true,
 	"opengaussdb-oracle": true,
 	"opengaussdb-mysql":  true,
 }
@@ -189,6 +189,10 @@ type Config struct {
 	Import     ImportConfig    `yaml:"import"`
 	Online     OnlineConfig    `yaml:"online"`
 	Extensions map[string]any  `yaml:"extensions"`
+
+	// Agent holds global owljdbc channel defaults (jars discovery, JVM) that
+	// apply to source/target connections unless overridden per connection.
+	Agent AgentConfig `yaml:"agent,omitempty"`
 
 	// ForceAllSections when true causes MarshalYAML to emit ALL sections
 	// even if they are zero-valued. Used by the "full" init scenario.
@@ -509,6 +513,19 @@ func (c *Config) applyDefaults() {
 	}
 	if c.General.LogFormat == "" {
 		c.General.LogFormat = "text"
+	}
+	// Global agent defaults flow into per-connection settings so dbconn.Open
+	// (which only sees a DBConfig) resolves jars/JVM without root context.
+	for _, db := range []*DBConfig{&c.Source, &c.Target} {
+		if db.Agent.JarsDir == "" {
+			db.Agent.JarsDir = c.Agent.JarsDir
+		}
+		if db.Agent.AgentJar == "" {
+			db.Agent.AgentJar = c.Agent.AgentJar
+		}
+		if db.Agent.JavaHome == "" {
+			db.Agent.JavaHome = c.Agent.JavaHome
+		}
 	}
 	if c.Metadata.CSV.Delimiter == "" {
 		c.Metadata.CSV.Delimiter = ","
