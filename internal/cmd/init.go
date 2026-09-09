@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
 func initCmd() *cobra.Command {
@@ -100,6 +102,8 @@ Use --scenario to control which sections appear in the generated config:
 					return fmt.Errorf("--source-schema is required when --metadata-type is 'database'")
 				}
 			}
+			warnUncompiledDialect(sourceType)
+			warnUncompiledDialect(targetType)
 
 			cfg := buildScenarioConfig(sc, sourceType, sourceDSN, sourceSchema, targetType, targetDSN, targetSchema, mt)
 			return writeConfig(cfg, outputFile)
@@ -279,13 +283,14 @@ func askChoice(r *bufio.Reader, prompt string, options []string, def string) str
 func runInteractive(outputPath string) error {
 	r := bufio.NewReader(os.Stdin)
 
-	action := askChoice(r, "What do you want to do?", []string{
-		"export-ddl", "export-insert", "export", "import", "migrate",
-		"export-metadata", "gen-select", "validate", "full",
-	}, "")
+	fmt.Println("What do you want to do?")
 	fmt.Println("  (export-ddl=DDL from metadata, export-insert=INSERT from CSV, export=export data to CSV/SQL/XLSX)")
 	fmt.Println("  (import=import CSV into DB, migrate=end-to-end, gen-select=paginated SELECT, export-metadata=metadata to CSV/xlsx/SQL)")
 	fmt.Println("  (validate=check config, full=all options with hints)")
+	action := askChoice(r, "", []string{
+		"export-ddl", "export-insert", "export", "import", "migrate",
+		"export-metadata", "gen-select", "validate", "full",
+	}, "")
 
 	switch action {
 	case "export-insert":
@@ -309,7 +314,7 @@ func runInteractive(outputPath string) error {
 
 func interactiveGenInsert(r *bufio.Reader, outputPath string) error {
 	mt := askChoice(r, "Data source type", []string{"csv", "xlsx"}, "csv")
-	dialect := askChoice(r, "Target database dialect", sortedDialectKeys(), "postgres")
+	dialect := askDialect(r, "Target database dialect", "postgres")
 
 	cfg := &config.Config{
 		General: config.GeneralConfig{LogLevel: "info"},
@@ -350,7 +355,7 @@ func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
 	case "xlsx":
 		xlsxPath = ask(r, "xlsx schema file path", "./metadata/schema.xlsx")
 	case "database":
-		srcType = askChoice(r, "Source database type", sortedDialectKeys(), "")
+		srcType = askDialect(r, "Source database type", "")
 		srcDSN = askDSN(r, "Source database DSN", srcType, "")
 		srcSchema = askSchema(r, "Source schema name", srcType, "")
 	}
@@ -368,7 +373,7 @@ func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveExport(r *bufio.Reader, outputPath string) error {
-	srcType := askChoice(r, "Source database type", sortedDialectKeys(), "")
+	srcType := askDialect(r, "Source database type", "")
 	srcDSN := askDSN(r, "Source database DSN", srcType, "")
 	srcSchema := askSchema(r, "Source schema name", srcType, "")
 	tables := askTables(r, "Tables to migrate (comma-separated, or * for all)")
@@ -401,7 +406,7 @@ func interactiveExport(r *bufio.Reader, outputPath string) error {
 
 func interactiveImport(r *bufio.Reader, outputPath string) error {
 	dataDir := ask(r, "CSV data files directory", "./output/data/")
-	tgtType := askChoice(r, "Target database type", sortedDialectKeys(), "")
+	tgtType := askDialect(r, "Target database type", "")
 	tgtDSN := askDSN(r, "Target database DSN", tgtType, "")
 	tgtSchema := askSchema(r, "Target schema name", tgtType, "")
 
@@ -423,9 +428,12 @@ func interactiveImport(r *bufio.Reader, outputPath string) error {
 				CommitInterval: 1000,
 				ErrorPolicy:    "skip_row",
 			},
+			// FK-aware order: parents before children, sequential. Slower than
+			// parallel but avoids silent skip_row data loss on FK-linked schemas.
 			Parallel: config.ParallelConfig{
-				Enabled:    true,
-				MaxWorkers: 4,
+				Enabled:            true,
+				MaxWorkers:         4,
+				RespectForeignKeys: true,
 			},
 			DataTransforms: config.DataTransforms{
 				DatetimeFormat: "yyyyMMddHHmmss",
@@ -438,11 +446,11 @@ func interactiveImport(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveMigrate(r *bufio.Reader, outputPath string) error {
-	srcType := askChoice(r, "Source database type", sortedDialectKeys(), "")
+	srcType := askDialect(r, "Source database type", "")
 	srcDSN := askDSN(r, "Source database DSN", srcType, "")
 	srcSchema := askSchema(r, "Source schema name", srcType, "")
 	tables := askTables(r, "Tables to migrate (comma-separated, or * for all)")
-	tgtType := askChoice(r, "Target database type", sortedDialectKeys(), "")
+	tgtType := askDialect(r, "Target database type", "")
 	tgtDSN := askDSN(r, "Target database DSN", tgtType, "")
 	tgtSchema := askSchema(r, "Target schema name", tgtType, "")
 	if tgtSchema == "" {
@@ -465,12 +473,12 @@ func interactiveGenSelect(r *bufio.Reader, outputPath string) error {
 	case "xlsx":
 		xlsxPath = ask(r, "xlsx schema file path", "./metadata/schema.xlsx")
 	case "database":
-		srcType = askChoice(r, "Source database type", sortedDialectKeys(), "")
+		srcType = askDialect(r, "Source database type", "")
 		srcDSN = askDSN(r, "Source database DSN", srcType, "")
 		srcSchema = askSchema(r, "Source schema name", srcType, "")
 	}
 
-	tgtType := askChoice(r, "Target dialect (controls identifier quoting)", sortedDialectKeys(), "postgres")
+	tgtType := askDialect(r, "Target dialect (controls identifier quoting)", "postgres")
 
 	cfg := &config.Config{
 		General: config.GeneralConfig{LogLevel: "info"},
@@ -501,7 +509,7 @@ func interactiveGenSelect(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveExportMetadata(r *bufio.Reader, outputPath string) error {
-	srcType := askChoice(r, "Source database type", sortedDialectKeys(), "")
+	srcType := askDialect(r, "Source database type", "")
 	srcDSN := askDSN(r, "Source database DSN", srcType, "")
 	srcSchema := ask(r, "Source schema name", "")
 	fmt.Println()
@@ -554,7 +562,7 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 		fmt.Println()
 		hint("Source: the database you are migrating FROM. Required for live extraction, data export, and migration.")
 		if mt == "database" {
-			srcType = askChoice(r, "Source database type", sortedDialectKeys(), "")
+			srcType = askDialect(r, "Source database type", "")
 			srcDSN = askDSN(r, "Source database DSN", srcType, "")
 			srcSchema = askSchema(r, "Source schema name", srcType, "")
 			if !isEmbedded(srcType) {
@@ -565,7 +573,7 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 
 	fmt.Println()
 	hint("Target: the database you are migrating TO. Determines DDL dialect and is required for import/migrate.")
-	tgtType = askChoice(r, "Target database type (for DDL generation)", sortedDialectKeys(), "postgres")
+	tgtType = askDialect(r, "Target database type (for DDL generation)", "postgres")
 	tgtDSN = askDSN(r, "Target database DSN (optional, leave blank for DDL-only)", tgtType, "")
 	tgtSchema = askSchema(r, "Target schema name (leave blank to use source schema)", tgtType, "")
 
@@ -781,9 +789,12 @@ func buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema s
 				CommitInterval: 1000,
 				ErrorPolicy:    "skip_row",
 			},
+			// FK-aware order: parents before children, sequential. Slower than
+			// parallel but avoids silent skip_row data loss on FK-linked schemas.
 			Parallel: config.ParallelConfig{
-				Enabled:    true,
-				MaxWorkers: 4,
+				Enabled:            true,
+				MaxWorkers:         4,
+				RespectForeignKeys: true,
 			},
 			DataTransforms: config.DataTransforms{
 				DatetimeFormat: "yyyyMMddHHmmss",
@@ -852,7 +863,8 @@ func buildFullConfig(metaType, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtS
 				CommitInterval: 1000,
 				ErrorPolicy:    "skip_row",
 			},
-			Parallel: config.ParallelConfig{Enabled: true, MaxWorkers: 4},
+			// FK-aware order — see buildMigrateConfig.
+			Parallel: config.ParallelConfig{Enabled: true, MaxWorkers: 4, RespectForeignKeys: true},
 			DataTransforms: config.DataTransforms{
 				DatetimeFormat: "yyyyMMddHHmmss",
 				TrimStrings:    true,
@@ -1057,7 +1069,24 @@ func sortedDialectKeys() []string {
 	for k := range config.ValidDialects {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
+}
+
+// warnUncompiledDialect prints a warning when the chosen dialect needs a build
+// tag this binary was not compiled with — the generated config is still valid,
+// but running it here would fail until the binary is rebuilt.
+func warnUncompiledDialect(name string) {
+	if tag := registry.MissingBuildTag(name); tag != "" {
+		fmt.Printf("  ⚠️  dialect %q is not compiled into this binary (build tag: %s); running it here will fail unless rebuilt\n", name, tag)
+	}
+}
+
+// askDialect asks for a database dialect from the full (sorted) dialect list.
+func askDialect(r *bufio.Reader, prompt, def string) string {
+	choice := askChoice(r, prompt, sortedDialectKeys(), def)
+	warnUncompiledDialect(choice)
+	return choice
 }
 
 func sortedMetadataKeys() []string {

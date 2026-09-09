@@ -79,3 +79,16 @@ func Get(name string) (dialect.Dialect, error) {
 	}
 	return d, nil
 }
+
+// MissingBuildTag returns the build tag that provides the named dialect, or ""
+// when the dialect is already compiled into this binary (or entirely unknown —
+// name validity is config.ValidDialects' job).
+func MissingBuildTag(name string) string {
+	name = Normalize(strings.ToLower(strings.TrimSpace(name)))
+	mu.RLock()
+	defer mu.RUnlock()
+	if _, ok := reg[name]; ok {
+		return ""
+	}
+	return dialectTag[name]
+}
