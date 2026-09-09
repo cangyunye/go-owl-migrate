@@ -20,7 +20,10 @@ import (
 )
 
 func importCmd() *cobra.Command {
-	var noQuote bool
+	var (
+		noQuote    bool
+		tablesFlag string
+	)
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import CSV files into target database",
@@ -28,11 +31,12 @@ func importCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
+	cmd.Flags().StringVar(&tablesFlag, "tables", "", "comma-separated tables to import (supports schema.table)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) (retErr error) {
-		cfg, err := config.Load(cfgFile)
+		cfg, err := loadConfigFile(false)
 		if err != nil {
-			return fmt.Errorf("load config: %w", err)
+			return err
 		}
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			cfg.DDL.NoQuoteIdentifiers = noQuote
@@ -111,7 +115,11 @@ func importCmd() *cobra.Command {
 			NoQuoteIdentifiers:       cfg.DDL.NoQuoteIdentifiers,
 		})
 
-		tables := sm.GetTables()
+		include := splitTableList(tablesFlag)
+		tables := filterTables(sm.GetTables(), include)
+		if len(include) > 0 && len(tables) == 0 {
+			return fmt.Errorf("no metadata tables matched --tables %q; names must match the metadata table list (schema.table also allowed)", tablesFlag)
+		}
 		ctx := context.Background()
 		if qt := queryTimeout(cfg.Target); qt > 0 {
 			var cancel context.CancelFunc

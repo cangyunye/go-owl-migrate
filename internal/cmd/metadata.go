@@ -163,3 +163,19 @@ func buildPKMap(sm *md.SchemaModel) map[string][]string {
 func filterTables(tables []*md.TableDef, include []string) []*md.TableDef {
 	return md.FilterTablesByInclude(tables, include)
 }
+
+// splitTableList parses a comma-separated --tables flag value, dropping blanks.
+// A nil result means "no override" — the config include list stays in effect.
+func splitTableList(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}

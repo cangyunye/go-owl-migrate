@@ -105,7 +105,7 @@ Oracle additionally supports Sequence/Synonym/MView/Package):
 | Type | File pattern | Description | MySQL | Oracle | PG | SQLite3 |
 |---|---|---|---|---|---|---|---|
 | Table | `scott.emp.table.sql` | CREATE TABLE | ✅ | ✅ | ✅ | ✅ |
-| Index | `scott.idx_emp_ename.index.sql` | CREATE INDEX / UNIQUE INDEX / BITMAP | ✅ | ✅ | ✅ | ✅ |
+| Index | `scott.emp.idx_emp_ename.index.sql` | CREATE INDEX / UNIQUE INDEX / BITMAP | ✅ | ✅ | ✅ | ✅ |
 | View | `scott.emp_view.view.sql` | CREATE VIEW | ✅ | ✅ | ✅ | ✅ |
 | Sequence | `scott.seq_emp_id.sequence.sql` | CREATE SEQUENCE | — | ✅ | ✅ | — |
 | Synonym | `scott.emp_syn.synonym.sql` | CREATE [PUBLIC] SYNONYM | — | ✅ | — | — |
@@ -129,6 +129,7 @@ Usage:
 
 Flags:
   -o, --output string   Output directory for export files (default "./output/data/")
+      --tables string        Comma-separated tables to export; overrides export.tables.include (supports schema.table)
       --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
@@ -232,6 +233,7 @@ Import CSV data files into the target database.
 Usage:
   owl-migrate import [flags] -c <config>
 Flags:
+      --tables string        Comma-separated tables to import (supports schema.table)
       --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
@@ -338,9 +340,16 @@ Flags:
       --skip-ddl               Skip table creation in target (data-only migration)
       --continue-on-error      Continue processing remaining tables even if some fail
       --sql-out string         Output directory for INSERT SQL files (offline mode, skips target DB)
+      --tables string             Comma-separated tables to migrate; overrides export.tables.include (supports schema.table)
       --resume                    Resume from previous migration state (skips completed tables)
   -r, --report string             Migration report output path (default "./output/migration_report.json")
       --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
+```
+
+Example:
+
+```bash
+owl-migrate migrate -c ./migrate.yaml --tables DEPT,EMP
 ```
 
 ### Migration Steps

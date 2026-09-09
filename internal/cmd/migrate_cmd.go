@@ -40,7 +40,8 @@ Flow:
   5. Generate migration report
 
 Use --sql-out to generate INSERT SQL files instead of writing directly to target.
-Use --resume to skip tables completed in a previous run.`,
+Use --resume to skip tables completed in a previous run.
+Use --tables to restrict the migration to specific tables.`,
 	}
 
 	var (
@@ -51,6 +52,7 @@ Use --resume to skip tables completed in a previous run.`,
 		resume          bool
 		reportFile      string
 		noQuote         bool
+		tablesFlag      string
 	)
 
 	cmd.Flags().StringVar(&tempDir, "temp-dir", "./output/temp/", "temporary directory for CSV files")
@@ -60,11 +62,15 @@ Use --resume to skip tables completed in a previous run.`,
 	cmd.Flags().BoolVar(&resume, "resume", false, "resume from previous migration state (skips completed tables)")
 	cmd.Flags().StringVarP(&reportFile, "report", "r", "./output/migration_report.json", "migration report output path")
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
+	cmd.Flags().StringVar(&tablesFlag, "tables", "", "comma-separated tables to migrate (overrides export.tables.include; supports schema.table)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load(cfgFile)
+		cfg, err := loadConfigFile(false)
 		if err != nil {
-			return fmt.Errorf("load config: %w", err)
+			return err
+		}
+		if include := splitTableList(tablesFlag); len(include) > 0 {
+			cfg.Export.Tables.Include = include
 		}
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			cfg.DDL.NoQuoteIdentifiers = noQuote
@@ -101,7 +107,10 @@ Use --resume to skip tables completed in a previous run.`,
 		if err != nil {
 			return fmt.Errorf("load metadata: %w", err)
 		}
-		allTables := sm.GetTables()
+		allTables := filterTables(sm.GetTables(), cfg.Export.Tables.Include)
+		if len(allTables) == 0 {
+			return fmt.Errorf("no tables matched export.tables.include (or --tables); check the table names against schema %q", cfg.Source.Schema)
+		}
 		fmt.Printf("Loaded %d tables from metadata\n", len(allTables))
 
 		// Build PK map for cursor pagination

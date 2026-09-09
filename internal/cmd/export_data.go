@@ -9,7 +9,6 @@ import (
 	_ "github.com/sijms/go-ora/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 )
@@ -33,22 +32,27 @@ Supported output formats: csv (default), sql, xlsx`,
 	}
 
 	var (
-		outputDir string
-		noQuote   bool
-		dataDir   string
-		xlsxPath  string
-		format    string
+		outputDir  string
+		noQuote    bool
+		dataDir    string
+		xlsxPath   string
+		format     string
+		tablesFlag string
 	)
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/data/", "output directory for export files")
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 	cmd.Flags().StringVarP(&dataDir, "data", "d", "", "directory containing CSV data files (offline mode)")
 	cmd.Flags().StringVar(&xlsxPath, "xlsx", "", "path to xlsx file with @ data sheets (offline mode)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: csv (default), sql, xlsx")
+	cmd.Flags().StringVar(&tablesFlag, "tables", "", "comma-separated tables to export (overrides export.tables.include; supports schema.table)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) (retErr error) {
-		cfg, err := config.Load(cfgFile)
+		cfg, err := loadConfigFile(true)
 		if err != nil {
-			cfg = &config.Config{}
+			return err
+		}
+		if include := splitTableList(tablesFlag); len(include) > 0 {
+			cfg.Export.Tables.Include = include
 		}
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			cfg.DDL.NoQuoteIdentifiers = noQuote
