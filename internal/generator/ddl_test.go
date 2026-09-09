@@ -122,10 +122,10 @@ func TestGenerateIndexes_ContentMySQL(t *testing.T) {
 		file     string // filename pattern (uses original schema)
 		wantPart string // expected SQL fragment (uses mapped schema)
 	}{
-		{"scott.idx_emp_ename.index.sql", "CREATE INDEX `IDX_EMP_ENAME` ON `public`.`EMP` (`ENAME`)"},
-		{"scott.idx_emp_deptno.index.sql", "CREATE INDEX `IDX_EMP_DEPTNO` ON `public`.`EMP` (`DEPTNO`)"},
-		{"scott.idx_emp_name_job.index.sql", "CREATE INDEX `IDX_EMP_NAME_JOB` ON `public`.`EMP` (`ENAME`, `JOB`)"},
-		{"scott.idx_emp_unique_mgr.index.sql", "CREATE UNIQUE INDEX `IDX_EMP_UNIQUE_MGR` ON `public`.`EMP` (`MGR`)"},
+		{"scott.emp.idx_emp_ename.index.sql", "CREATE INDEX `IDX_EMP_ENAME` ON `public`.`EMP` (`ENAME`)"},
+		{"scott.emp.idx_emp_deptno.index.sql", "CREATE INDEX `IDX_EMP_DEPTNO` ON `public`.`EMP` (`DEPTNO`)"},
+		{"scott.emp.idx_emp_name_job.index.sql", "CREATE INDEX `IDX_EMP_NAME_JOB` ON `public`.`EMP` (`ENAME`, `JOB`)"},
+		{"scott.emp.idx_emp_unique_mgr.index.sql", "CREATE UNIQUE INDEX `IDX_EMP_UNIQUE_MGR` ON `public`.`EMP` (`MGR`)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.file, func(t *testing.T) {
@@ -165,10 +165,10 @@ func TestGenerateIndexes_ContentOracle(t *testing.T) {
 		file     string
 		wantPart string
 	}{
-		{"scott.idx_emp_ename.index.sql", `CREATE INDEX "IDX_EMP_ENAME" ON "PUBLIC"."EMP" ("ENAME")`},
-		{"scott.idx_emp_deptno.index.sql", `CREATE INDEX "IDX_EMP_DEPTNO" ON "PUBLIC"."EMP" ("DEPTNO")`},
-		{"scott.idx_emp_name_job.index.sql", `CREATE INDEX "IDX_EMP_NAME_JOB" ON "PUBLIC"."EMP" ("ENAME", "JOB")`},
-		{"scott.idx_emp_unique_mgr.index.sql", `CREATE UNIQUE INDEX "IDX_EMP_UNIQUE_MGR" ON "PUBLIC"."EMP" ("MGR")`},
+		{"scott.emp.idx_emp_ename.index.sql", `CREATE INDEX "IDX_EMP_ENAME" ON "PUBLIC"."EMP" ("ENAME")`},
+		{"scott.emp.idx_emp_deptno.index.sql", `CREATE INDEX "IDX_EMP_DEPTNO" ON "PUBLIC"."EMP" ("DEPTNO")`},
+		{"scott.emp.idx_emp_name_job.index.sql", `CREATE INDEX "IDX_EMP_NAME_JOB" ON "PUBLIC"."EMP" ("ENAME", "JOB")`},
+		{"scott.emp.idx_emp_unique_mgr.index.sql", `CREATE UNIQUE INDEX "IDX_EMP_UNIQUE_MGR" ON "PUBLIC"."EMP" ("MGR")`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.file, func(t *testing.T) {
@@ -208,10 +208,10 @@ func TestGenerateIndexes_ContentPostgres(t *testing.T) {
 		file     string
 		wantPart string
 	}{
-		{"scott.idx_emp_ename.index.sql", `CREATE INDEX "IDX_EMP_ENAME" ON "public"."EMP" ("ENAME")`},
-		{"scott.idx_emp_deptno.index.sql", `CREATE INDEX "IDX_EMP_DEPTNO" ON "public"."EMP" ("DEPTNO")`},
-		{"scott.idx_emp_name_job.index.sql", `CREATE INDEX "IDX_EMP_NAME_JOB" ON "public"."EMP" ("ENAME", "JOB")`},
-		{"scott.idx_emp_unique_mgr.index.sql", `CREATE UNIQUE INDEX "IDX_EMP_UNIQUE_MGR" ON "public"."EMP" ("MGR")`},
+		{"scott.emp.idx_emp_ename.index.sql", `CREATE INDEX "IDX_EMP_ENAME" ON "public"."EMP" ("ENAME")`},
+		{"scott.emp.idx_emp_deptno.index.sql", `CREATE INDEX "IDX_EMP_DEPTNO" ON "public"."EMP" ("DEPTNO")`},
+		{"scott.emp.idx_emp_name_job.index.sql", `CREATE INDEX "IDX_EMP_NAME_JOB" ON "public"."EMP" ("ENAME", "JOB")`},
+		{"scott.emp.idx_emp_unique_mgr.index.sql", `CREATE UNIQUE INDEX "IDX_EMP_UNIQUE_MGR" ON "public"."EMP" ("MGR")`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.file, func(t *testing.T) {

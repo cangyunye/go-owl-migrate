@@ -82,7 +82,9 @@ func (g *DDLGenerator) GenerateIndexes(sm *md.SchemaModel) ([]string, error) {
 			if g.opts.IncludeDrop {
 				sql = g.dropIndexSQL(tbl.TableSchema, tbl.TableName, name) + sql
 			}
-			path, err := g.writeFile(tbl.TableSchema, name, "index", sql)
+			// Index names are only unique per table (MySQL calls every primary
+			// key "PRIMARY"), so the file name must carry the table too.
+			path, err := g.writeFile(tbl.TableSchema, tbl.TableName+"."+name, "index", sql)
 			if err != nil {
 				return files, err
 			}
