@@ -78,9 +78,9 @@ func onlineSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Continuously poll source changelogs and replay to target",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadConfigFile(false)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 			e, err := loadSyncEngine(cfg)
 			if err != nil {
@@ -232,9 +232,9 @@ func onlineInitRunnerCmd() *cobra.Command {
 		Use:   "init-runner",
 		Short: "Generate the batch runner shell script for file-batch targets",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadConfigFile(false)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 			if cfg.Target.Adapter == "" {
 				return fmt.Errorf("target.adapter is required for init-runner")
@@ -274,9 +274,9 @@ func onlineArchiveCmd() *cobra.Command {
 		Use:   "archive",
 		Short: "Compress executed (done/) batches into tar.gz archives",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadConfigFile(false)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 			n, err := cdc.ArchiveDone(cfg.Online.Files.Done, cfg.Online.Archive.Dir)
 			if err != nil {
@@ -294,9 +294,9 @@ func onlineStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show given/tracked table sync checkpoints and directory counts",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadConfigFile(false)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 			e, err := loadSyncEngine(cfg)
 			if err != nil {

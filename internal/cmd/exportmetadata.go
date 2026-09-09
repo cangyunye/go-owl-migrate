@@ -45,9 +45,9 @@ Examples:
   owl-migrate export-metadata -c config.yaml -o ./schema.xlsx --format xlsx --schema SCOTT
   owl-migrate export-metadata -c config.yaml -o ./meta.sql --format sql`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadConfigFile(false)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 
 			if cfg.Metadata.Type != "database" && cfg.Source.DSN == "" {

@@ -44,9 +44,9 @@ func onlineInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Generate/install changelog tables and sync triggers on the source",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadConfigFile(false)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 			if cmd.Flags().Changed("apply") {
 				cfg.Online.CDC.Apply = apply

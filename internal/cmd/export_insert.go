@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -36,9 +35,9 @@ func exportInsertCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load(cfgFile)
+		cfg, err := loadConfigFile(true)
 		if err != nil {
-			cfg = &config.Config{}
+			return err
 		}
 		if dataDir == "" {
 			dataDir = service.InsertDataDir(cfg)

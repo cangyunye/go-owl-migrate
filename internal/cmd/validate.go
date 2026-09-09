@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
 )
 
@@ -16,9 +15,9 @@ func validateCmd() *cobra.Command {
 		Long: `Validates metadata from CSV files or a live database connection
 against the schema reference model.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(cfgFile)
+			cfg, err := loadConfigFile(false)
 			if err != nil {
-				return fmt.Errorf("load config: %w", err)
+				return err
 			}
 
 			sm, err := loadSchemaModel(cfg)

@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/paths"
 )
 
@@ -32,9 +35,14 @@ Supported dialects: oracle, postgres, mysql
 Supported metadata sources: csv, xlsx, database
 
 Config resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml`,
-	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commitID, buildTime),
+	Version:       versionString(),
+	SilenceErrors: true, // Execute() prints the error exactly once
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		cfgFile = paths.ResolveConfigPath(cfgFile)
+		// Flag-parse errors have already happened by now, so usage is only
+		// useful for them; runtime errors below get a clean message instead
+		// of a flag dump.
+		cmd.SilenceUsage = true
 		return nil
 	},
 }
@@ -42,9 +50,38 @@ Config resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
+}
+
+// versionString keeps --version short when built without ldflags metadata.
+func versionString() string {
+	if commitID == "unknown" && buildTime == "unknown" {
+		return version
+	}
+	return fmt.Sprintf("%s (commit: %s, built: %s)", version, commitID, buildTime)
+}
+
+// loadConfigFile loads the resolved config file. Commands that can run without
+// a config (offline flag-driven modes) pass lenient=true: a missing file then
+// yields an empty config and flag defaults apply. A config that exists but
+// fails to parse or validate is always an error.
+func loadConfigFile(lenient bool) (*config.Config, error) {
+	cfg, err := config.Load(cfgFile)
+	if err == nil {
+		return cfg, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		if lenient {
+			return &config.Config{}, nil
+		}
+		return nil, fmt.Errorf("config file not found: %s\n"+
+			"  run 'owl-migrate init' to generate one, or pass -c <path>\n"+
+			"  (resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml)",
+			cfgFile)
+	}
+	return nil, fmt.Errorf("load config: %w", err)
 }
 
 func init() {
