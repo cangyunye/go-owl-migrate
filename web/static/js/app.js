@@ -40,6 +40,15 @@ const api = {
         const t = this.getToken();
         if (!t) return path;
         return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(t);
+    },
+    /* WebSocket handshakes cannot carry an Authorization header, so the
+       token travels as a query param (server accepts it on the ws route). */
+    wsURL(path) {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let url = proto + '//' + location.host + path;
+        const t = this.getToken();
+        if (t) url += (path.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(t);
+        return url;
     }
 };
 
@@ -264,7 +273,10 @@ const jobUI = {
         if (start) start.style.display = 'none';
         if (cancel) cancel.style.display = 'inline-flex';
         this.logLine('info', '任务已启动', resp.job_id);
-        this.connect(resp.job_id);
+        /* The job is already running server-side; a progress-stream problem
+           must not reject start() and make the caller report a false failure. */
+        try { this.connect(resp.job_id); }
+        catch (e) { this.logLine('warn', '进度连接失败，可稍后在任务页查看', e && e.message || ''); }
         return resp;
     },
 
@@ -275,9 +287,11 @@ const jobUI = {
     },
 
     connect(jobId) {
+        this._settled = false;
         this.ws = new WebSocket(api.wsURL('/api/v1/jobs/' + jobId + '/ws'));
         this.ws.onmessage = (e) => {
-            const m = JSON.parse(e.data);
+            let m;
+            try { m = JSON.parse(e.data); } catch (err) { return; }
             if (m.type === 'progress') {
                 const tbl = ((m.schema || '') + (m.table ? '.' + m.table : '')).trim();
                 this.logLine('info', m.event + (tbl ? '  ' + tbl : ''), (m.rows !== undefined && m.rows !== null) ? m.rows + ' rows' : '');
@@ -296,10 +310,15 @@ const jobUI = {
                 this.finish();
             }
         };
+        /* The server closes the socket right after the terminal frame, which
+           some browsers report as an error; only warn if the job never
+           reached a terminal state. */
+        this.ws.onerror = () => { if (!this._settled) this.logLine('warn', '进度连接异常，任务仍在后台运行', ''); };
         this.ws.onclose = () => this.logLine('dim', '连接关闭', '');
     },
 
     finish() {
+        this._settled = true;
         const start = document.getElementById('btn-start');
         const cancel = document.getElementById('btn-cancel');
         if (start) start.style.display = 'inline-flex';

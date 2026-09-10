@@ -124,8 +124,11 @@ function startLive() {
     const dot = document.getElementById('evt-live');
     if (dot) dot.style.display = 'inline-block';
     lastSeq = 0;
-    connectWS();
     pollTimer = setInterval(refreshStatus, 2000);
+    /* Install the WebSocket only after the polling fallback is in place, so a
+       failed handshake still leaves the view refreshing. */
+    try { connectWS(); }
+    catch (e) { /* polling continues */ }
 }
 
 let currentJobId = '';

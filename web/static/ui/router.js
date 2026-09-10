@@ -93,6 +93,12 @@ function route(hash) {
     window.jobUI.logLine = ORIG_LOG_LINE;
     window.jobUI.finish = ORIG_FINISH;
     window.jobUI.onComplete = ORIG_ON_COMPLETE;
+    /* A job keeps running server-side; only the view's socket must not leak
+       into the next route (or a later start would overwrite it silently). */
+    if (window.jobUI.ws) {
+        try { window.jobUI.ws.close(); } catch (e) { /* already closed */ }
+        window.jobUI.ws = null;
+    }
 
     const path = (hash || '').replace(/^#/, '') || '/';
     const viewEl = document.getElementById('view');
