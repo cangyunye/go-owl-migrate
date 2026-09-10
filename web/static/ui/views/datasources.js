@@ -15,7 +15,7 @@ export async function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">prepare · data sources</div>'
+        +     '<div class="overline">准备 · 数据源</div>'
         +     '<h1>数据源</h1>'
         +     '<p class="subtitle">保存可复用的数据库连接，配置页一键选择（DSN 加密存储）</p>'
         +   '</div>'
@@ -205,7 +205,9 @@ function buildDSNClient(type, f) {
 }
 
 /* ── create / edit modal (structured fields, not one raw DSN) ── */
-async function dsModal(root, record, onChange) {
+// Exported so the config page can offer inline "新建数据源" without leaving
+// the form; onChange fires after a successful save.
+export async function dsModal(root, record, onChange) {
     const isEdit = !!record;
     let detail = null;
     if (isEdit) {
@@ -215,6 +217,9 @@ async function dsModal(root, record, onChange) {
     }
     const src = detail || record || {};
     const df = (detail && detail.fields) || {};
+    /* The 数据源 page primes this cache in its render; when opened from the
+       config page the cache is cold, so fetch here explicitly. */
+    const dialectList = await ensureDialects();
 
     const overlay = document.createElement('div');
     overlay.className = 'dsn-modal-overlay';
@@ -268,7 +273,7 @@ async function dsModal(root, record, onChange) {
     const passwordLabel = overlay.querySelector('#ds-password-label');
     const passwordHint = overlay.querySelector('#ds-password-hint');
 
-    (dialects || []).forEach(function (d) {
+    (dialectList || []).forEach(function (d) {
         const o = document.createElement('option');
         o.value = d;
         o.textContent = d;
@@ -281,10 +286,10 @@ async function dsModal(root, record, onChange) {
     if (!isEdit && !src.type) {
         /* The select's first option is alphabetical (duckdb), which used to open
            a file profile with host/user/password hidden. Prefer a real DB. */
-        if ((dialects || []).indexOf('mysql') >= 0) {
+        if ((dialectList || []).indexOf('mysql') >= 0) {
             typeEl.value = 'mysql';
         } else {
-            const nonFile = (dialects || []).find(d => d !== 'sqlite3' && d !== 'duckdb');
+            const nonFile = (dialectList || []).find(d => d !== 'sqlite3' && d !== 'duckdb');
             if (nonFile) typeEl.value = nonFile;
         }
     }

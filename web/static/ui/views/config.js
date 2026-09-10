@@ -24,6 +24,7 @@
    ============================================================ */
 
 import { escapeHtml, modalFocus } from '../util.js';
+import { dsModal } from './datasources.js';
 
 const MASK_RE = /\*/;
 
@@ -67,7 +68,7 @@ export async function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">prepare · config</div>'
+        +     '<div class="overline">准备 · 配置</div>'
         +     '<h1>配置</h1>'
         +     '<p class="subtitle">选择场景，填写表单，实时生成配置</p>'
         +   '</div>'
@@ -301,6 +302,36 @@ export async function render(root /*Element*/, params) {
         const typeName = side + '_type';
         const schemaName = side + '_schema';
 
+        async function applyDatasource(name) {
+            const resp = await window.api.post('/api/v1/datasources/' + encodeURIComponent(name) + '/pick', {});
+            const typeInput = formEl.querySelector(`[name="${typeName}"]`);
+            const schemaInput = formEl.querySelector(`[name="${schemaName}"]`);
+            const dsnInput = formEl.querySelector(`[name="${dsnFieldName}"]`);
+            if (typeInput && resp.type) typeInput.value = resp.type;
+            if (schemaInput && resp.schema) schemaInput.value = resp.schema;
+            if (dsnInput) dsnInput.value = resp.ref || ('datasource:' + name);
+            applyConditions();
+            refreshDSNHints();
+            schedulePreview();
+            window.toast.ok('已选用数据源：' + name, '');
+        }
+
+        /* Create a data source without leaving the config page; the newest
+           profile is applied automatically once saved. */
+        function createInline() {
+            dsModal(root, null, () => {
+                (async () => {
+                    try {
+                        const fresh = await window.api.get('/api/v1/datasources') || [];
+                        if (!fresh.length) return;
+                        let newest = fresh[0];
+                        fresh.forEach(d => { if ((d.updated || '') > (newest.updated || '')) newest = d; });
+                        await applyDatasource(newest.name);
+                    } catch (e) { /* best-effort */ }
+                })();
+            });
+        }
+
         let list;
         try {
             list = await window.api.get('/api/v1/datasources') || [];
@@ -309,22 +340,24 @@ export async function render(root /*Element*/, params) {
             return;
         }
         if (!list.length) {
-            window.toast.warn('暂无数据源', '请先在「数据源」页新建一个');
+            window.toast.ok('新建数据源', '保存后将自动填入当前配置');
+            createInline();
             return;
         }
 
         const overlay = document.createElement('div');
         overlay.className = 'dsn-modal-overlay';
         overlay.innerHTML = ''
-            + '<div class="dsn-modal" role="dialog" aria-modal="true">'
-            +   '<div class="dsn-modal-head"><h3>选择数据源</h3>'
+            + '<div class="dsn-modal" role="dialog" aria-modal="true" aria-labelledby="ds-pick-title">'
+            +   '<div class="dsn-modal-head"><h3 id="ds-pick-title">选择数据源</h3>'
             +     '<button type="button" class="btn-ghost dsn-modal-x" aria-label="关闭">×</button></div>'
             +   '<div class="dsn-modal-body">'
-            +     '<div class="field"><label>数据源</label><select name="ds-pick" class="mono"></select>'
+            +     '<div class="field"><label for="ds-pick-sel">数据源</label><select id="ds-pick-sel" name="ds-pick" class="mono"></select>'
             +       '<div class="field-help">选中后自动填充类型、schema，DSN 由服务端加密解析。</div></div>'
             +     '<p class="field-note">数据源列表与详情不回显 DSN；密码仅在服务端解密。</p>'
             +   '</div>'
             +   '<div class="dsn-modal-actions">'
+            +     '<button type="button" class="btn-ghost" id="ds-pick-new" style="margin-right:auto">新建数据源</button>'
             +     '<button type="button" class="btn-ghost" id="ds-pick-cancel">取消</button>'
             +     '<button type="button" class="btn-primary" id="ds-pick-apply">应用</button>'
             +   '</div>'
@@ -332,40 +365,38 @@ export async function render(root /*Element*/, params) {
         document.body.appendChild(overlay);
         document.body.classList.add('modal-open');
         overlay.classList.add('open');
+        const pickFocus = modalFocus(overlay);
+        pickFocus.open();
 
         const sel = overlay.querySelector('[name="ds-pick"]');
         list.forEach(ds => {
             const o = document.createElement('option');
             o.value = ds.name;
-            o.textContent = ds.name + ' · ' + (ds.type || '?') + (ds.schema ? ' · ' + ds.schema : '');
+            let text = ds.name + ' · ' + (ds.type || '?');
+            if (ds.host) text += ' · ' + ds.host + (ds.port ? ':' + ds.port : '');
+            if (ds.database) text += '/' + ds.database;
+            if (ds.schema) text += ' · ' + ds.schema;
+            o.textContent = text;
             sel.appendChild(o);
         });
 
         function close() {
             overlay.classList.remove('open');
             document.body.classList.remove('modal-open');
+            pickFocus.close();
             if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
         }
         overlay.querySelector('.dsn-modal-x').addEventListener('click', close);
         overlay.querySelector('#ds-pick-cancel').addEventListener('click', close);
         overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
         overlay.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+        overlay.querySelector('#ds-pick-new').addEventListener('click', () => { close(); createInline(); });
 
         overlay.querySelector('#ds-pick-apply').addEventListener('click', async () => {
             const name = sel.value;
             if (!name) { window.toast.warn('请选择数据源', ''); return; }
             try {
-                const resp = await window.api.post('/api/v1/datasources/' + encodeURIComponent(name) + '/pick', {});
-                const typeInput = formEl.querySelector(`[name="${typeName}"]`);
-                const schemaInput = formEl.querySelector(`[name="${schemaName}"]`);
-                const dsnInput = formEl.querySelector(`[name="${dsnFieldName}"]`);
-                if (typeInput && resp.type) typeInput.value = resp.type;
-                if (schemaInput && resp.schema) schemaInput.value = resp.schema;
-                if (dsnInput) dsnInput.value = resp.ref || ('datasource:' + name);
-                applyConditions();
-                refreshDSNHints();
-                schedulePreview();
-                window.toast.ok('已选用数据源：' + name, '');
+                await applyDatasource(name);
                 close();
             } catch (e) {
                 window.toast.err('应用数据源失败', (e && e.message) || String(e));
