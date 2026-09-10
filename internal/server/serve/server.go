@@ -126,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/metadata/tables", s.handleMetadataTables)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/ws", s.handleWebSocket)
 	mux.HandleFunc("POST /api/v1/migrate", s.handleStartMigrate)
+	mux.HandleFunc("POST /api/v1/migrate/preflight", s.handleMigratePreflight)
 	mux.HandleFunc("POST /api/v1/export", s.handleStartExport)
 	mux.HandleFunc("POST /api/v1/import", s.handleStartImport)
 	mux.HandleFunc("DELETE /api/v1/jobs/{id}", s.handleCancelJob)

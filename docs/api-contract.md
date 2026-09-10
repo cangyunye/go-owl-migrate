@@ -75,6 +75,7 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/metadata/tables | Returns all loaded tables with their columns, PKs, and row counts. |
 | GET /api/v1/jobs/{id}/ws | WebSocket: streams job progress events, then a terminal message (`complete`/`cancelled`/`error`). A terminal `error` also carries `error: "<reason>"` (the worker's own fatal error, or its last stderr line). |
 | POST /api/v1/migrate | Starts a migration job (relayed to the master IPC server). |
+| POST /api/v1/migrate/preflight | Dry-run checks (config, metadata extractable, table selection, target ping; `?mode=sql-out` skips the target). Never writes or spawns a worker. |
 | POST /api/v1/export | Starts a data-export job (relayed to the master IPC server). |
 | POST /api/v1/import | Starts a data-import job (relayed to the master IPC server). |
 | DELETE /api/v1/jobs/{id} | Cancels a running job (relayed to the master IPC server). |

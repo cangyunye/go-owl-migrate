@@ -100,12 +100,18 @@ export function render(root /*Element*/, params) {
         +     '<label class="check"><input type="checkbox" id="opt-continue-on-error"> 部分表失败不中断 <code>--continue-on-error</code></label>'
         +   '</div>'
         +   '<div class="form-actions">'
+        +     '<button type="button" class="btn-ghost" id="btn-preflight">预检</button>'
         +     '<button class="btn-primary" id="btn-start" type="button">'
         +       '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'
         +       '开始迁移'
         +     '</button>'
         +     '<button class="btn-danger" id="btn-cancel" type="button" style="display:none">取消</button>'
         +   '</div>'
+        + '</div>'
+
+        + '<div id="preflight-panel" class="panel reveal" style="--i:3;display:none">'
+        +   '<div class="panel-head"><span class="panel-title">预检结果 <span class="badge badge-accent" id="pf-badge"></span></span></div>'
+        +   '<div id="preflight-list"></div>'
         + '</div>'
 
         + '<div id="progress-panel" class="panel reveal" style="--i:3;display:none">'
@@ -518,7 +524,55 @@ export function render(root /*Element*/, params) {
         window.location = window.api.downloadURL('/api/v1/jobs/' + completedJobId + '/output/download?format=' + encodeURIComponent(fmt));
     }
 
+    /* Dry-run: cheap read-only checks (config, metadata, table list, target). */
+    async function runPreflight() {
+        const panel = root.querySelector('#preflight-panel');
+        const list = root.querySelector('#preflight-list');
+        const badge = root.querySelector('#pf-badge');
+        const btn = root.querySelector('#btn-preflight');
+        btn.disabled = true;
+        panel.style.display = 'block';
+        list.textContent = '正在检查…';
+        try {
+            const res = await window.api.post('/api/v1/migrate/preflight?mode=' + encodeURIComponent(mode), {});
+            list.innerHTML = '';
+            (res.checks || []).forEach(c => {
+                const row = document.createElement('div');
+                row.className = 'pf-row';
+                const mark = document.createElement('span');
+                mark.className = c.ok ? 'st-ok' : 'st-fail';
+                mark.textContent = c.ok ? '✓' : '✗';
+                const name = document.createElement('b');
+                name.textContent = c.name;
+                const detail = document.createElement('span');
+                detail.className = 'pf-detail';
+                detail.textContent = c.detail || '';
+                row.appendChild(mark);
+                row.appendChild(name);
+                row.appendChild(detail);
+                list.appendChild(row);
+            });
+            (res.warnings || []).forEach(w => {
+                const note = document.createElement('div');
+                note.className = 'field-note';
+                note.textContent = '⚠ ' + w;
+                list.appendChild(note);
+            });
+            badge.textContent = res.ok ? '通过' : '未通过';
+        } catch (e) {
+            badge.textContent = '失败';
+            list.innerHTML = '';
+            const err = document.createElement('div');
+            err.className = 'field-error';
+            err.textContent = '✗ 预检请求失败：' + ((e && e.message) || e);
+            list.appendChild(err);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
     root.querySelector('#btn-start').addEventListener('click', startMigrate);
+    root.querySelector('#btn-preflight').addEventListener('click', runPreflight);
     root.querySelector('#btn-cancel').addEventListener('click', () => jobUI.cancel());
     root.querySelector('#btn-download').addEventListener('click', downloadSQL);
 

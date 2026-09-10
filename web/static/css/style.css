@@ -1161,6 +1161,9 @@ body.modal-open { overflow: hidden; }
 
 /* migrate: table picker */
 .tbl-section { margin: 4px 0 18px; }
+.pf-row { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.pf-row:last-of-type { border-bottom: none; }
+.pf-detail { color: var(--text-2); }
 .tbl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .tbl-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
 .tbl-head input[type="text"] { width: 200px; padding: 6px 10px; font-size: 12.5px; }
