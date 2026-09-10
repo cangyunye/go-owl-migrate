@@ -1177,6 +1177,14 @@ body.modal-open { overflow: hidden; }
 /* datasources list: connection line under the name */
 .ds-conn { font-size: 11px; color: var(--text-3); margin-top: 2px; font-family: var(--font-display); }
 
+/* keyboard focus visibility (mouse clicks stay outline-free) */
+button:focus-visible, a:focus-visible, .tab:focus-visible, .nav-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* ── generation pages (ddl/select/insert) ───────────────── */
 .gen-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
 .gen-layout .panel { margin-bottom: 0; }

@@ -1,4 +1,5 @@
 /* owl-migrate SPA · migrate view (ported from web/templates/migrate.html) */
+import { modalFocus } from '../util.js';
 /* ============================================================
    Ports: mode toggle (direct / sql-out), pipeline stage board,
    prefill from /api/v1/config/status, startMigrate -> jobUI.start,
@@ -54,8 +55,8 @@ export function render(root /*Element*/, params) {
         + '</div>'
 
         + '<nav class="tabs reveal" style="--i:1">'
-        +   '<button type="button" class="tab" data-mode="direct">直接迁移</button>'
-        +   '<button type="button" class="tab" data-mode="sql">SQL 输出</button>'
+        +   '<button type="button" class="tab" data-mode="direct" aria-pressed="false">直接迁移</button>'
+        +   '<button type="button" class="tab" data-mode="sql" aria-pressed="false">SQL 输出</button>'
         + '</nav>'
         + '<p class="mode-desc reveal" style="--i:1" id="mode-desc"></p>'
 
@@ -88,7 +89,7 @@ export function render(root /*Element*/, params) {
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-all">全选</button>'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-none">清空</button>'
         +     '</div>'
-        +     '<div id="tbl-status" class="field-help">加载表列表…</div>'
+        +     '<div id="tbl-status" class="field-help" role="status">加载表列表…</div>'
         +     '<div id="tbl-list" class="tbl-list" style="display:none"></div>'
         +   '</div>'
 
@@ -112,7 +113,7 @@ export function render(root /*Element*/, params) {
         +     '<span class="panel-title">实时进度 <span class="badge badge-accent" id="job-id-badge"></span></span>'
         +     '<span class="live-dot"></span>'
         +   '</div>'
-        +   '<div id="progress-log" class="term"></div>'
+        +   '<div id="progress-log" class="term" role="log" aria-live="polite"></div>'
         + '</div>'
 
         + '<div id="download-panel" class="panel reveal" style="--i:4;display:none">'
@@ -145,6 +146,7 @@ export function render(root /*Element*/, params) {
     let completedJobId = null;
     let outputFileCount = 0;
     let prefilledTarget = null;
+    const confirmFocus = modalFocus(root.querySelector('#mig-confirm'));
 
     const modeDesc = root.querySelector('#mode-desc');
     const pvSource = root.querySelector('#pv-source');
@@ -154,8 +156,11 @@ export function render(root /*Element*/, params) {
 
     /* reflect the current mode on tabs, description, and target label */
     function applyMode() {
-        root.querySelectorAll('.tab').forEach(t =>
-            t.classList.toggle('active', t.dataset.mode === (mode === 'sql-out' ? 'sql' : 'direct')));
+        root.querySelectorAll('.tab').forEach(t => {
+            const active = t.dataset.mode === (mode === 'sql-out' ? 'sql' : 'direct');
+            t.classList.toggle('active', active);
+            t.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
         modeDesc.textContent = (mode === 'sql-out')
             ? 'SQL 输出模式：导出后生成 INSERT SQL 文件，不连接目标库。'
             : '直接模式：导出 CSV 后直接导入目标数据库。';
@@ -459,6 +464,7 @@ export function render(root /*Element*/, params) {
         }
         root.querySelector('#mig-confirm').classList.add('open');
         document.body.classList.add('modal-open');
+        confirmFocus.open();
         root.querySelector('#mig-confirm-go').focus();
     }
 
@@ -466,6 +472,7 @@ export function render(root /*Element*/, params) {
         const overlay = root.querySelector('#mig-confirm');
         if (overlay) overlay.classList.remove('open');
         document.body.classList.remove('modal-open');
+        confirmFocus.close();
     }
 
     async function startMigrate() {

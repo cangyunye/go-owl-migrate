@@ -27,3 +27,38 @@ export function statusBadge(s) {
     const label = escapeHtml(s);
     return '<span class="' + m[0] + '"><span class="status-dot' + (m[1] ? ' pulse' : '') + '"></span>' + label + '</span>';
 }
+
+const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+/* modalFocus keeps Tab cycling inside a dialog overlay and restores focus to
+   the trigger on close. Pair every open with .open() and every close path
+   with .close(). */
+export function modalFocus(overlay) {
+    let prev = null;
+    function onKey(e) {
+        if (e.key !== 'Tab') return;
+        const items = Array.from(overlay.querySelectorAll(FOCUSABLE))
+            .filter(el => el.offsetParent !== null);
+        if (!items.length) return;
+        const first = items[0];
+        const last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    }
+    return {
+        open() {
+            prev = document.activeElement;
+            overlay.addEventListener('keydown', onKey);
+        },
+        close() {
+            overlay.removeEventListener('keydown', onKey);
+            if (prev && typeof prev.focus === 'function') prev.focus();
+            prev = null;
+        },
+    };
+}

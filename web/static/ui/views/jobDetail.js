@@ -202,7 +202,7 @@ export function render(root /*Element*/, params) {
         +     '<span class="panel-title">检查点（每表状态）<span class="badge badge-accent" id="cp-count"></span></span>'
         +   '</div>'
         +   '<table class="data-table">'
-        +     '<thead><tr><th>Schema</th><th>表</th><th>已导出</th><th>导出行数</th><th>已导入</th><th>导入行数</th><th>状态</th><th>错误</th></tr></thead>'
+        +     '<thead><tr><th scope="col">Schema</th><th scope="col">表</th><th scope="col">已导出</th><th scope="col">导出行数</th><th scope="col">已导入</th><th scope="col">导入行数</th><th scope="col">状态</th><th scope="col">错误</th></tr></thead>'
         +     '<tbody id="cp-body"><tr><td colspan="8" style="text-align:center;color:var(--text-3);padding:16px">加载中…</td></tr></tbody>'
         +   '</table>'
         + '</div>'
@@ -211,7 +211,7 @@ export function render(root /*Element*/, params) {
         +     '<span class="panel-title">进度事件</span>'
         +     '<span class="live-dot" id="evt-live" style="display:none"></span>'
         +   '</div>'
-        +   '<div class="term" id="progress-log"></div>'
+        +   '<div class="term" id="progress-log" role="log" aria-live="polite"></div>'
         + '</div>';
 
     if (!currentJobId) {

@@ -4,7 +4,7 @@
    API and is only resolved server-side when a config references it.
    ============================================================ */
 
-import { escapeHtml } from '../util.js';
+import { escapeHtml, modalFocus } from '../util.js';
 
 /* Module-level cache so re-renders reuse the dialect list without refetching. */
 let dialects = null;
@@ -27,7 +27,7 @@ export async function render(root /*Element*/, params) {
         + '<div class="panel reveal" style="--i:1">'
         +   '<div class="panel-head"><span class="panel-title">数据源列表</span></div>'
         +   '<table class="data-table config-lib-table">'
-        +     '<thead><tr><th>名称</th><th>类型</th><th>Schema</th><th>备注</th><th>更新时间</th><th>操作</th></tr></thead>'
+        +     '<thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">Schema</th><th scope="col">备注</th><th scope="col">更新时间</th><th scope="col">操作</th></tr></thead>'
         +     '<tbody id="ds-list-body"></tbody>'
         +   '</table>'
         +   '<p class="field-help" style="margin-top:12px">'
@@ -219,25 +219,25 @@ async function dsModal(root, record, onChange) {
     const overlay = document.createElement('div');
     overlay.className = 'dsn-modal-overlay';
     overlay.innerHTML = ''
-        + '<div class="dsn-modal" role="dialog" aria-modal="true">'
-        +   '<div class="dsn-modal-head"><h3>' + (isEdit ? '编辑数据源' : '新建数据源') + '</h3>'
+        + '<div class="dsn-modal" role="dialog" aria-modal="true" aria-labelledby="ds-modal-title">'
+        +   '<div class="dsn-modal-head"><h3 id="ds-modal-title">' + (isEdit ? '编辑数据源' : '新建数据源') + '</h3>'
         +     '<button type="button" class="btn-ghost dsn-modal-x" aria-label="关闭">×</button></div>'
         +   '<div class="dsn-modal-body">'
-        +     '<div class="field"><label>名称 *</label><input name="ds-name" type="text" spellcheck="false" placeholder="例如: prod-oracle"></div>'
-        +     '<div class="field"><label>类型 *</label><select name="ds-type"></select></div>'
-        +     '<div class="field"><label>Schema</label><input name="ds-schema" type="text" spellcheck="false" placeholder="Oracle: 用户名; MySQL: 库名; PG: schema 名"></div>'
-        +     '<div class="field" data-conn><label>用户名 *</label><input name="ds-username" type="text" spellcheck="false" autocomplete="off"></div>'
-        +     '<div class="field" data-conn><label id="ds-password-label">密码 *</label>'
-        +       '<input name="ds-password" type="password" spellcheck="false" autocomplete="new-password">'
+        +     '<div class="field"><label for="ds-f-name">名称 *</label><input id="ds-f-name" name="ds-name" type="text" spellcheck="false" placeholder="例如: prod-oracle"></div>'
+        +     '<div class="field"><label for="ds-f-type">类型 *</label><select id="ds-f-type" name="ds-type"></select></div>'
+        +     '<div class="field"><label for="ds-f-schema">Schema</label><input id="ds-f-schema" name="ds-schema" type="text" spellcheck="false" placeholder="Oracle: 用户名; MySQL: 库名; PG: schema 名"></div>'
+        +     '<div class="field" data-conn><label for="ds-f-username">用户名 *</label><input id="ds-f-username" name="ds-username" type="text" spellcheck="false" autocomplete="off"></div>'
+        +     '<div class="field" data-conn><label for="ds-f-password" id="ds-password-label">密码 *</label>'
+        +       '<input id="ds-f-password" name="ds-password" type="password" spellcheck="false" autocomplete="new-password">'
         +       (isEdit ? '<div class="field-help" id="ds-password-hint"></div>' : '')
         +     '</div>'
-        +     '<div class="field" data-conn><label>主机 *</label><input name="ds-host" type="text" spellcheck="false" autocomplete="off"></div>'
-        +     '<div class="field" data-conn><label>端口</label><input name="ds-port" type="text" spellcheck="false" autocomplete="off" inputmode="numeric"></div>'
-        +     '<div class="field"><label id="ds-db-label">数据库名 *</label><input name="ds-database" type="text" spellcheck="false" autocomplete="off"></div>'
-        +     '<div class="field" data-fam="extra"><label>连接参数</label>'
-        +       '<input name="ds-extra" type="text" spellcheck="false" autocomplete="off" class="mono" placeholder="可选，如 sslmode=disable / charset=utf8mb4 / cluster=obcluster">'
+        +     '<div class="field" data-conn><label for="ds-f-host">主机 *</label><input id="ds-f-host" name="ds-host" type="text" spellcheck="false" autocomplete="off"></div>'
+        +     '<div class="field" data-conn><label for="ds-f-port">端口</label><input id="ds-f-port" name="ds-port" type="text" spellcheck="false" autocomplete="off" inputmode="numeric"></div>'
+        +     '<div class="field"><label for="ds-f-database" id="ds-db-label">数据库名 *</label><input id="ds-f-database" name="ds-database" type="text" spellcheck="false" autocomplete="off"></div>'
+        +     '<div class="field" data-fam="extra"><label for="ds-f-extra">连接参数</label>'
+        +       '<input id="ds-f-extra" name="ds-extra" type="text" spellcheck="false" autocomplete="off" class="mono" placeholder="可选，如 sslmode=disable / charset=utf8mb4 / cluster=obcluster">'
         +     '</div>'
-        +     '<div class="field"><label>备注</label><input name="ds-remark" type="text" spellcheck="false" placeholder="可选"></div>'
+        +     '<div class="field"><label for="ds-f-remark">备注</label><input id="ds-f-remark" name="ds-remark" type="text" spellcheck="false" placeholder="可选"></div>'
         +     '<div class="field-help">密码在服务端加密保存，列表与编辑不回显。</div>'
         +   '</div>'
         +   '<div class="dsn-modal-actions">'
@@ -249,6 +249,8 @@ async function dsModal(root, record, onChange) {
     root.appendChild(overlay);
     document.body.classList.add('modal-open');
     overlay.classList.add('open');
+    const dsFocus = modalFocus(overlay);
+    dsFocus.open();
 
     const nameEl = overlay.querySelector('[name="ds-name"]');
     const typeEl = overlay.querySelector('[name="ds-type"]');
@@ -321,6 +323,7 @@ async function dsModal(root, record, onChange) {
     }
     typeEl.addEventListener('change', applyFamily);
     applyFamily();
+    nameEl.focus();
 
     function readFields() {
         return {
@@ -336,6 +339,7 @@ async function dsModal(root, record, onChange) {
     function close() {
         overlay.classList.remove('open');
         document.body.classList.remove('modal-open');
+        dsFocus.close();
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     }
 

@@ -33,8 +33,12 @@ function renderTable() {
 
 function setFilter(f) {
     currentFilter = f;
-    document.querySelectorAll('#filter-tabs .tab').forEach(t =>
-        t.classList.toggle('active', t.dataset.filter === f));
+    document.querySelectorAll('#filter-tabs .tab').forEach(t => {
+        const active = t.dataset.filter === f;
+        t.classList.toggle('active', active);
+        if (active) t.setAttribute('aria-current', 'true');
+        else t.removeAttribute('aria-current');
+    });
     renderTable();
 }
 
@@ -65,14 +69,14 @@ export function render(root /*Element*/, params) {
         +   '</div>'
         + '</div>'
         + '<nav class="tabs" id="filter-tabs">'
-        +   '<a href="#/jobs" class="tab active" data-filter="all">全部</a>'
+        +   '<a href="#/jobs" class="tab active" data-filter="all" aria-current="true">全部</a>'
         +   '<a href="#/jobs" class="tab" data-filter="running">运行中</a>'
         +   '<a href="#/jobs" class="tab" data-filter="completed">已完成</a>'
         +   '<a href="#/jobs" class="tab" data-filter="failed">失败 / 中断</a>'
         + '</nav>'
         + '<div>'
         +   '<table class="data-table">'
-        +     '<thead><tr><th>ID</th><th>类型</th><th>状态</th><th>PID</th><th>创建时间</th><th>完成时间</th></tr></thead>'
+        +     '<thead><tr><th scope="col">ID</th><th scope="col">类型</th><th scope="col">状态</th><th scope="col">PID</th><th scope="col">创建时间</th><th scope="col">完成时间</th></tr></thead>'
         +     '<tbody id="jobs-body"><tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px">加载中…</td></tr></tbody>'
         +   '</table>'
         + '</div>';

@@ -23,7 +23,7 @@
      prefilled into editable DSN fields.
    ============================================================ */
 
-import { escapeHtml } from '../util.js';
+import { escapeHtml, modalFocus } from '../util.js';
 
 const MASK_RE = /\*/;
 
@@ -88,7 +88,7 @@ export async function render(root /*Element*/, params) {
         +     '<span id="upload-status" class="status-msg"></span>'
         +   '</div>'
         +   '<table class="data-table config-lib-table">'
-        +     '<thead><tr><th>名称</th><th>场景</th><th>源 → 目标</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>'
+        +     '<thead><tr><th scope="col">名称</th><th scope="col">场景</th><th scope="col">源 → 目标</th><th scope="col">大小</th><th scope="col">修改时间</th><th scope="col">操作</th></tr></thead>'
         +     '<tbody id="config-lib-body"></tbody>'
         +   '</table>'
         + '</div>'
@@ -108,7 +108,7 @@ export async function render(root /*Element*/, params) {
         +         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>'
         +         '保存为当前配置'
         +       '</button>'
-        +       '<span class="save-status" id="save-status"></span>'
+        +       '<span class="save-status" id="save-status" role="status"></span>'
         +     '</div>'
         +     '<p class="saved-path" id="saved-path"></p>'
         +   '</section>'
@@ -464,6 +464,7 @@ export async function render(root /*Element*/, params) {
         dsnModal.raw.textContent = current || '等待填写…';
         dsnModal.overlay.classList.add('open');
         document.body.classList.add('modal-open');
+        dsnModal.focus.open();
         const first = dsnModal.body.querySelector('input');
         if (first) first.focus();
     }
@@ -493,6 +494,7 @@ export async function render(root /*Element*/, params) {
             body: overlay.querySelector('#dsn-modal-body'),
             raw: overlay.querySelector('#dsn-modal-raw'),
             data: null,
+            focus: modalFocus(overlay),
         };
         return dsnModal;
     }
@@ -523,10 +525,12 @@ export async function render(root /*Element*/, params) {
         rawWrap.dataset.key = 'raw';
         const rl = document.createElement('label');
         rl.textContent = '原始 DSN（可直接编辑）';
+        rl.htmlFor = 'dsn-f-raw';
         rawWrap.appendChild(rl);
         const ta = document.createElement('textarea');
         ta.className = 'mono dsn-raw-input';
         ta.name = 'modal_dsn_raw';
+        ta.id = 'dsn-f-raw';
         ta.addEventListener('input', onDSNModalRawInput);
         rawWrap.appendChild(ta);
         body.appendChild(rawWrap);
@@ -538,10 +542,12 @@ export async function render(root /*Element*/, params) {
         wrap.dataset.key = key;
         const l = document.createElement('label');
         l.textContent = label;
+        l.htmlFor = 'dsn-f-' + key;
         wrap.appendChild(l);
         const input = document.createElement('input');
         input.type = type;
         input.name = 'modal_dsn_' + key;
+        input.id = 'dsn-f-' + key;
         input.placeholder = ph;
         if (key === 'host' || key === 'port' || key === 'db' || key === 'path') input.classList.add('mono');
         input.addEventListener('input', onDSNModalInput);
@@ -650,6 +656,7 @@ export async function render(root /*Element*/, params) {
         if (!dsnModal) return;
         dsnModal.overlay.classList.remove('open');
         document.body.classList.remove('modal-open');
+        dsnModal.focus.close();
     }
 
     function parseDSN(dsn, family) {
