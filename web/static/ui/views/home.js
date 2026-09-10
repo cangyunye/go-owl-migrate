@@ -15,10 +15,15 @@ const FLOW_BOARD =
     '<div class="flow-board">'
     /* 01 准备 */
     + '<div class="flow-stage stage-prepare">'
-    +   '<div class="stage-head"><span class="stage-num">01</span><span class="stage-name">准备 · Prepare</span></div>'
+    +   '<div class="stage-head"><span class="stage-num">01</span><span class="stage-name">准备</span></div>'
     +   '<a href="#/config" class="action-card">'
     +     '<span class="ac-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>'
     +     '<span class="ac-body"><span class="ac-title">配置</span><span class="ac-desc">场景化表单 · 实时生成 YAML</span></span>'
+    +     '<span class="ac-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>'
+    +   '</a>'
+    +   '<a href="#/datasources" class="action-card">'
+    +     '<span class="ac-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 9 3"/><path d="M21 5v14a9 3 0 0 0-9 3"/><path d="M3 12a9 3 0 0 0 9 3"/><path d="M21 12a9 3 0 0 0 9 3"/></svg></span>'
+    +     '<span class="ac-body"><span class="ac-title">数据源</span><span class="ac-desc">连接档案 · 加密存储 · 配置页可就地新建</span></span>'
     +     '<span class="ac-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span>'
     +   '</a>'
     +   '<a href="#/metadata" class="action-card">'
@@ -39,7 +44,7 @@ const FLOW_BOARD =
     + '</div>'
     /* 02 生成 */
     + '<div class="flow-stage stage-generate">'
-    +   '<div class="stage-head"><span class="stage-num">02</span><span class="stage-name">生成 · Generate</span></div>'
+    +   '<div class="stage-head"><span class="stage-num">02</span><span class="stage-name">生成</span></div>'
     +   '<a href="#/ddl" class="action-card">'
     +     '<span class="ac-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 12-2 2 2 2"/><path d="m14 12 2 2-2 2"/></svg></span>'
     +     '<span class="ac-body"><span class="ac-title">生成 DDL</span><span class="ac-desc">目标库建表语句</span></span>'
@@ -58,7 +63,7 @@ const FLOW_BOARD =
     + '</div>'
     /* 03 执行 */
     + '<div class="flow-stage stage-execute">'
-    +   '<div class="stage-head"><span class="stage-num">03</span><span class="stage-name">执行 · Execute</span></div>'
+    +   '<div class="stage-head"><span class="stage-num">03</span><span class="stage-name">执行</span></div>'
     +   '<a href="#/migrate" class="action-card">'
     +     '<span class="ac-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg></span>'
     +     '<span class="ac-body"><span class="ac-title">完整迁移</span><span class="ac-desc">源库 → 导出 → 目标库</span></span>'
@@ -77,7 +82,7 @@ const FLOW_BOARD =
     + '</div>'
     /* 04 监控 */
     + '<div class="flow-stage stage-monitor">'
-    +   '<div class="stage-head"><span class="stage-num">04</span><span class="stage-name">监控 · Monitor</span></div>'
+    +   '<div class="stage-head"><span class="stage-num">04</span><span class="stage-name">监控</span></div>'
     +   '<a href="#/jobs" class="action-card">'
     +     '<span class="ac-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>'
     +     '<span class="ac-body"><span class="ac-title">任务历史</span><span class="ac-desc">进度 · 检查点 · 恢复</span></span>'
