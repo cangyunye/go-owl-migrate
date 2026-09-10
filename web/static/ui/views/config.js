@@ -214,8 +214,11 @@ export async function render(root /*Element*/, params) {
             }
         }
         input.name = f.name;
-        input.addEventListener('input', schedulePreview);
-        input.addEventListener('change', () => { applyConditions(); refreshDSNHints(); schedulePreview(); });
+        input.id = 'cfg-f-' + f.name;
+        label.htmlFor = input.id;
+        if (f.required) input.setAttribute('aria-required', 'true');
+        input.addEventListener('input', () => { clearFieldError(wrap); schedulePreview(); });
+        input.addEventListener('change', () => { clearFieldError(wrap); applyConditions(); refreshDSNHints(); schedulePreview(); });
         wrap.appendChild(input);
 
         if (isDSN(f.name)) {
@@ -814,6 +817,46 @@ export async function render(root /*Element*/, params) {
         return values;
     }
 
+    /* ── required-field validation ──────────────────────────── */
+    function clearFieldError(wrap) {
+        wrap.classList.remove('has-error');
+        const msg = wrap.querySelector('.field-error');
+        if (msg) msg.remove();
+        const input = wrap.querySelector('[name]');
+        if (input) input.removeAttribute('aria-invalid');
+    }
+
+    function setFieldError(wrap, text) {
+        wrap.classList.add('has-error');
+        let msg = wrap.querySelector('.field-error');
+        if (!msg) {
+            msg = document.createElement('div');
+            msg.className = 'field-error';
+            wrap.appendChild(msg);
+        }
+        msg.textContent = text;
+        const input = wrap.querySelector('[name]');
+        if (input) input.setAttribute('aria-invalid', 'true');
+    }
+
+    /* Marks visible required fields that are empty; returns the first one. */
+    function validateRequired() {
+        let firstBad = null;
+        (activeScenario.fields || []).forEach(f => {
+            const wrap = formEl.querySelector('.field[data-name="' + f.name + '"]');
+            if (!wrap) return;
+            clearFieldError(wrap);
+            if (wrap.classList.contains('hidden')) return;
+            const input = wrap.querySelector('[name]');
+            if (!input) return;
+            if (f.required && !String(input.value || '').trim()) {
+                setFieldError(wrap, '此项为必填');
+                if (!firstBad) firstBad = wrap;
+            }
+        });
+        return firstBad;
+    }
+
     /* ── live preview ───────────────────────────────────────── */
     function schedulePreview() {
         if (previewTimer) clearTimeout(previewTimer);
@@ -836,6 +879,17 @@ export async function render(root /*Element*/, params) {
 
     /* ── save as current config ─────────────────────────────── */
     async function saveConfig() {
+        const bad = validateRequired();
+        if (bad) {
+            saveStatus.textContent = '✗ 请先填写标 * 的必填项';
+            saveStatus.className = 'save-status fail';
+            const input = bad.querySelector('[name]');
+            if (input) {
+                input.focus();
+                bad.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+            return;
+        }
         saveStatus.textContent = '保存中…'; saveStatus.className = 'save-status';
         try {
             const resp = await window.api.post(`/api/v1/scenarios/${activeScenario.name}/build`,
