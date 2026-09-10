@@ -1159,6 +1159,21 @@ body.modal-open { overflow: hidden; }
 .confirm-label { min-width: 92px; color: var(--text-3); flex-shrink: 0; }
 .confirm-value { color: var(--text); font-family: var(--font-display); word-break: break-all; }
 
+/* migrate: table picker */
+.tbl-section { margin: 4px 0 18px; }
+.tbl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.tbl-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.tbl-head input[type="text"] { width: 200px; padding: 6px 10px; font-size: 12.5px; }
+.tbl-list {
+  max-height: 264px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg-inset); padding: 6px;
+}
+.tbl-item { padding: 4px 8px; border-radius: 6px; font-size: 12.5px; }
+.tbl-item:hover { background: var(--bg-hover); }
+.tbl-name { font-family: var(--font-display); color: var(--text); }
+.tbl-rowcount { margin-left: auto; font-size: 11px; color: var(--text-3); }
+
 /* ── generation pages (ddl/select/insert) ───────────────── */
 .gen-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
 .gen-layout .panel { margin-bottom: 0; }

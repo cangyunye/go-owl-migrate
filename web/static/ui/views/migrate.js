@@ -81,6 +81,17 @@ export function render(root /*Element*/, params) {
         +     '</div>'
         +   '</div>'
 
+        +   '<div class="tbl-section">'
+        +     '<div class="tbl-head">'
+        +       '<span class="tbl-title">表选择 <span class="badge badge-accent" id="tbl-count">—</span></span>'
+        +       '<input id="tbl-filter" type="text" placeholder="过滤表名…" spellcheck="false" autocomplete="off">'
+        +       '<button type="button" class="btn-ghost btn-sm" id="tbl-all">全选</button>'
+        +       '<button type="button" class="btn-ghost btn-sm" id="tbl-none">清空</button>'
+        +     '</div>'
+        +     '<div id="tbl-status" class="field-help">加载表列表…</div>'
+        +     '<div id="tbl-list" class="tbl-list" style="display:none"></div>'
+        +   '</div>'
+
         +   '<div class="field">'
         +     '<label class="check"><input type="checkbox" id="opt-skip-ddl"> 跳过建表 <code>--skip-ddl</code>（仅导数据）</label>'
         +   '</div>'
@@ -174,6 +185,156 @@ export function render(root /*Element*/, params) {
             if (st.metadata_loaded) psSource.textContent = st.table_count + ' 张表待迁移';
         } catch (e) { /* best-effort */ }
     })();
+
+    /* ── table picker: choose which tables this run covers ───── */
+    let tblRows = [];
+    let tblApplyTimer = null;
+
+    function selectedKeys() {
+        return Array.from(root.querySelectorAll('#tbl-list input[type="checkbox"]:checked'))
+            .map(i => i.dataset.key);
+    }
+
+    function updateTblCount() {
+        const el = root.querySelector('#tbl-count');
+        if (!el) return;
+        const total = tblRows.length;
+        const sel = selectedKeys().length;
+        el.textContent = !total ? '—' : (sel >= total ? '全部 ' + total + ' 张' : sel + ' / ' + total);
+    }
+
+    function scheduleTblApply() {
+        if (tblApplyTimer) clearTimeout(tblApplyTimer);
+        tblApplyTimer = setTimeout(() => { tblApplyTimer = null; if (root.isConnected) applyTableSelection(); }, 700);
+    }
+
+    async function applyTableSelection() {
+        const statusEl = root.querySelector('#tbl-status');
+        if (!statusEl || !tblRows.length) return;
+        const sel = selectedKeys();
+        /* Nothing selected must not silently mean "everything". */
+        if (!sel.length) {
+            statusEl.textContent = '未选择任何表（配置保持不变）';
+            return;
+        }
+        const tablesValue = sel.length >= tblRows.length ? '*' : sel.join(',');
+        try {
+            const cur = await window.api.get('/api/v1/config/current');
+            const values = cur.values || {};
+            values.tables = tablesValue;
+            await window.api.post('/api/v1/scenarios/' + cur.scenario + '/build', { values: values, save: true });
+            statusEl.textContent = tablesValue === '*'
+                ? '全部 ' + tblRows.length + ' 张表，已同步到配置'
+                : '已选 ' + sel.length + ' / ' + tblRows.length + ' 张表，已同步到配置';
+            if (window.refreshConfigBar) window.refreshConfigBar();
+        } catch (e) {
+            statusEl.textContent = '✗ 同步配置失败：' + ((e && e.message) || e);
+        }
+    }
+
+    function renderTablePicker() {
+        const statusEl = root.querySelector('#tbl-status');
+        const listEl = root.querySelector('#tbl-list');
+        if (!tblRows.length) {
+            statusEl.textContent = '源库中没有表';
+            updateTblCount();
+            return;
+        }
+        listEl.innerHTML = '';
+        (async () => {
+            let tablesValue = '*';
+            try {
+                const cur = await window.api.get('/api/v1/config/current');
+                tablesValue = (cur.values && cur.values.tables) || '*';
+            } catch (e) { /* default to all */ }
+            const all = tablesValue.trim() === '' || tablesValue.trim() === '*';
+            const wanted = new Set(tablesValue.split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+            const cap = 500;
+            tblRows.slice(0, cap).forEach(r => {
+                const key = (r.schema ? r.schema + '.' : '') + r.name;
+                const label = document.createElement('label');
+                label.className = 'check tbl-item';
+                label.dataset.key = key.toLowerCase();
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.dataset.key = key;
+                cb.checked = all || wanted.has(key.toLowerCase()) || wanted.has((r.name || '').toLowerCase());
+                cb.addEventListener('change', () => { updateTblCount(); scheduleTblApply(); });
+                label.appendChild(cb);
+                const name = document.createElement('span');
+                name.className = 'tbl-name';
+                name.textContent = key;
+                label.appendChild(name);
+                if (r.row_count !== undefined && r.row_count !== null) {
+                    const n = document.createElement('span');
+                    n.className = 'tbl-rowcount';
+                    n.textContent = r.row_count + ' 行';
+                    label.appendChild(n);
+                }
+                listEl.appendChild(label);
+            });
+            if (tblRows.length > cap) {
+                const note = document.createElement('div');
+                note.className = 'field-help';
+                note.textContent = '仅显示前 ' + cap + ' 张，请用过滤条件缩小范围';
+                listEl.appendChild(note);
+            }
+            listEl.style.display = 'block';
+            statusEl.textContent = '';
+            updateTblCount();
+        })();
+    }
+
+    async function loadTables() {
+        const statusEl = root.querySelector('#tbl-status');
+        statusEl.textContent = '正在从源库抽取元数据…';
+        try {
+            /* Empty body: the server loads from the active config, which keeps
+               the real DSN out of the browser. */
+            await window.api.post('/api/v1/metadata/load', {});
+            tblRows = await window.api.get('/api/v1/metadata/tables') || [];
+            renderTablePicker();
+            if (window.refreshConfigBar) window.refreshConfigBar();
+        } catch (e) {
+            statusEl.textContent = '✗ 加载失败：' + ((e && e.message) || e);
+        }
+    }
+
+    (async function initTables() {
+        const statusEl = root.querySelector('#tbl-status');
+        try {
+            tblRows = await window.api.get('/api/v1/metadata/tables') || [];
+            renderTablePicker();
+        } catch (e) {
+            statusEl.textContent = '元数据尚未加载。';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn-ghost btn-sm';
+            btn.textContent = '从源库加载表列表';
+            btn.addEventListener('click', loadTables);
+            statusEl.appendChild(btn);
+            updateTblCount();
+        }
+    })();
+
+    root.querySelector('#tbl-filter').addEventListener('input', () => {
+        const q = (root.querySelector('#tbl-filter').value || '').trim().toLowerCase();
+        root.querySelectorAll('#tbl-list .tbl-item').forEach(item => {
+            item.style.display = (!q || item.dataset.key.indexOf(q) >= 0) ? '' : 'none';
+        });
+    });
+    root.querySelector('#tbl-all').addEventListener('click', () => {
+        root.querySelectorAll('#tbl-list .tbl-item').forEach(item => {
+            if (item.style.display !== 'none') item.querySelector('input').checked = true;
+        });
+        updateTblCount();
+        scheduleTblApply();
+    });
+    root.querySelector('#tbl-none').addEventListener('click', () => {
+        root.querySelectorAll('#tbl-list input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+        updateTblCount();
+        scheduleTblApply();
+    });
 
     /* wire jobUI overrides for this view (after reset above) */
     jobUI.bind('#progress-log');

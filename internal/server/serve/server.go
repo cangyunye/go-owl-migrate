@@ -303,6 +303,17 @@ func (s *Server) handleMetadataLoad(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
 	}
+	// An empty body means "load from the active config" — the client only has
+	// masked DSNs, so it cannot echo the connection details back.
+	if req.Metadata.Type == "" && req.Source.Type == "" {
+		s.mu.RLock()
+		cfg := s.cfg
+		s.mu.RUnlock()
+		if cfg != nil {
+			req.Metadata = cfg.Metadata
+			req.Source = cfg.Source
+		}
+	}
 	if resolved, refSchema, err := s.resolveDSNRef(req.Source.DSN); err != nil {
 		writeError(w, http.StatusBadRequest, "data source: "+err.Error())
 		return

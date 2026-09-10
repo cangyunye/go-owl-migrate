@@ -71,7 +71,7 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/configs/{name} | Downloads a saved config's raw YAML (unmasked, file-equivalent). |
 | POST /api/v1/configs/{name}/load | Makes a saved config active and returns its scenario + form values (YAML verbatim). |
 | DELETE /api/v1/configs/{name} | Removes a saved config from the library. |
-| POST /api/v1/metadata/load | Extracts metadata from the given `metadata`/`source` config and makes it active; returns table summaries. |
+| POST /api/v1/metadata/load | Extracts metadata from the given `metadata`/`source` config and makes it active; returns table summaries. An empty body loads from the active config (the client only has masked DSNs). |
 | GET /api/v1/metadata/tables | Returns all loaded tables with their columns, PKs, and row counts. |
 | GET /api/v1/jobs/{id}/ws | WebSocket: streams job progress events, then a terminal message (`complete`/`cancelled`/`error`). A terminal `error` also carries `error: "<reason>"` (the worker's own fatal error, or its last stderr line). |
 | POST /api/v1/migrate | Starts a migration job (relayed to the master IPC server). |
