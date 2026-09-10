@@ -267,6 +267,16 @@ async function dsModal(root, record, onChange) {
     nameEl.value = src.name || '';
     nameEl.disabled = isEdit;
     if (src.type) typeEl.value = src.type;
+    if (!isEdit && !src.type) {
+        /* The select's first option is alphabetical (duckdb), which used to open
+           a file profile with host/user/password hidden. Prefer a real DB. */
+        if ((dialects || []).indexOf('mysql') >= 0) {
+            typeEl.value = 'mysql';
+        } else {
+            const nonFile = (dialects || []).find(d => d !== 'sqlite3' && d !== 'duckdb');
+            if (nonFile) typeEl.value = nonFile;
+        }
+    }
     schemaEl.value = src.schema || '';
     usernameEl.value = df.username || '';
     hostEl.value = df.host || '';

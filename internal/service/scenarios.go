@@ -74,7 +74,7 @@ type DSNFamilyMeta struct {
 }
 
 func srcType() Field {
-	return Field{Name: "source_type", Label: "源数据库类型", Type: "select", Options: dialectOptions(), Required: true}
+	return Field{Name: "source_type", Label: "源数据库类型", Type: "select", Options: dialectOptions(), Default: "mysql", Required: true}
 }
 func srcDSN() Field {
 	return Field{Name: "source_dsn", Label: "源数据库 DSN", Type: "text", Required: true,

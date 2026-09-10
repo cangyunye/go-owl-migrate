@@ -206,10 +206,11 @@ export async function render(root /*Element*/, params) {
             input = document.createElement('input');
             input.type = 'text';
             if (f.default) input.value = f.default;
+            if (f.placeholder) input.placeholder = f.placeholder;
             if (isDSN(f.name)) {
-                input.classList.add('mono', 'dsn-readonly');
-                input.readOnly = true;
-                input.addEventListener('click', () => openDSNModal(sideOf(f.name)));
+                /* Left editable so a DSN can be pasted straight in; the
+                   structured editor remains available via the button below. */
+                input.classList.add('mono');
             }
         }
         input.name = f.name;

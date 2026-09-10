@@ -41,7 +41,7 @@ async function loadCheckpoints() {
     if (count) count.textContent = cps.length + ' 张表';
     if (!tbody) return;
     if (!cps.length) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:16px">暂无检查点</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-3);padding:16px">暂无检查点</td></tr>';
         return;
     }
     tbody.innerHTML = cps.map(c =>
@@ -51,7 +51,8 @@ async function loadCheckpoints() {
         '<td class="mono">' + escapeHtml(c.exported_rows) + '</td>' +
         '<td>' + (c.imported ? '<span class="st-ok">✓</span>' : '<span style="color:var(--text-3)">—</span>') + '</td>' +
         '<td class="mono">' + escapeHtml(c.imported_rows) + '</td>' +
-        '<td>' + cpStatus(c.status) + '</td></tr>'
+        '<td>' + cpStatus(c.status) + '</td>' +
+        '<td class="mono" style="color:var(--red)">' + (c.error ? escapeHtml(c.error) : '<span style="color:var(--text-3)">—</span>') + '</td></tr>'
     ).join('');
 }
 
@@ -201,8 +202,8 @@ export function render(root /*Element*/, params) {
         +     '<span class="panel-title">检查点（每表状态）<span class="badge badge-accent" id="cp-count"></span></span>'
         +   '</div>'
         +   '<table class="data-table">'
-        +     '<thead><tr><th>Schema</th><th>表</th><th>已导出</th><th>导出行数</th><th>已导入</th><th>导入行数</th><th>状态</th></tr></thead>'
-        +     '<tbody id="cp-body"><tr><td colspan="7" style="text-align:center;color:var(--text-3);padding:16px">加载中…</td></tr></tbody>'
+        +     '<thead><tr><th>Schema</th><th>表</th><th>已导出</th><th>导出行数</th><th>已导入</th><th>导入行数</th><th>状态</th><th>错误</th></tr></thead>'
+        +     '<tbody id="cp-body"><tr><td colspan="8" style="text-align:center;color:var(--text-3);padding:16px">加载中…</td></tr></tbody>'
         +   '</table>'
         + '</div>'
         + '<div class="panel reveal" style="--i:3">'
