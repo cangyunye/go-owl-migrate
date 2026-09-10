@@ -1114,6 +1114,10 @@ body.modal-open { overflow: hidden; }
 .pipe-node.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .pipe-node.done { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
 .pipe-node.done .pn-name { color: var(--green); }
+.pipe-node.failed { border-color: color-mix(in srgb, var(--red) 55%, var(--border)); box-shadow: 0 0 0 3px var(--red-dim); }
+.pipe-node.failed .pn-name { color: var(--red); }
+.pipe-node.cancelled { border-color: color-mix(in srgb, var(--amber) 55%, var(--border)); }
+.pipe-node.cancelled .pn-name { color: var(--amber); }
 .pipe-link {
   width: 40px;
   flex-shrink: 0;
@@ -1144,6 +1148,12 @@ body.modal-open { overflow: hidden; }
   animation: flow 1.2s linear infinite;
 }
 @keyframes flow { to { background-position: -200% 0; } }
+
+/* pre-start confirmation summary */
+.confirm-row { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.confirm-row:last-of-type { border-bottom: none; }
+.confirm-label { min-width: 92px; color: var(--text-3); flex-shrink: 0; }
+.confirm-value { color: var(--text); font-family: var(--font-display); word-break: break-all; }
 
 /* ── generation pages (ddl/select/insert) ───────────────── */
 .gen-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }

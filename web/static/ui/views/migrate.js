@@ -19,10 +19,13 @@ const ORIG_ON_COMPLETE = window.jobUI.onComplete;
    'direct' | 'sql-out'. Defaults to 'direct' per SSR initial state. */
 let mode = 'direct';
 
+/* Escape handler for the pre-start confirmation, removed on each re-render. */
+let confirmEscHandler = null;
+
 function setStage(root, id, cls) {
     const el = root.querySelector('#' + id);
     if (!el) return;
-    el.classList.remove('active', 'done');
+    el.classList.remove('active', 'done', 'failed', 'cancelled');
     if (cls) el.classList.add(cls);
 }
 
@@ -36,6 +39,8 @@ export function render(root /*Element*/, params) {
     window.jobUI.logLine = ORIG_LOG_LINE;
     window.jobUI.finish = ORIG_FINISH;
     window.jobUI.onComplete = ORIG_ON_COMPLETE;
+    /* the confirm overlay lives in this view; drop any stale scroll lock */
+    document.body.classList.remove('modal-open');
 
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
@@ -109,6 +114,18 @@ export function render(root /*Element*/, params) {
         +     '</select>'
         +     '<button class="btn-primary" type="button" id="btn-download">下载</button>'
         +   '</div>'
+        + '</div>'
+
+        + '<div class="dsn-modal-overlay" id="mig-confirm">'
+        +   '<div class="dsn-modal" role="dialog" aria-modal="true" aria-labelledby="mig-confirm-title">'
+        +     '<div class="dsn-modal-head"><h3 id="mig-confirm-title">确认迁移</h3>'
+        +       '<button type="button" class="btn-ghost dsn-modal-x" id="mig-confirm-x" aria-label="关闭">×</button></div>'
+        +     '<div class="dsn-modal-body" id="mig-confirm-body"></div>'
+        +     '<div class="dsn-modal-actions">'
+        +       '<button type="button" class="btn-ghost" id="mig-confirm-cancel">取消</button>'
+        +       '<button type="button" class="btn-primary" id="mig-confirm-go">确认开始迁移</button>'
+        +     '</div>'
+        +   '</div>'
         + '</div>';
 
     /* local per-render job state (reset every mount) */
@@ -172,10 +189,27 @@ export function render(root /*Element*/, params) {
     };
 
     const origFinish = jobUI.finish.bind(jobUI);
-    jobUI.finish = function () {
-        origFinish();
+    jobUI.finish = function (status) {
+        origFinish(status);
         flow(root, 'pl-1', false); flow(root, 'pl-2', false);
-        setStage(root, 'pn-source', 'done'); setStage(root, 'pn-export', 'done'); setStage(root, 'pn-target', 'done');
+        const nodes = ['pn-source', 'pn-export', 'pn-target'].map(id => root.querySelector('#' + id));
+        const mark = (n, cls) => {
+            if (!n) return;
+            n.classList.remove('active', 'done', 'failed', 'cancelled');
+            n.classList.add(cls);
+        };
+        if (status === 'failed' || status === 'interrupted' || status === 'cancelled') {
+            const cls = status === 'cancelled' ? 'cancelled' : 'failed';
+            const active = root.querySelector('.pipe-node.active');
+            const anyDone = nodes.some(n => n && n.classList.contains('done'));
+            /* A job-level failure before any stage completed carries no stage
+               info, so mark the whole pipeline rather than mis-blaming one node. */
+            if (!anyDone) nodes.forEach(n => mark(n, cls));
+            else if (active) mark(active, cls);
+            else nodes.forEach(n => { if (n && !n.classList.contains('done')) mark(n, cls); });
+            return;
+        }
+        nodes.forEach(n => mark(n, 'done'));
     };
 
     jobUI.onComplete = async function (jobId) {
@@ -194,7 +228,78 @@ export function render(root /*Element*/, params) {
         } catch (e) { /* best-effort */ }
     };
 
+    function summaryRow(label, value) {
+        const row = document.createElement('div');
+        row.className = 'confirm-row';
+        const l = document.createElement('span');
+        l.className = 'confirm-label';
+        l.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'confirm-value';
+        v.textContent = value;
+        row.appendChild(l);
+        row.appendChild(v);
+        return row;
+    }
+
+    function note(text) {
+        const el = document.createElement('div');
+        el.className = 'field-note';
+        el.textContent = text;
+        return el;
+    }
+
+    /* Show what will actually run — and warn about destructive settings —
+       before a click can start writing to the target. */
+    function openConfirm(cfg) {
+        const body = root.querySelector('#mig-confirm-body');
+        body.innerHTML = '';
+        const isSQL = mode === 'sql-out';
+        const tables = (cfg.export && cfg.export.tables && cfg.export.tables.include) || [];
+        body.appendChild(summaryRow('模式', isSQL ? 'SQL 输出（不连接目标库）' : '直接迁移'));
+        body.appendChild(summaryRow('源数据库', (cfg.source && cfg.source.type) || '—'));
+        body.appendChild(summaryRow('源 Schema', (cfg.source && cfg.source.schema) || '（未指定）'));
+        if (!isSQL) {
+            body.appendChild(summaryRow('目标数据库', (cfg.target && cfg.target.type) || '—'));
+            body.appendChild(summaryRow('目标 Schema', (cfg.target && cfg.target.schema) || '（与源相同）'));
+        }
+        body.appendChild(summaryRow('迁移的表', tables.length ? tables.join(', ') : '*'));
+        if (!isSQL && !(cfg.target && cfg.target.type)) {
+            body.appendChild(note('⚠ 未配置目标数据库，直接迁移无法执行。'));
+        }
+        const truncate = !!(cfg.import && cfg.import.target && cfg.import.target.truncate_before);
+        if (truncate && !isSQL) {
+            body.appendChild(note('⚠ 目标表将在导入前执行 TRUNCATE，现有数据会被清空，且无法从界面撤销。'));
+        }
+        root.querySelector('#mig-confirm').classList.add('open');
+        document.body.classList.add('modal-open');
+        root.querySelector('#mig-confirm-go').focus();
+    }
+
+    function closeConfirm() {
+        const overlay = root.querySelector('#mig-confirm');
+        if (overlay) overlay.classList.remove('open');
+        document.body.classList.remove('modal-open');
+    }
+
     async function startMigrate() {
+        let cfg;
+        try { cfg = await window.api.get('/api/v1/config'); }
+        catch (e) { window.toast.err('读取配置失败', e && e.message || ''); return; }
+        if (!cfg || !cfg.metadata || !cfg.metadata.type) {
+            window.toast.warn('尚未配置', '请先在「配置」页选择场景并保存配置');
+            return;
+        }
+        openConfirm(cfg);
+    }
+
+    let starting = false;
+    async function doStart() {
+        if (starting) return;
+        starting = true;
+        const btnStart = root.querySelector('#btn-start');
+        if (btnStart) btnStart.disabled = true;
+        closeConfirm();
         setStage(root, 'pn-source', 'active'); flow(root, 'pl-1', false); flow(root, 'pl-2', false);
         setStage(root, 'pn-export', ''); setStage(root, 'pn-target', '');
         try {
@@ -203,7 +308,12 @@ export function render(root /*Element*/, params) {
                 skip_ddl: root.querySelector('#opt-skip-ddl').checked,
                 continue_on_error: root.querySelector('#opt-continue-on-error').checked,
             });
-        } catch (e) { window.toast.err('启动失败', e && e.message || ''); }
+        } catch (e) {
+            window.toast.err('启动失败', e && e.message || '');
+        } finally {
+            starting = false;
+            if (btnStart && btnStart.style.display !== 'none') btnStart.disabled = false;
+        }
     }
 
     function downloadSQL() {
@@ -218,6 +328,15 @@ export function render(root /*Element*/, params) {
     root.querySelector('#btn-start').addEventListener('click', startMigrate);
     root.querySelector('#btn-cancel').addEventListener('click', () => jobUI.cancel());
     root.querySelector('#btn-download').addEventListener('click', downloadSQL);
+
+    const confirmOverlay = root.querySelector('#mig-confirm');
+    root.querySelector('#mig-confirm-go').addEventListener('click', doStart);
+    root.querySelector('#mig-confirm-cancel').addEventListener('click', closeConfirm);
+    root.querySelector('#mig-confirm-x').addEventListener('click', closeConfirm);
+    confirmOverlay.addEventListener('click', e => { if (e.target === confirmOverlay) closeConfirm(); });
+    if (confirmEscHandler) document.removeEventListener('keydown', confirmEscHandler);
+    confirmEscHandler = e => { if (e.key === 'Escape' && confirmOverlay.classList.contains('open')) closeConfirm(); };
+    document.addEventListener('keydown', confirmEscHandler);
 
     applyMode();
 }

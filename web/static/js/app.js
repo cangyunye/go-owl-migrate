@@ -294,20 +294,25 @@ const jobUI = {
             try { m = JSON.parse(e.data); } catch (err) { return; }
             if (m.type === 'progress') {
                 const tbl = ((m.schema || '') + (m.table ? '.' + m.table : '')).trim();
-                this.logLine('info', m.event + (tbl ? '  ' + tbl : ''), (m.rows !== undefined && m.rows !== null) ? m.rows + ' rows' : '');
+                const hasRows = m.rows !== undefined && m.rows !== null;
+                const detail = [];
+                if (hasRows) detail.push(m.rows + ' rows');
+                /* Surface the reason on failures; success rows already read fine. */
+                if (m.message && (!hasRows || /error|fail/i.test(m.event || ''))) detail.push(m.message);
+                this.logLine('info', m.event + (tbl ? '  ' + tbl : ''), detail.join(' · '));
             } else if (m.type === 'complete') {
                 this.logLine('ok', '任务完成', m.status || '');
                 toast.ok('任务完成', m.status || '');
-                this.finish();
+                this.finish('completed');
                 if (this.onComplete) this.onComplete(this.jobId);
             } else if (m.type === 'cancelled') {
                 this.logLine('warn', '任务已取消', '');
                 toast.warn('任务已取消', '');
-                this.finish();
+                this.finish('cancelled');
             } else if (m.type === 'error') {
-                this.logLine('err', m.error || '未知错误', '');
+                this.logLine('err', m.error || '任务执行失败（详情见任务页）', '');
                 toast.err('任务失败', m.error || '');
-                this.finish();
+                this.finish('failed');
             }
         };
         /* The server closes the socket right after the terminal frame, which
@@ -317,7 +322,9 @@ const jobUI = {
         this.ws.onclose = () => this.logLine('dim', '连接关闭', '');
     },
 
-    finish() {
+    /* status is passed by the terminal frames ('completed'|'cancelled'|'failed')
+       so views can render the outcome; the kernel itself just tears down. */
+    finish(status) {
         this._settled = true;
         const start = document.getElementById('btn-start');
         const cancel = document.getElementById('btn-cancel');
