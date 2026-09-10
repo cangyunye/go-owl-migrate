@@ -64,7 +64,7 @@ function appendEvent(m) {
     line.innerHTML = '<span class="ln-seq">#' + m.seq + '</span>' +
         '<span class="ln-info">' + escapeHtml(m.event || '') + '</span>' +
         (tbl ? '  <span style="color:var(--text)">' + escapeHtml(tbl) + '</span>' : '') +
-        (m.rows !== undefined && m.rows !== null ? '  <span class="ln-dim">→ ' + escapeHtml(m.rows) + ' rows</span>' : '') +
+        (m.event !== 'stage' && m.rows !== undefined && m.rows !== null ? '  <span class="ln-dim">→ ' + escapeHtml(m.rows) + ' rows</span>' : '') +
         (m.message ? '  <span class="ln-dim">' + escapeHtml(m.message) + '</span>' : '');
     log.appendChild(line);
     log.scrollTop = log.scrollHeight;

@@ -117,6 +117,8 @@ func terminalMessage(status string) map[string]any {
 	switch status {
 	case "completed":
 		return map[string]any{"type": "complete", "status": status}
+	case "completed_with_errors":
+		return map[string]any{"type": "complete", "status": status}
 	case "cancelled":
 		return map[string]any{"type": "cancelled", "status": status}
 	case "failed", "interrupted":

@@ -8,7 +8,7 @@ let timer = null;
 function matches(j) {
     if (currentFilter === 'all') return true;
     if (currentFilter === 'running') return j.status === 'running' || j.status === 'cancelling';
-    if (currentFilter === 'completed') return j.status === 'completed';
+    if (currentFilter === 'completed') return j.status === 'completed' || j.status === 'completed_with_errors';
     if (currentFilter === 'failed') return j.status === 'failed' || j.status === 'interrupted' || j.status === 'cancelled';
     return true;
 }

@@ -92,6 +92,15 @@ Use --tables to restrict the migration to specific tables.`,
 			}()
 		}
 
+		// stage records the pipeline stage the worker just entered, so a
+		// failure can be attributed to it (connection errors emit no
+		// per-table progress event).
+		stage := func(name string) {
+			if pw != nil {
+				pw.WriteStage(name)
+			}
+		}
+
 		if parentPID > 0 {
 			hbPath := paths.HeartbeatPath()
 			monitor := service.NewHeartbeatMonitor(hbPath, 10*time.Second, 20*time.Second)
@@ -109,6 +118,7 @@ Use --tables to restrict the migration to specific tables.`,
 		startTime := time.Now()
 
 		// Step 1: Load metadata from CSV or database
+		stage("load_metadata")
 		fmt.Println("=== Step 1: Load metadata ===")
 		sm, err := loadSchemaModel(cfg)
 		if err != nil {
@@ -124,6 +134,7 @@ Use --tables to restrict the migration to specific tables.`,
 		pkMap := buildPKMap(sm)
 
 		// Step 2: Connect to source
+		stage("connect_source")
 		fmt.Println("=== Step 2: Connect to source ===")
 		srcDB, err := openDB(cfg.Source)
 		if err != nil {
@@ -143,6 +154,7 @@ Use --tables to restrict the migration to specific tables.`,
 		// Step 3: Connect to target (only in direct-import mode)
 		var tgtDB *sql.DB
 		if !sqlMode {
+			stage("connect_target")
 			fmt.Println("=== Step 3: Connect to target ===")
 			tgtDB, err = openDB(cfg.Target)
 			if err != nil {
@@ -195,6 +207,7 @@ Use --tables to restrict the migration to specific tables.`,
 		// Step 4: Create target tables (only in direct-import mode)
 		if !sqlMode {
 			if !skipDDL {
+				stage("create_tables")
 				fmt.Println("=== Step 4: Create target tables ===")
 				// Only create tables that need processing
 				tblMap := make(map[string]*md.TableDef, len(tablesToProcess))
@@ -210,6 +223,7 @@ Use --tables to restrict the migration to specific tables.`,
 		}
 
 		// Step 5: Export from source
+		stage("export")
 		fmt.Println("=== Step 5: Export from source ===")
 		exportDir := tempDir
 		if exportDir == "" {
@@ -325,6 +339,7 @@ Use --tables to restrict the migration to specific tables.`,
 
 		// Step 5.5: Generate INSERT SQL (SQL output mode)
 		if sqlMode {
+			stage("generate_sql")
 			fmt.Println("=== Step 5.5: Generate INSERT SQL ===")
 			dialect := cfg.DDL.TargetDialect
 			if dialect == "" {
@@ -357,6 +372,7 @@ Use --tables to restrict the migration to specific tables.`,
 		// Step 6: Import to target (only in direct-import mode)
 		var importResults []importer.ImportResult
 		if !sqlMode {
+			stage("import")
 			fmt.Println("=== Step 6: Import to target ===")
 
 			// Only import tables that haven't been successfully imported yet
@@ -442,10 +458,14 @@ Use --tables to restrict the migration to specific tables.`,
 								status = "⚠️"
 							}
 							fmt.Printf("  %s %s.%s: %d/%d rows\n", status, r.Schema, r.Table, r.Actual, r.Expected)
-							report.AddTable(r.Schema, r.Table, r.Expected, r.Actual, r.Skipped, r.Errors, "")
-							if pw != nil {
-								pw.WriteImportComplete(tbl.TableSchema, tbl.TableName, r.Actual, r.Skipped, "")
+						report.AddTable(r.Schema, r.Table, r.Expected, r.Actual, r.Skipped, r.Errors, "")
+						if pw != nil {
+							errMsg := ""
+							if r.Errors > 0 {
+								errMsg = fmt.Sprintf("%d rows failed to import", r.Errors)
 							}
+							pw.WriteImportComplete(tbl.TableSchema, tbl.TableName, r.Actual, r.Skipped, errMsg)
+						}
 						}
 						break
 					}
@@ -467,33 +487,41 @@ Use --tables to restrict the migration to specific tables.`,
 			fmt.Printf("Report saved to %s\n", reportFile)
 		}
 
-		// Return non-zero exit when per-table errors exist and --continue-on-error is off
-		if !continueOnError {
-			exportErrors := 0
-			for _, r := range allExportResults {
-				if r.Error != nil {
-					exportErrors++
-				}
+		// Tally per-table failures. --continue-on-error must still surface a
+		// partial run instead of reporting a clean success.
+		exportErrors := 0
+		for _, r := range allExportResults {
+			if r.Error != nil {
+				exportErrors++
 			}
+		}
+		importErrors := 0
+		for _, r := range importResults {
+			// Errors counts rows that failed to insert. Under the skip_row
+			// policy those rows are skipped with Err == nil, so relying on Err
+			// alone would report a table with zero imported rows as a success.
+			if r.Err != nil || r.Errors > 0 {
+				importErrors++
+			}
+		}
+		if exportErrors > 0 || importErrors > 0 {
+			summary := fmt.Sprintf("%d export errors", exportErrors)
 			if !sqlMode {
-				importErrors := 0
-				for _, r := range importResults {
-					if r.Err != nil {
-						importErrors++
-					}
-				}
-				if exportErrors > 0 || importErrors > 0 {
-					if pw != nil {
-						pw.SetJobFailed(fmt.Sprintf("%d export errors, %d import errors", exportErrors, importErrors))
-					}
-					return fmt.Errorf("migration completed with %d export errors, %d import errors", exportErrors, importErrors)
-				}
-			} else if exportErrors > 0 {
-				if pw != nil {
-					pw.SetJobFailed(fmt.Sprintf("%d export errors", exportErrors))
-				}
-				return fmt.Errorf("export completed with %d export errors", exportErrors)
+				summary = fmt.Sprintf("%d export errors, %d import errors", exportErrors, importErrors)
 			}
+			if !continueOnError {
+				if pw != nil {
+					pw.SetJobFailed(summary)
+				}
+				if sqlMode {
+					return fmt.Errorf("export completed with %d export errors", exportErrors)
+				}
+				return fmt.Errorf("migration completed with %d export errors, %d import errors", exportErrors, importErrors)
+			}
+			if pw != nil {
+				pw.SetJobCompletedWithErrors(summary)
+			}
+			return nil
 		}
 
 		if pw != nil {

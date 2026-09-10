@@ -237,7 +237,7 @@ func (s *JobStore) ListJobs(limit int) ([]Job, error) {
 func (s *JobStore) UpdateJobStatus(jobID, status string) error {
 	var finishedAt *string
 	switch status {
-	case "completed", "failed", "cancelled", "interrupted":
+	case "completed", "completed_with_errors", "failed", "cancelled", "interrupted":
 		now := time.Now().Format("2006-01-02 15:04:05")
 		finishedAt = &now
 	}

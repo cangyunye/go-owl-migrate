@@ -6,10 +6,15 @@
 |---|---|
 | running | 正在执行 |
 | completed | 全部成功完成 |
+| completed_with_errors | 开启了 `--continue-on-error`，部分表存在失败行，但整体已跑完 |
 | failed | 执行出错 |
 | cancelling | 已发送取消信号，等待 Worker 退出 |
 | cancelled | 已取消 |
 | interrupted | 异常中断（崩溃、服务重启） |
+
+任务失败时，状态与错误原因（Worker 的致命错误，或其 stderr 最后一行）会一并返回，
+在迁移页与任务详情中直接可见。部分表失败的任务标记为 `completed_with_errors`（琥珀色），
+不会被当作干净的成功；未开启 `--continue-on-error` 时，出现失败行的表会导致任务失败。
 
 ## 任务历史
 

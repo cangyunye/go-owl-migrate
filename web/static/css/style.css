@@ -1118,6 +1118,8 @@ body.modal-open { overflow: hidden; }
 .pipe-node.failed .pn-name { color: var(--red); }
 .pipe-node.cancelled { border-color: color-mix(in srgb, var(--amber) 55%, var(--border)); }
 .pipe-node.cancelled .pn-name { color: var(--amber); }
+.pipe-node.warned { border-color: color-mix(in srgb, var(--amber) 55%, var(--border)); }
+.pipe-node.warned .pn-name { color: var(--amber); }
 .pipe-link {
   width: 40px;
   flex-shrink: 0;

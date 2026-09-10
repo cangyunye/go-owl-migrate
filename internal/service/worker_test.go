@@ -136,6 +136,66 @@ func TestProgressWriter_SetJobFailed_IsIdempotent(t *testing.T) {
 	}
 }
 
+// --continue-on-error runs finish, but must not look like a clean success.
+func TestProgressWriter_CompletedWithErrors(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, _ := NewJobStore(dbPath)
+	defer store.Close()
+	store.CreateJob("job-partial", "migrate", "{}")
+
+	pw, _ := NewProgressWriter(dbPath, "job-partial")
+	defer pw.Close()
+
+	if err := pw.SetJobCompletedWithErrors("2 export errors, 1 import errors"); err != nil {
+		t.Fatalf("SetJobCompletedWithErrors() error = %v", err)
+	}
+	job, _ := store.GetJob("job-partial")
+	if job.Status != "completed_with_errors" {
+		t.Errorf("status = %q, want completed_with_errors", job.Status)
+	}
+	if job.FinishedAt == "" {
+		t.Error("finished_at not set for completed_with_errors")
+	}
+
+	// The deferred failure reporter runs after this; it must not downgrade it.
+	pw.SetJobFailed("late fatal error")
+	job, _ = store.GetJob("job-partial")
+	if job.Status != "completed_with_errors" {
+		t.Errorf("status = %q, want completed_with_errors after late SetJobFailed", job.Status)
+	}
+	events, _ := store.GetEvents("job-partial", 0)
+	hasWarning := false
+	for _, e := range events {
+		if e.EventType == "warning" {
+			hasWarning = true
+		}
+		if e.EventType == "error" {
+			t.Errorf("unexpected error event %q", e.Message)
+		}
+	}
+	if !hasWarning {
+		t.Error("missing warning event summarizing the partial failure")
+	}
+}
+
+func TestProgressWriter_WriteStage(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, _ := NewJobStore(dbPath)
+	defer store.Close()
+	store.CreateJob("job-stage", "migrate", "{}")
+
+	pw, _ := NewProgressWriter(dbPath, "job-stage")
+	defer pw.Close()
+
+	if err := pw.WriteStage("connect_target"); err != nil {
+		t.Fatalf("WriteStage() error = %v", err)
+	}
+	events, _ := store.GetEvents("job-stage", 0)
+	if len(events) != 1 || events[0].EventType != "stage" || events[0].Message != "connect_target" {
+		t.Errorf("events = %+v, want one stage event for connect_target", events)
+	}
+}
+
 func TestHeartbeatMonitor_DetectsStale(t *testing.T) {
 	hbPath := filepath.Join(t.TempDir(), "heartbeat")
 

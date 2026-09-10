@@ -230,7 +230,7 @@ func (m *Master) monitorWorker(jobID string, wait func() error, stderr *tailBuff
 		return
 	}
 	switch job.Status {
-	case "completed", "failed", "cancelled", "interrupted":
+	case "completed", "completed_with_errors", "failed", "cancelled", "interrupted":
 		return // worker already finalized
 	case "cancelling":
 		m.store.UpdateJobStatus(jobID, "cancelled")

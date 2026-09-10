@@ -14,6 +14,7 @@
 const ORIG_LOG_LINE = window.jobUI.logLine;
 const ORIG_FINISH = window.jobUI.finish;
 const ORIG_ON_COMPLETE = window.jobUI.onComplete;
+const ORIG_ON_EVENT = window.jobUI.onEvent;
 
 /* Module-level mode keeps the toggle across re-renders (user pref).
    'direct' | 'sql-out'. Defaults to 'direct' per SSR initial state. */
@@ -39,6 +40,7 @@ export function render(root /*Element*/, params) {
     window.jobUI.logLine = ORIG_LOG_LINE;
     window.jobUI.finish = ORIG_FINISH;
     window.jobUI.onComplete = ORIG_ON_COMPLETE;
+    window.jobUI.onEvent = ORIG_ON_EVENT;
     /* the confirm overlay lives in this view; drop any stale scroll lock */
     document.body.classList.remove('modal-open');
 
@@ -176,15 +178,29 @@ export function render(root /*Element*/, params) {
     /* wire jobUI overrides for this view (after reset above) */
     jobUI.bind('#progress-log');
 
-    const origLogLine = jobUI.logLine.bind(jobUI);
-    jobUI.logLine = function (kind, msg, detail) {
-        origLogLine(kind, msg, detail);
-        const m = (msg || '').toLowerCase();
-        if (m.includes('export') || m.includes('导出')) {
-            setStage(root, 'pn-source', 'done'); setStage(root, 'pn-export', 'active'); flow(root, 'pl-1', true);
-        }
-        if (m.includes('import') || m.includes('导入') || m.includes('insert')) {
-            setStage(root, 'pn-export', 'done'); setStage(root, 'pn-target', 'active'); flow(root, 'pl-2', true);
+    /* Precise pipeline attribution from worker stage events. */
+    jobUI.onEvent = function (m) {
+        if (!m || m.event !== 'stage') return;
+        switch (m.message) {
+            case 'load_metadata':
+            case 'connect_source':
+                setStage(root, 'pn-source', 'active');
+                break;
+            case 'export':
+                setStage(root, 'pn-source', 'done');
+                setStage(root, 'pn-export', 'active');
+                flow(root, 'pl-1', true);
+                break;
+            case 'connect_target':
+            case 'create_tables':
+            case 'import':
+            case 'generate_sql':
+                setStage(root, 'pn-source', 'done');
+                setStage(root, 'pn-export', 'done');
+                setStage(root, 'pn-target', 'active');
+                flow(root, 'pl-1', false);
+                flow(root, 'pl-2', true);
+                break;
         }
     };
 
@@ -198,6 +214,15 @@ export function render(root /*Element*/, params) {
             n.classList.remove('active', 'done', 'failed', 'cancelled');
             n.classList.add(cls);
         };
+        if (status === 'completed_with_errors') {
+            /* Stages all ran, but some tables failed — keep them green-but-warn. */
+            nodes.forEach(n => {
+                if (!n) return;
+                n.classList.remove('active', 'failed', 'cancelled');
+                n.classList.add('done', 'warned');
+            });
+            return;
+        }
         if (status === 'failed' || status === 'interrupted' || status === 'cancelled') {
             const cls = status === 'cancelled' ? 'cancelled' : 'failed';
             const active = root.querySelector('.pipe-node.active');

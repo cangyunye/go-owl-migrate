@@ -29,6 +29,7 @@ import { render as renderDataSources } from './views/datasources.js';
 const ORIG_LOG_LINE = window.jobUI && window.jobUI.logLine;
 const ORIG_FINISH = window.jobUI && window.jobUI.finish;
 const ORIG_ON_COMPLETE = window.jobUI && window.jobUI.onComplete;
+const ORIG_ON_EVENT = window.jobUI && window.jobUI.onEvent;
 
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
@@ -93,6 +94,7 @@ function route(hash) {
     window.jobUI.logLine = ORIG_LOG_LINE;
     window.jobUI.finish = ORIG_FINISH;
     window.jobUI.onComplete = ORIG_ON_COMPLETE;
+    window.jobUI.onEvent = ORIG_ON_EVENT;
     /* A job keeps running server-side; only the view's socket must not leak
        into the next route (or a later start would overwrite it silently). */
     if (window.jobUI.ws) {

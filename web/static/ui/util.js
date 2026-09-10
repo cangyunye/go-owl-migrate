@@ -19,7 +19,8 @@ export function escapeHtml(s) {
 export function statusBadge(s) {
     const map = {
         running: ['st-run', true], cancelling: ['st-warn', true],
-        completed: ['st-ok', false], failed: ['st-fail', false],
+        completed: ['st-ok', false], completed_with_errors: ['st-warn', false],
+        failed: ['st-fail', false],
         interrupted: ['st-warn', false], cancelled: ['st-warn', false]
     };
     const m = map[s] || ['st-run', false];

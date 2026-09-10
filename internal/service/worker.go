@@ -39,6 +39,9 @@ func (pw *ProgressWriter) WriteImportComplete(schema, table string, rows, skippe
 	if skipped > 0 {
 		msg += fmt.Sprintf(", %d skipped", skipped)
 	}
+	if errMsg != "" {
+		msg += " (" + errMsg + ")"
+	}
 	if err := pw.store.WriteEvent(pw.jobID, "import_complete", schema, table, rows, msg); err != nil {
 		return err
 	}
@@ -47,6 +50,24 @@ func (pw *ProgressWriter) WriteImportComplete(schema, table string, rows, skippe
 
 func (pw *ProgressWriter) SetJobCompleted() error {
 	return pw.store.UpdateJobStatus(pw.jobID, "completed")
+}
+
+// SetJobCompletedWithErrors finalizes a run that was allowed to continue past
+// per-table failures. It stays terminal but is distinct from a clean success,
+// so the UI never reports a partially-failed migration as "完成".
+func (pw *ProgressWriter) SetJobCompletedWithErrors(summary string) error {
+	if pw.finalized() {
+		return nil
+	}
+	pw.store.WriteEvent(pw.jobID, "warning", "", "", 0, summary)
+	return pw.store.UpdateJobStatus(pw.jobID, "completed_with_errors")
+}
+
+// WriteStage records the pipeline stage the worker just entered, so a failure
+// can be attributed to the stage that was running (connection failures emit no
+// per-table event).
+func (pw *ProgressWriter) WriteStage(stage string) error {
+	return pw.store.WriteEvent(pw.jobID, "stage", "", "", 0, stage)
 }
 
 // WriteTableError records a per-table failure as an event and a FAIL checkpoint.
@@ -74,7 +95,7 @@ func (pw *ProgressWriter) finalized() bool {
 		return false
 	}
 	switch job.Status {
-	case "completed", "failed", "cancelled", "interrupted":
+	case "completed", "completed_with_errors", "failed", "cancelled", "interrupted":
 		return true
 	}
 	return false

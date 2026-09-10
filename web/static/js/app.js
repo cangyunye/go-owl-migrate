@@ -258,6 +258,8 @@ const jobUI = {
     ws: null,
     logEl: null,
     onComplete: null,
+    /* Views may override to react to raw progress messages (e.g. stage events). */
+    onEvent: null,
 
     bind(logSelector) { this.logEl = document.querySelector(logSelector); },
 
@@ -294,18 +296,30 @@ const jobUI = {
             let m;
             try { m = JSON.parse(e.data); } catch (err) { return; }
             if (m.type === 'progress') {
-                const tbl = ((m.schema || '') + (m.table ? '.' + m.table : '')).trim();
-                const hasRows = m.rows !== undefined && m.rows !== null;
-                const detail = [];
-                if (hasRows) detail.push(m.rows + ' rows');
-                /* Surface the reason on failures; success rows already read fine. */
-                if (m.message && (!hasRows || /error|fail/i.test(m.event || ''))) detail.push(m.message);
-                if (/error|fail/i.test(m.event || '')) this._lastErr = m.message || '';
-                this.logLine('info', m.event + (tbl ? '  ' + tbl : ''), detail.join(' · '));
+                if (m.event === 'stage') {
+                    this.logLine('dim', '阶段', m.message || '');
+                } else {
+                    const tbl = ((m.schema || '') + (m.table ? '.' + m.table : '')).trim();
+                    const hasRows = m.rows !== undefined && m.rows !== null;
+                    const detail = [];
+                    if (tbl && hasRows) {
+                        detail.push(m.rows + ' rows');
+                        /* Keep the reason on failed/skipped table events. */
+                        if (m.message && /error|fail|skip/i.test(m.event + ' ' + m.message)) detail.push(m.message);
+                    } else if (m.message) {
+                        /* Job-level events (warning, fatal error) carry the text. */
+                        detail.push(m.message);
+                    }
+                    if (/error|fail/i.test(m.event || '')) this._lastErr = m.message || '';
+                    this.logLine('info', m.event + (tbl ? '  ' + tbl : ''), detail.join(' · '));
+                }
+                if (this.onEvent) this.onEvent(m);
             } else if (m.type === 'complete') {
-                this.logLine('ok', '任务完成', m.status || '');
-                toast.ok('任务完成', m.status || '');
-                this.finish('completed');
+                const partial = m.status === 'completed_with_errors';
+                this.logLine(partial ? 'warn' : 'ok', partial ? '任务完成（部分表失败）' : '任务完成', m.status || '');
+                if (partial) toast.warn('任务完成（部分表失败）', '请在任务详情查看失败的表');
+                else toast.ok('任务完成', m.status || '');
+                this.finish(partial ? 'completed_with_errors' : 'completed');
                 if (this.onComplete) this.onComplete(this.jobId);
             } else if (m.type === 'cancelled') {
                 this.logLine('warn', '任务已取消', '');

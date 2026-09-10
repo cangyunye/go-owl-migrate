@@ -14,6 +14,16 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
+func TestTerminalMessage_CompletedWithErrors(t *testing.T) {
+	got := terminalMessage("completed_with_errors")
+	if got == nil {
+		t.Fatal("terminalMessage(completed_with_errors) = nil, want a terminal message")
+	}
+	if got["type"] != "complete" || got["status"] != "completed_with_errors" {
+		t.Errorf("terminalMessage(completed_with_errors) = %v, want type=complete status=completed_with_errors", got)
+	}
+}
+
 func newTestWSServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")

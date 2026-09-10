@@ -73,7 +73,7 @@ func (s *Server) handleJobOutputDownload(w http.ResponseWriter, r *http.Request)
 	if job, err := s.store.GetJob(jobID); err != nil {
 		writeError(w, http.StatusNotFound, "job not found")
 		return
-	} else if job.Status != "completed" {
+	} else if job.Status != "completed" && job.Status != "completed_with_errors" {
 		writeError(w, http.StatusConflict, "job is not completed yet (status: "+job.Status+")")
 		return
 	}
