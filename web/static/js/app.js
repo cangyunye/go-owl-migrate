@@ -288,6 +288,7 @@ const jobUI = {
 
     connect(jobId) {
         this._settled = false;
+        this._lastErr = '';
         this.ws = new WebSocket(api.wsURL('/api/v1/jobs/' + jobId + '/ws'));
         this.ws.onmessage = (e) => {
             let m;
@@ -299,6 +300,7 @@ const jobUI = {
                 if (hasRows) detail.push(m.rows + ' rows');
                 /* Surface the reason on failures; success rows already read fine. */
                 if (m.message && (!hasRows || /error|fail/i.test(m.event || ''))) detail.push(m.message);
+                if (/error|fail/i.test(m.event || '')) this._lastErr = m.message || '';
                 this.logLine('info', m.event + (tbl ? '  ' + tbl : ''), detail.join(' · '));
             } else if (m.type === 'complete') {
                 this.logLine('ok', '任务完成', m.status || '');
@@ -310,8 +312,11 @@ const jobUI = {
                 toast.warn('任务已取消', '');
                 this.finish('cancelled');
             } else if (m.type === 'error') {
-                this.logLine('err', m.error || '任务执行失败（详情见任务页）', '');
-                toast.err('任务失败', m.error || '');
+                const reason = m.error || '';
+                /* The reason usually already arrived as an error progress event. */
+                const alreadyShown = reason !== '' && reason === this._lastErr;
+                this.logLine('err', reason ? (alreadyShown ? '任务失败' : reason) : '任务执行失败（详情见任务页）', '');
+                toast.err('任务失败', reason || '');
                 this.finish('failed');
             }
         };

@@ -5,9 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +31,61 @@ type SpawnRequest struct {
 	DBPath          string
 	ParentPID       int
 	TempDir         string
+	// Stderr, when set, also receives the worker's stderr so the master can
+	// report the worker's own error message instead of only an exit status.
+	Stderr io.Writer
+}
+
+// tailBuffer retains only the last max bytes written to it, so capturing a
+// worker's stderr cannot grow unbounded over a long-running job. exec.Cmd.Wait
+// returns only after its stderr copier is done, so the master reads it after
+// the wait function returns.
+type tailBuffer struct {
+	mu  sync.Mutex
+	buf []byte
+	max int
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.max {
+		t.buf = t.buf[len(t.buf)-t.max:]
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) tail() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return strings.TrimSpace(string(t.buf))
+}
+
+// workerFailureReason prefers the worker's own final stderr line (the CLI
+// prints "Error: ..." exactly once) over the bare exit status.
+func workerFailureReason(tail string, exitErr error) string {
+	fallback := "worker exited: " + exitErr.Error()
+	for _, line := range reverseLines(tail) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		line = strings.TrimPrefix(line, "Error: ")
+		if len(line) > 500 {
+			line = line[:500] + "…"
+		}
+		return line
+	}
+	return fallback
+}
+
+func reverseLines(s string) []string {
+	lines := strings.Split(s, "\n")
+	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+		lines[i], lines[j] = lines[j], lines[i]
+	}
+	return lines
 }
 
 type Spawner interface {
@@ -130,6 +188,7 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 		resume = true
 	}
 
+	stderr := &tailBuffer{max: 4096}
 	pid, wait, err := m.spawner.Spawn(SpawnRequest{
 		JobID:           jobID,
 		JobType:         req.Type,
@@ -141,6 +200,7 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 		DBPath:          m.dbPath,
 		ParentPID:       os.Getpid(),
 		TempDir:         workerTempDir,
+		Stderr:          stderr,
 	})
 	if err != nil {
 		m.store.UpdateJobStatus(jobID, "failed")
@@ -149,7 +209,7 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.store.UpdateJobPID(jobID, pid)
-	go m.monitorWorker(jobID, wait)
+	go m.monitorWorker(jobID, wait, stderr)
 
 	writeJSON(w, http.StatusCreated, StartJobResponse{
 		JobID:     jobID,
@@ -162,7 +222,7 @@ func (m *Master) handleStartJob(w http.ResponseWriter, r *http.Request) {
 // monitorWorker waits for a worker to exit and finalizes the job status if the
 // worker did not set it itself. Workers that report progress (migrate) set
 // their own terminal status; this is the safety net for crashes and cancels.
-func (m *Master) monitorWorker(jobID string, wait func() error) {
+func (m *Master) monitorWorker(jobID string, wait func() error, stderr *tailBuffer) {
 	exitErr := wait()
 
 	job, err := m.store.GetJob(jobID)
@@ -176,9 +236,10 @@ func (m *Master) monitorWorker(jobID string, wait func() error) {
 		m.store.UpdateJobStatus(jobID, "cancelled")
 		return
 	}
-	// Still "running": worker exited without reporting. Infer from exit code.
+	// Still "running": worker exited without reporting. Infer from exit code,
+	// preferring the worker's own stderr message over the bare exit status.
 	if exitErr != nil {
-		m.store.WriteEvent(jobID, "error", "", "", 0, "worker exited: "+exitErr.Error())
+		m.store.WriteEvent(jobID, "error", "", "", 0, workerFailureReason(stderr.tail(), exitErr))
 		m.store.UpdateJobStatus(jobID, "failed")
 	} else {
 		m.store.UpdateJobStatus(jobID, "completed")

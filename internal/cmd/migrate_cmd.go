@@ -64,7 +64,7 @@ Use --tables to restrict the migration to specific tables.`,
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 	cmd.Flags().StringVar(&tablesFlag, "tables", "", "comma-separated tables to migrate (overrides export.tables.include; supports schema.table)")
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+	cmd.RunE = func(cmd *cobra.Command, args []string) (retErr error) {
 		cfg, err := loadConfigFile(false)
 		if err != nil {
 			return err
@@ -83,6 +83,13 @@ Use --tables to restrict the migration to specific tables.`,
 				return fmt.Errorf("init progress writer: %w", err)
 			}
 			defer pw.Close()
+			// Report the real reason for any fatal error that escapes RunE;
+			// the master can otherwise only see a bare exit status.
+			defer func() {
+				if retErr != nil {
+					pw.SetJobFailed(retErr.Error())
+				}
+			}()
 		}
 
 		if parentPID > 0 {

@@ -108,6 +108,34 @@ func TestProgressWriter_JobFailed(t *testing.T) {
 	}
 }
 
+// A command's deferred error reporter may run after the caller already
+// finalized the job (e.g. the aggregated table-error path); it must not
+// overwrite a terminal status or append a second error event.
+func TestProgressWriter_SetJobFailed_IsIdempotent(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	store, _ := NewJobStore(dbPath)
+	defer store.Close()
+	store.CreateJob("job-idem", "migrate", "{}")
+
+	pw, _ := NewProgressWriter(dbPath, "job-idem")
+	defer pw.Close()
+
+	pw.SetJobCompleted()
+	if err := pw.SetJobFailed("late fatal error"); err != nil {
+		t.Fatalf("SetJobFailed() error = %v", err)
+	}
+	job, _ := store.GetJob("job-idem")
+	if job.Status != "completed" {
+		t.Errorf("status = %q, want completed (failure must not overwrite a terminal status)", job.Status)
+	}
+	events, _ := store.GetEvents("job-idem", 0)
+	for _, e := range events {
+		if e.EventType == "error" {
+			t.Errorf("unexpected error event %q appended after completion", e.Message)
+		}
+	}
+}
+
 func TestHeartbeatMonitor_DetectsStale(t *testing.T) {
 	hbPath := filepath.Join(t.TempDir(), "heartbeat")
 

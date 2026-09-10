@@ -57,9 +57,27 @@ func (pw *ProgressWriter) WriteTableError(schema, table, msg string) error {
 	return pw.store.WriteCheckpoint(pw.jobID, schema, table, false, 0, false, 0, "FAIL", msg)
 }
 
+// SetJobFailed records a job-level failure. It is a no-op once the job has
+// already reached a terminal state, so a command's deferred error reporter
+// cannot append a second error event after a caller already finalized it.
 func (pw *ProgressWriter) SetJobFailed(reason string) error {
+	if pw.finalized() {
+		return nil
+	}
 	pw.store.WriteEvent(pw.jobID, "error", "", "", 0, reason)
 	return pw.store.UpdateJobStatus(pw.jobID, "failed")
+}
+
+func (pw *ProgressWriter) finalized() bool {
+	job, err := pw.store.GetJob(pw.jobID)
+	if err != nil {
+		return false
+	}
+	switch job.Status {
+	case "completed", "failed", "cancelled", "interrupted":
+		return true
+	}
+	return false
 }
 
 func (pw *ProgressWriter) SetJobInterrupted() error {

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -253,7 +254,11 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) 
 
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if req.Stderr != nil {
+		cmd.Stderr = io.MultiWriter(os.Stderr, req.Stderr)
+	} else {
+		cmd.Stderr = os.Stderr
+	}
 	setSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {

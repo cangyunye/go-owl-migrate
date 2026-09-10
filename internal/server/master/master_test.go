@@ -2,6 +2,7 @@ package master
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,26 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
+
+func TestWorkerFailureReason(t *testing.T) {
+	cases := []struct {
+		name string
+		tail string
+		want string
+	}{
+		{"prefers the worker's last stderr line", "info line\nError: ping target: boom\n", "ping target: boom"},
+		{"skips trailing blank lines", "Error: boom\n\n", "boom"},
+		{"falls back to the exit status", "", "worker exited: exit status 1"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := workerFailureReason(c.tail, errors.New("exit status 1"))
+			if got != c.want {
+				t.Errorf("workerFailureReason(%q) = %q, want %q", c.tail, got, c.want)
+			}
+		})
+	}
+}
 
 type mockSpawner struct {
 	spawned []SpawnRequest

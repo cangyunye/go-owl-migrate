@@ -57,6 +57,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if tm == nil {
 			return false
 		}
+		// Carry the failure reason so the frontend can show the real cause the
+		// moment the job ends, rather than only a generic "failed".
+		if tm["type"] == "error" {
+			if evs, evErr := s.store.GetEvents(jobID, 0); evErr == nil {
+				for i := len(evs) - 1; i >= 0; i-- {
+					if evs[i].EventType == "error" && evs[i].Message != "" {
+						tm["error"] = evs[i].Message
+						break
+					}
+				}
+			}
+		}
 		data, _ := json.Marshal(tm)
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		conn.Write(ctx, websocket.MessageText, data)
