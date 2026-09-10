@@ -92,7 +92,7 @@ async function showDetectedTables(root) {
 }
 
 export const render = buildGeneratorView({
-    overline: 'generate · insert',
+    overline: '生成 · INSERT',
     title: '生成 INSERT',
     subtitle: '从 CSV 数据文件生成 INSERT SQL（离线，无需数据库）。数据目录取自配置的 import.source_dir',
     endpoint: '/api/v1/insert/generate',

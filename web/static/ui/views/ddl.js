@@ -2,7 +2,7 @@
 import { buildGeneratorView, tablesFieldHTML, collectTables } from './generator.js';
 
 export const render = buildGeneratorView({
-    overline: 'generate · ddl',
+    overline: '生成 · DDL',
     title: '生成 DDL',
     subtitle: '从已加载的元数据生成目标库建表语句 — 需先在「元数据」页加载',
     endpoint: '/api/v1/ddl/generate',

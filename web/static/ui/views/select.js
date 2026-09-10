@@ -2,7 +2,7 @@
 import { buildGeneratorView, tablesFieldHTML, collectTables } from './generator.js';
 
 export const render = buildGeneratorView({
-    overline: 'generate · select',
+    overline: '生成 · SELECT',
     title: '生成 SELECT',
     subtitle: '生成分页查询语句（游标 / 偏移），用于手动导出数据',
     endpoint: '/api/v1/select/generate',

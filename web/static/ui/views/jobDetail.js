@@ -9,8 +9,8 @@ let jobType = 'migrate';
 const isActive = s => s === 'running' || s === 'cancelling';
 
 function cpStatus(s) {
-    if (s === 'SUCCESS') return '<span class="st-ok">✓ SUCCESS</span>';
-    if (s === 'FAIL') return '<span class="st-fail">✗ FAIL</span>';
+    if (s === 'SUCCESS') return '<span class="st-ok">✓ 成功</span>';
+    if (s === 'FAIL') return '<span class="st-fail">✗ 失败</span>';
     if (s) return '<span class="st-run">' + escapeHtml(s) + '</span>';
     return '<span style="color:var(--text-3)">—</span>';
 }
@@ -180,7 +180,7 @@ export function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">monitor · job detail</div>'
+        +     '<div class="overline">监控 · 任务详情</div>'
         +     '<h1>任务详情</h1>'
         +     '<p class="subtitle mono" id="job-id-line" style="color:var(--text-3)">' + escapeHtml(currentJobId) + '</p>'
         +   '</div>'

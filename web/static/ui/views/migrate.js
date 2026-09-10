@@ -48,7 +48,7 @@ export function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">execute · migrate</div>'
+        +     '<div class="overline">执行 · 迁移</div>'
         +     '<h1>数据迁移</h1>'
         +     '<p class="subtitle">端到端迁移：源库 → 导出 → 目标库（或生成 INSERT SQL）</p>'
         +   '</div>'

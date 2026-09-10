@@ -15,7 +15,14 @@ export function escapeHtml(s) {
 }
 
 /* Status badge — matches the SSR templates' map exactly:
-   running/cancelling get a pulsing dot; others are steady. */
+   running/cancelling get a pulsing dot; others are steady. The raw API
+   value stays in the title attribute; the visible label is Chinese. */
+const STATUS_LABELS = {
+    running: '运行中', cancelling: '取消中', completed: '已完成',
+    completed_with_errors: '部分失败', failed: '失败',
+    interrupted: '已中断', cancelled: '已取消'
+};
+
 export function statusBadge(s) {
     const map = {
         running: ['st-run', true], cancelling: ['st-warn', true],
@@ -24,8 +31,8 @@ export function statusBadge(s) {
         interrupted: ['st-warn', false], cancelled: ['st-warn', false]
     };
     const m = map[s] || ['st-run', false];
-    const label = escapeHtml(s);
-    return '<span class="' + m[0] + '"><span class="status-dot' + (m[1] ? ' pulse' : '') + '"></span>' + label + '</span>';
+    const label = STATUS_LABELS[s] || escapeHtml(s);
+    return '<span class="' + m[0] + '" title="' + escapeHtml(s) + '"><span class="status-dot' + (m[1] ? ' pulse' : '') + '"></span>' + label + '</span>';
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';

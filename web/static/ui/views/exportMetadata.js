@@ -23,7 +23,7 @@ export async function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">prepare · extract</div>'
+        +     '<div class="overline">准备 · 元数据导出</div>'
         +     '<h1>元数据导出</h1>'
         +     '<p class="subtitle">从源库提取元数据并导出为 CSV / SQL 文件 — 供离线迁移使用</p>'
         +   '</div>'

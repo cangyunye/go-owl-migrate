@@ -30,7 +30,7 @@ export function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">execute · export</div>'
+        +     '<div class="overline">执行 · 导出</div>'
         +     '<h1>导出数据</h1>'
         +     '<p class="subtitle">从源库导出数据为 CSV / SQL / XLSX — 使用当前配置的 source 与 export 段</p>'
         +   '</div>'

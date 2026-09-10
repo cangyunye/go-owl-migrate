@@ -33,7 +33,7 @@ export async function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">prepare · metadata</div>'
+        +     '<div class="overline">准备 · 元数据</div>'
         +     '<h1>元数据</h1>'
         +     '<p class="subtitle">指定元数据来源并加载表结构，供 DDL / SELECT 生成与校验使用</p>'
         +   '</div>'

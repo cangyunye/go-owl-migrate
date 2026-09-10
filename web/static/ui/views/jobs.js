@@ -58,7 +58,7 @@ export function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head">'
         +   '<div>'
-        +     '<div class="overline">monitor · jobs</div>'
+        +     '<div class="overline">监控 · 任务</div>'
         +     '<h1>任务历史</h1>'
         +     '<p class="subtitle">迁移 / 导出 / 导入任务的执行记录 — 支持检查点恢复</p>'
         +   '</div>'

@@ -24,7 +24,7 @@ export function render(root /*Element*/, params) {
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
         +   '<div>'
-        +     '<div class="overline">execute · import</div>'
+        +     '<div class="overline">执行 · 导入</div>'
         +     '<h1>导入数据</h1>'
         +     '<p class="subtitle">将 CSV 数据导入目标库 — 使用当前配置的 import 与 target 段，支持断点续传</p>'
         +   '</div>'
