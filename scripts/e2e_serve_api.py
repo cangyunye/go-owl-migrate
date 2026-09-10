@@ -88,6 +88,14 @@ def t_config_current():
     return "scenario/values/tables 全对上"
 check("config/current 回填(含 tables)", t_config_current)
 
+def t_meta_load_active():
+    r = call("POST", "/api/v1/metadata/load", {})
+    assert r["table_count"] >= 2, r
+    names = {t["name"] for t in r["tables"]}
+    assert "EMP" in names, names
+    return f"空请求体按活动配置加载 {r['table_count']} 表"
+check("metadata/load 空请求体 → 活动配置", t_meta_load_active)
+
 def t_config_masked():
     r = call("GET", "/api/v1/config")
     dsn = r.get("source", {}).get("dsn", "")
@@ -113,6 +121,11 @@ def t_ds_crud():
     rec = next((d for d in lst if d["name"] == "e2e-mysql"), None)
     assert rec, "列表无 e2e-mysql"
     assert "dsn" not in json.dumps(rec).lower() or not rec.get("dsn"), "列表泄露 DSN"
+    # 列表携带连接坐标(便于辨认),但绝不带密码
+    assert rec.get("host") == "127.0.0.1", f"列表缺 host: {rec}"
+    assert rec.get("port") == "3306", f"列表缺 port: {rec}"
+    assert rec.get("database") == "default_db", f"列表缺 database: {rec}"
+    assert not rec.get("password"), f"列表泄露密码: {rec}"
     # 编辑(前端编辑按钮走的 PUT)
     call("PUT", "/api/v1/datasources/e2e-mysql", {"type": "mysql", "schema": "default_db", "dsn": "", "remark": "编辑后"})
     lst2 = call("GET", "/api/v1/datasources")
@@ -120,7 +133,7 @@ def t_ds_crud():
     assert rec2["remark"] == "编辑后", f"编辑未生效: {rec2}"
     p = call("POST", "/api/v1/datasources/e2e-mysql/pick", {})
     assert p["ref"] == "datasource:e2e-mysql" and p["type"] == "mysql", p
-    return "create→list→PUT-edit→pick 全通"
+    return "create→list(含 host/db)→PUT-edit→pick 全通"
 check("数据源 CRUD + 编辑接口", t_ds_crud)
 
 def t_conn_test():
@@ -270,6 +283,37 @@ def t_export_metadata():
 check("元数据导出(oracle,ref 解析)", t_export_metadata)
 
 # ───────────────── 迁移页(端到端) ─────────────────
+def t_preflight_ok():
+    call("POST", "/api/v1/scenarios/migrate/build", {"values": MIGRATE_VALUES, "save": True})
+    r = call("POST", "/api/v1/migrate/preflight", {})
+    assert r.get("ok"), r
+    names = {c["name"] for c in r["checks"]}
+    assert {"配置", "源库/元数据", "目标库"} <= names, names
+    tgt = next(c for c in r["checks"] if c["name"] == "目标库")
+    assert tgt["ok"], tgt
+    assert isinstance(r.get("warnings"), list), r
+    return f'{len(r["checks"])} 项检查全过, warnings={len(r["warnings"])}'
+check("preflight 正常配置通过", t_preflight_ok)
+
+def t_preflight_sqlout():
+    r = call("POST", "/api/v1/migrate/preflight?mode=sql-out", {})
+    assert r.get("ok"), r
+    tgt = next(c for c in r["checks"] if c["name"] == "目标库")
+    assert "跳过" in tgt.get("detail", ""), tgt
+    return "sql-out 模式跳过目标库检查"
+check("preflight sql-out 跳过目标库", t_preflight_sqlout)
+
+def t_preflight_bad():
+    bad = dict(MIGRATE_VALUES, target_dsn="host=127.0.0.1 port=5432 user=postgres password=WRONGPASS dbname=postgres_db sslmode=disable")
+    call("POST", "/api/v1/scenarios/migrate/build", {"values": bad, "save": True})
+    r = call("POST", "/api/v1/migrate/preflight", {})
+    assert not r.get("ok"), r
+    tgt = next(c for c in r["checks"] if c["name"] == "目标库")
+    assert not tgt["ok"] and tgt.get("detail"), tgt
+    call("POST", "/api/v1/scenarios/migrate/build", {"values": MIGRATE_VALUES, "save": True})
+    return "坏目标密码 → 未通过并给出原因"
+check("preflight 坏目标 → 未通过", t_preflight_bad)
+
 def t_migrate():
     call("POST", "/api/v1/scenarios/migrate/build", {"values": MIGRATE_VALUES, "save": True})
     j = call("POST", "/api/v1/migrate", {}, expect_status=201)
