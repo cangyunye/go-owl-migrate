@@ -74,6 +74,15 @@ function renderList(tbody, list, root, refresh) {
         const tdName = document.createElement('td');
         tdName.className = 'mono';
         tdName.textContent = ds.name;
+        const connText = ds.host
+            ? ds.host + (ds.port ? ':' + ds.port : '') + (ds.database ? '/' + ds.database : '')
+            : (ds.database || '');
+        if (connText) {
+            const conn = document.createElement('div');
+            conn.className = 'ds-conn';
+            conn.textContent = connText;
+            tdName.appendChild(conn);
+        }
         tr.appendChild(tdName);
 
         const tdType = document.createElement('td');

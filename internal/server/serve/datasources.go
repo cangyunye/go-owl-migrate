@@ -9,7 +9,8 @@ import (
 
 // handleListDataSources returns the DSN-free projections of every saved data
 // source, so the picker and the 数据源 page can list them without ever
-// exposing stored passwords.
+// exposing stored passwords. Host/port/database are included: they identify
+// the connection, and only the password is secret.
 func (s *Server) handleListDataSources(w http.ResponseWriter, r *http.Request) {
 	store, err := s.dsStore()
 	if err != nil {
@@ -21,10 +22,27 @@ func (s *Server) handleListDataSources(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "list data sources: "+err.Error())
 		return
 	}
-	if list == nil {
-		list = []datasource.Info{}
+	out := make([]map[string]any, 0, len(list))
+	for _, info := range list {
+		item := map[string]any{
+			"name":    info.Name,
+			"type":    info.Type,
+			"schema":  info.Schema,
+			"remark":  info.Remark,
+			"updated": info.Updated,
+		}
+		if rec, gerr := store.Get(info.Name); gerr == nil {
+			if dsn, derr := resolveDataSourceDSN(store, rec); derr == nil {
+				if f, ferr := dsnfields.Decompose(info.Type, dsn); ferr == nil {
+					item["host"] = f.Host
+					item["port"] = f.Port
+					item["database"] = f.Database
+				}
+			}
+		}
+		out = append(out, item)
 	}
-	writeJSON(w, http.StatusOK, list)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleGetDataSource returns one profile plus its structured DSN fields for

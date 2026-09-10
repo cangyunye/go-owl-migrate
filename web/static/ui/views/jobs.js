@@ -42,6 +42,8 @@ async function loadJobs() {
     try {
         allJobs = await window.api.get('/api/v1/jobs') || [];
         renderTable();
+        const updated = document.getElementById('jobs-updated');
+        if (updated) updated.textContent = '更新于 ' + new Date().toTimeString().slice(0, 8);
     } catch (e) { /* best-effort */ }
 }
 
@@ -57,7 +59,8 @@ export function render(root /*Element*/, params) {
         +     '<p class="subtitle">迁移 / 导出 / 导入任务的执行记录 — 支持检查点恢复</p>'
         +   '</div>'
         +   '<div class="panel-actions">'
-        +     '<span class="live-dot" title="自动刷新"></span>'
+        +     '<span class="live-dot" title="每 5 秒自动刷新"></span>'
+        +     '<span class="status-msg" id="jobs-updated"></span>'
         +     '<button class="btn-ghost btn-sm" id="refresh-jobs" type="button">刷新</button>'
         +   '</div>'
         + '</div>'

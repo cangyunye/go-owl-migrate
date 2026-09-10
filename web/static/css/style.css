@@ -1174,6 +1174,9 @@ body.modal-open { overflow: hidden; }
 .tbl-name { font-family: var(--font-display); color: var(--text); }
 .tbl-rowcount { margin-left: auto; font-size: 11px; color: var(--text-3); }
 
+/* datasources list: connection line under the name */
+.ds-conn { font-size: 11px; color: var(--text-3); margin-top: 2px; font-family: var(--font-display); }
+
 /* ── generation pages (ddl/select/insert) ───────────────── */
 .gen-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
 .gen-layout .panel { margin-bottom: 0; }
