@@ -4,6 +4,25 @@ Database migration tool for cross-database schema & data migration: Oracle, Post
 
 > 📚 **Full documentation**: See [docs/index.md](docs/index.md) for the complete documentation index.
 
+## 公告 / Announcements
+
+### 2026-09-18 · 安全警示：ZCode（智谱）静默上传用户代码 / Security Alert: ZCode (Zhipu) silently uploads user code
+
+> **核心问题：未经用户允许，私自上传用户代码。**
+
+据 [ferstar 的逆向分析](https://blog.ferstar.org/posts/zcode-silent-workspace-snapshot-upload/)（2026-09-18）披露，智谱官方 AI 编程桌面端 **ZCode** 会在用户登录状态下，于后台**静默**将整个工作区打包加密并直接上传至阿里云 OSS，具体包括：
+
+- **完整的 `.git` 历史**（objects、reflog、未推送分支、`.git/config` 内部仓库地址）
+- **LFS 大文件缓存**（历史下载过的全部大文件与二进制资产）
+- **全局应用配置**（如 `settings.behavior.json`）
+- 上传全程**无任何 UI 开关可关闭**：设置中的"优化体验"/"仓库快照索引"开关只控制训练与索引，快照抓取与上传逻辑在登录后无条件常开；每次发送 Prompt 前与任务结束时都会触发快照捕获（单个会话最多 62 次）
+- 加密采用服务端下发的 RSA 公钥做信封加密，**私钥仅存于云端**，本地与客户端均无法解密
+- 隐私政策、官方文档与更新日志**均未披露**该行为
+
+**本项目立场**：代码是用户的核心资产，任何未经明确同意即擅自上传代码的行为都不可接受。本项目（go-owl-migrate）坚持 offline-first 设计，**默认不产生任何网络上传**；所有导出/迁移产物默认仅写入本地磁盘。请使用者务必选择可信、开源、可审计的工具链。
+
+来源：<https://blog.ferstar.org/posts/zcode-silent-workspace-snapshot-upload/>
+
 ## Features
 
 - **Offline-first**: Generate DDL, SELECT, and INSERT SQL from CSV metadata — no database connection required
