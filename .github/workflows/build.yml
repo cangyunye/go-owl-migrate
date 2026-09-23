@@ -4,8 +4,12 @@
 # On tag pushes (v*) it additionally packages each binary and publishes a
 # GitHub Release with the artifacts attached.
 #
-# The default build is CGO-free (oracle/postgres/mysql + compound dialects),
-# so everything is cross-compiled from a single Linux runner.
+# Every published binary carries the product dialects (OceanBase, openGaussDB/
+# PanWeiDB, GoldenDB): they are pure Go, so the whole matrix still cross-compiles
+# from a single Linux runner. sqlite3/duckdb need CGO and are not shipped here —
+# build those locally with -tags sqlite3 / -tags duckdb. A release binary not
+# built here must not silently lack a driver: `owl-migrate version` reports what
+# each binary links.
 
 name: build
 
@@ -95,8 +99,11 @@ jobs:
             -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.version=${{ steps.version.outputs.version }}' \
             -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.commitID=${commit}' \
             -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime=${build_time}'"
+          # Product dialects (pure Go) are part of the published flavor so a
+          # downloaded binary can reach OceanBase/openGaussDB/PanWeiDB/GoldenDB
+          # without a rebuild.
           mkdir -p dist
-          go build -trimpath -ldflags "${ldflags}" -o "dist/${bin}" ./cmd/migrate/main.go
+          go build -trimpath -tags "ob og gdb" -ldflags "${ldflags}" -o "dist/${bin}" ./cmd/migrate/main.go
 
       - name: Package
         env:
