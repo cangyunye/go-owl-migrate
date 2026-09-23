@@ -24,6 +24,10 @@ let mode = 'direct';
 /* Escape handler for the pre-start confirmation, removed on each re-render. */
 let confirmEscHandler = null;
 
+/* In-flight row-count stream (module scope so a re-render aborts it instead of
+   leaving the server counting into a discarded view). */
+let rowCountAbort = null;
+
 function setStage(root, id, cls) {
     const el = root.querySelector('#' + id);
     if (!el) return;
@@ -44,6 +48,8 @@ export function render(root /*Element*/, params) {
     window.jobUI.onEvent = ORIG_ON_EVENT;
     /* the confirm overlay lives in this view; drop any stale scroll lock */
     document.body.classList.remove('modal-open');
+    /* abort a count stream left running by the previous render */
+    if (rowCountAbort) { rowCountAbort.abort(); rowCountAbort = null; }
 
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
@@ -88,6 +94,7 @@ export function render(root /*Element*/, params) {
         +       '<input id="tbl-filter" type="text" placeholder="过滤表名…" spellcheck="false" autocomplete="off">'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-all">全选</button>'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-none">清空</button>'
+        +       '<button type="button" class="btn-ghost btn-sm" id="tbl-count-all" title="从上到下依次 COUNT(*) 统计每张表的实际行数">全量统计</button>'
         +     '</div>'
         +     '<div id="tbl-status" class="field-help" role="status">加载表列表…</div>'
         +     '<div id="tbl-list" class="tbl-list" style="display:none"></div>'
@@ -200,6 +207,9 @@ export function render(root /*Element*/, params) {
     /* ── table picker: choose which tables this run covers ───── */
     let tblRows = [];
     let tblApplyTimer = null;
+    /* key(lowercase) -> {badge, schema, name} for the exact row-count refresh.
+       The badge shows the planner estimate (≈N 行) until COUNT(*) replaces it. */
+    let tblCountEls = new Map();
 
     function selectedKeys() {
         return Array.from(root.querySelectorAll('#tbl-list input[type="checkbox"]:checked'))
@@ -252,6 +262,7 @@ export function render(root /*Element*/, params) {
             return;
         }
         listEl.innerHTML = '';
+        tblCountEls = new Map();
         (async () => {
             let tablesValue = '*';
             try {
@@ -275,13 +286,21 @@ export function render(root /*Element*/, params) {
                 const name = document.createElement('span');
                 name.className = 'tbl-name';
                 name.textContent = key;
+                name.title = '点击统计实际行数（COUNT(*)）';
                 label.appendChild(name);
-                if (r.row_count !== undefined && r.row_count !== null) {
-                    const n = document.createElement('span');
-                    n.className = 'tbl-rowcount';
-                    n.textContent = r.row_count + ' 行';
-                    label.appendChild(n);
-                }
+                const badge = document.createElement('button');
+                badge.type = 'button';
+                badge.className = 'tbl-rowcount';
+                badge.title = '点击统计实际行数（COUNT(*)）';
+                label.appendChild(badge);
+                tblCountEls.set(key.toLowerCase(), { badge, schema: r.schema || '', name: r.name });
+                /* Clicking the table (name or count) counts it; the checkbox
+                   keeps toggling selection, so the default label activation is
+                   suppressed here. */
+                const countThis = ev => { ev.preventDefault(); ev.stopPropagation(); countRows([{ schema: r.schema || '', name: r.name }]); };
+                name.addEventListener('click', countThis);
+                badge.addEventListener('click', countThis);
+                setRowCountBadge(r, badge);
                 listEl.appendChild(label);
             });
             if (tblRows.length > cap) {
@@ -294,6 +313,126 @@ export function render(root /*Element*/, params) {
             statusEl.textContent = '';
             updateTblCount();
         })();
+    }
+
+    /* setRowCountBadge renders one table's row count: the metadata estimate is
+       marked with ≈, an exact COUNT(*) plainly (and remembered on the row so a
+       re-render keeps it). */
+    function setRowCountBadge(r, badge) {
+        if (!badge) return;
+        const exact = r.rows_exact;
+        const n = exact ? r.row_count : (r.row_count || 0);
+        badge.classList.toggle('is-exact', !!exact);
+        badge.classList.remove('is-busy', 'is-error');
+        badge.textContent = (exact ? '' : '≈') + Number(n || 0).toLocaleString() + ' 行';
+        badge.title = exact
+            ? '精确统计（COUNT(*)）'
+            : '规划器估算值（ANALYZE/VACUUM 后刷新）· 点击统计实际行数';
+    }
+
+    function setBadgeState(key, text, cls, title) {
+        const entry = tblCountEls.get(String(key).toLowerCase());
+        if (!entry || !entry.badge.isConnected) return;
+        entry.badge.classList.remove('is-busy', 'is-error', 'is-exact');
+        if (cls) entry.badge.classList.add(cls);
+        entry.badge.textContent = text;
+        if (title) entry.badge.title = title;
+    }
+
+    /* countRows streams exact COUNT(*) results for the given tables, one at a
+       time from the server, and refreshes each row as its line arrives. */
+    async function countRows(tables) {
+        const statusEl = root.querySelector('#tbl-status');
+        const allBtn = root.querySelector('#tbl-count-all');
+        if (!tables.length) return;
+        if (rowCountAbort) {
+            setTblStatusText(statusEl, '正在统计中，请稍候…');
+            return;
+        }
+
+        const ctrl = new AbortController();
+        rowCountAbort = ctrl;
+        if (allBtn) allBtn.textContent = '停止';
+        setTblStatusText(statusEl, '统计中… 0/' + tables.length);
+        /* A single click gets feedback on its own row; a full run only shows
+           progress in the status line, so the estimates stay readable. */
+        if (tables.length === 1) {
+            const key = ((tables[0].schema ? tables[0].schema + '.' : '') + tables[0].name).toLowerCase();
+            setBadgeState(key, '统计中…', 'is-busy', '正在执行 COUNT(*)');
+        }
+
+        let done = 0, failed = 0, cancelled = false;
+        try {
+            const resp = await fetch('/api/v1/metadata/row-count', {
+                method: 'POST',
+                headers: window.api._headers({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ tables: tables }),
+                signal: ctrl.signal
+            });
+            if (resp.status === 401) {
+                window.dispatchEvent(new CustomEvent('owl-auth-required'));
+                throw new Error('unauthorized');
+            }
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || (resp.status + ' ' + resp.statusText));
+            }
+            /* NDJSON: one record per table, flushed as each count lands. */
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            for (;;) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                buf += decoder.decode(chunk.value, { stream: true });
+                let nl;
+                while ((nl = buf.indexOf('\n')) >= 0) {
+                    const line = buf.slice(0, nl).trim();
+                    buf = buf.slice(nl + 1);
+                    if (!line) continue;
+                    let rec;
+                    try { rec = JSON.parse(line); } catch (e) { continue; }
+                    if (rec.done) continue;
+                    if (rec.error) { failed++; } else { done++; }
+                    applyRowCountRecord(rec, tables);
+                    setTblStatusText(statusEl, '统计中… ' + (done + failed) + '/' + tables.length);
+                }
+            }
+        } catch (e) {
+            if (e && e.name === 'AbortError') { cancelled = true; }
+            else { statusEl.textContent = '✗ 统计失败：' + ((e && e.message) || e); }
+        } finally {
+            rowCountAbort = null;
+            if (allBtn) allBtn.textContent = '全量统计';
+        }
+        if (cancelled) {
+            setTblStatusText(statusEl, '统计已停止（已完成 ' + (done + failed) + ' / ' + tables.length + '）');
+            return;
+        }
+        setTblStatusText(statusEl, failed
+            ? '统计完成：成功 ' + done + ' 张，失败 ' + failed + ' 张'
+            : '统计完成：' + done + ' 张表');
+    }
+
+    /* applyRowCountLine folds one NDJSON record into its row. */
+    function applyRowCountRecord(rec, tables) {
+        const key = ((rec.schema ? rec.schema + '.' : '') + rec.name).toLowerCase();
+        if (rec.error) {
+            setBadgeState(key, '统计失败', 'is-error', rec.error);
+            return;
+        }
+        const entry = tblCountEls.get(key);
+        if (entry) setRowCountBadge({ row_count: rec.rows, rows_exact: true }, entry.badge);
+        for (const r of [tables, tblRows]) {
+            const row = r.find(t => (t.schema || '') === (rec.schema || '') && t.name === rec.name);
+            if (row) { row.row_count = rec.rows; row.rows_exact = true; }
+        }
+    }
+
+    function setTblStatusText(el, text) {
+        /* Keep the "已同步到配置" feedback from applyTableSelection readable:
+           only replace the status when the picker owns it. */
+        if (el && el.isConnected) el.textContent = text;
     }
 
     async function loadTables() {
@@ -345,6 +484,19 @@ export function render(root /*Element*/, params) {
         root.querySelectorAll('#tbl-list input[type="checkbox"]').forEach(cb => { cb.checked = false; });
         updateTblCount();
         scheduleTblApply();
+    });
+    /* 全量统计: count the visible tables in top-to-bottom order; a second click
+       stops the run (results already streamed stay). Matches 全选, which also
+       only covers what the filter left visible. */
+    root.querySelector('#tbl-count-all').addEventListener('click', () => {
+        if (rowCountAbort) { rowCountAbort.abort(); return; }
+        const list = [];
+        root.querySelectorAll('#tbl-list .tbl-item').forEach(item => {
+            if (item.style.display === 'none') return;
+            const entry = tblCountEls.get(item.dataset.key);
+            if (entry) list.push({ schema: entry.schema, name: entry.name });
+        });
+        countRows(list);
     });
 
     /* wire jobUI overrides for this view (after reset above) */

@@ -1174,8 +1174,19 @@ body.modal-open { overflow: hidden; }
 }
 .tbl-item { padding: 4px 8px; border-radius: 6px; font-size: 12.5px; }
 .tbl-item:hover { background: var(--bg-hover); }
-.tbl-name { font-family: var(--font-display); color: var(--text); }
-.tbl-rowcount { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.tbl-name { font-family: var(--font-display); color: var(--text); cursor: pointer; }
+.tbl-name:hover { color: var(--accent); }
+/* row count: a button — click counts the table for real (≈ marks an estimate) */
+.tbl-rowcount {
+  margin-left: auto; font-size: 11px; color: var(--text-3);
+  appearance: none; background: none; border: 0; padding: 2px 6px; border-radius: 4px;
+  font-family: inherit; cursor: pointer; font-variant-numeric: tabular-nums;
+  transition: color .15s, background .15s;
+}
+.tbl-rowcount:hover { color: var(--accent); background: var(--bg-hover); }
+.tbl-rowcount.is-exact { color: var(--text-2); }
+.tbl-rowcount.is-busy { color: var(--accent); font-style: italic; }
+.tbl-rowcount.is-error { color: var(--red); }
 
 /* datasources list: connection line under the name */
 .ds-conn { font-size: 11px; color: var(--text-3); margin-top: 2px; font-family: var(--font-display); }
