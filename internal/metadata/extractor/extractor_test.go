@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
 
 func TestNormalizeDBType(t *testing.T) {
@@ -16,7 +18,12 @@ func TestNormalizeDBType(t *testing.T) {
 		{"goldendb", "mysql"},
 		{"oceanbase", "mysql"},
 		{"panweidb", "postgres"},
+		{"panweidb-mysql", "postgres"},
+		{"panweidb-oracle", "postgres"},
+		{"PanWeiDB-MySQL", "postgres"},
 		{"opengaussdb", "postgres"},
+		{"opengaussdb-mysql", "postgres"},
+		{"opengaussdb-oracle", "postgres"},
 		{"postgres", "postgres"},
 		{"mysql", "mysql"},
 		{"oracle", "oracle"},
@@ -25,6 +32,86 @@ func TestNormalizeDBType(t *testing.T) {
 		if got := normalizeDBType(tt.in); got != tt.want {
 			t.Errorf("normalizeDBType(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+// TestResolveQuerierPGWireFamily pins the openGauss-family routing rule:
+// openGaussDB and PanWeiDB speak the PG wire protocol in every compatibility
+// mode, so their "-mysql"/"-oracle" suffixes pick the DDL/type dialect only and
+// must never select the MySQL or Oracle querier. Those queriers bind with
+// "?"/":N", which the server parses as ordinary tokens and rejects — the
+// reported symptom being `pq: syntax error at or near "AND"`.
+func TestResolveQuerierPGWireFamily(t *testing.T) {
+	for _, dbType := range []string{
+		"panweidb", "panweidb-mysql", "panweidb-oracle",
+		"opengaussdb", "opengaussdb-mysql", "opengaussdb-oracle",
+		"PanWeiDB-MySQL",
+	} {
+		q, err := resolveQuerier(dbType)
+		if err != nil {
+			t.Fatalf("resolveQuerier(%q): %v", dbType, err)
+		}
+		if q.Type() != "postgres" {
+			t.Errorf("resolveQuerier(%q).Type() = %q, want postgres", dbType, q.Type())
+		}
+	}
+
+	// Non-PG-wire families must not be captured by the rule above. Their exact
+	// registration wins when compiled in (oceanbase-mysql has its own querier
+	// under -tags ob), so only the family is asserted here.
+	for _, dbType := range []string{
+		"mysql", "oracle", "postgres",
+		"goldendb-mysql", "oceanbase-mysql", "oceanbase-oracle",
+	} {
+		q, err := resolveQuerier(dbType)
+		if err != nil {
+			t.Fatalf("resolveQuerier(%q): %v", dbType, err)
+		}
+		if dbType != "postgres" && q.Type() == "postgres" {
+			t.Errorf("resolveQuerier(%q).Type() = postgres, want its own querier", dbType)
+		}
+	}
+	for dbType, want := range map[string]string{"mysql": "mysql", "oracle": "oracle", "postgres": "postgres"} {
+		q, err := resolveQuerier(dbType)
+		if err != nil {
+			t.Fatalf("resolveQuerier(%q): %v", dbType, err)
+		}
+		if q.Type() != want {
+			t.Errorf("resolveQuerier(%q).Type() = %q, want %q", dbType, q.Type(), want)
+		}
+	}
+}
+
+// TestQueryTablesPanWeiDBMySQLUsesPGBinds is the regression test for the
+// reported "extract metadata from panweidb-mysql: query tables: pq syntax error
+// at or near AND": the tables query for a PanWeiDB/openGauss B-mode source must
+// bind with $1. A MySQL-style "?" travels to the server verbatim, and its
+// parser fails at the token following it.
+func TestQueryTablesPanWeiDBMySQLUsesPGBinds(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	q, err := resolveQuerier("panweidb-mysql")
+	if err != nil {
+		t.Fatalf("resolveQuerier: %v", err)
+	}
+
+	rows := sqlmock.NewRows([]string{"table_name", "table_type", "table_comment", "partitioned"}).
+		AddRow("EMP", "BASE TABLE", "", "NO")
+	mock.ExpectQuery(`table_schema = \$1`).WithArgs("public").WillReturnRows(rows)
+
+	tables, err := q.QueryTables(db, "public")
+	if err != nil {
+		t.Fatalf("QueryTables: %v", err)
+	}
+	if len(tables) != 1 || tables[0].TableName != "EMP" {
+		t.Fatalf("tables = %+v, want single EMP", tables)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
 	}
 }
 
