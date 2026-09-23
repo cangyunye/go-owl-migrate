@@ -31,7 +31,8 @@ var rootCmd = &cobra.Command{
 	Long: `owl-migrate reads database metadata from CSV files (or live databases)
 and generates DDL, SELECT, INSERT statements and data export/import pipelines.
 
-Supported dialects: oracle, postgres, mysql
+Supported dialects: oracle, postgres, mysql — plus the product dialects
+compiled into this build (run 'owl-migrate version' to list them).
 Supported metadata sources: csv, xlsx, database
 
 Config resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml`,
@@ -95,6 +96,7 @@ func init() {
 	rootCmd.PersistentFlags().MarkHidden("job-id")
 	rootCmd.PersistentFlags().MarkHidden("parent-pid")
 
+	rootCmd.AddCommand(versionCmd())
 	rootCmd.AddCommand(initCmd())
 	rootCmd.AddCommand(validateCmd())
 	rootCmd.AddCommand(genDDLCmd())

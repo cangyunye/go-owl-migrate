@@ -9,6 +9,7 @@ package registry
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -37,6 +38,20 @@ func Register(name string, d dialect.Dialect) {
 		panic(fmt.Sprintf("dialect %q already registered", name))
 	}
 	reg[name] = d
+}
+
+// Names returns the dialect names compiled into this binary, sorted. It is the
+// build-flavor ground truth behind Get: a name absent here is one whose package
+// was excluded by a build tag (see dialectTag for the tag that adds it).
+func Names() []string {
+	mu.RLock()
+	defer mu.RUnlock()
+	out := make([]string, 0, len(reg))
+	for name := range reg {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Normalize maps bare compound dialect names to their qualified form.
