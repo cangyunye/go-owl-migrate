@@ -196,6 +196,7 @@ func (PGMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef,
 		return nil, err
 	}
 	enrichPGPartitions(db, schema, tables)
+	enrichPGRowCounts(db, schema, tables)
 	return tables, nil
 }
 
@@ -264,6 +265,47 @@ func (PGMetadataQuerier) QueryColumns(db *sql.DB, schema string) ([]*md.ColumnDe
 
 	enrichPGIdentitySequences(db, schema, columns)
 	return columns, nil
+}
+
+// enrichPGRowCounts attaches planner row estimates to the extracted tables from
+// pg_class.reltuples — the same kind of statistic MySQL's
+// information_schema.table_rows and Oracle's all_tables.num_rows provide, and
+// the reason a source table list is not left showing 0 rows. It is an estimate:
+// VACUUM/ANALYZE refreshes it, so a freshly loaded table reads low until the
+// server has analyzed it.
+//
+// Best-effort by design: a server that does not expose the column, or a denied
+// read, only leaves RowCount at 0 (display-only — no export or migration path
+// consults it), rather than failing the whole extraction.
+func enrichPGRowCounts(db *sql.DB, schema string, tables []*md.TableDef) {
+	if len(tables) == 0 {
+		return
+	}
+	rows, err := db.Query(`
+		SELECT c.relname, GREATEST(c.reltuples::float8, 0)::bigint
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1
+			AND c.relkind IN ('r', 'p')`, schema)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	byName := make(map[string]*md.TableDef, len(tables))
+	for _, tbl := range tables {
+		byName[tbl.TableName] = tbl
+	}
+	for rows.Next() {
+		var name string
+		var est int64
+		if err := rows.Scan(&name, &est); err != nil {
+			return
+		}
+		if tbl, ok := byName[name]; ok && est > 0 {
+			tbl.RowCount = int(est)
+		}
+	}
 }
 
 // enrichPGPartitions attaches PARTITION BY definitions to partitioned parent
