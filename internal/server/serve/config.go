@@ -95,6 +95,10 @@ func (s *Server) handleGetConfigStatus(w http.ResponseWriter, r *http.Request) {
 		"target_type":     cfg.Target.Type,
 		"metadata_loaded": metadataLoaded,
 		"table_count":     tableCount,
+		// Password-free endpoint identities: which machine/database/schema/user
+		// each side actually points at (the browser only holds masked DSNs).
+		"source": s.connIdentityOf(cfg.Source),
+		"target": s.connIdentityOf(cfg.Target),
 	})
 }
 

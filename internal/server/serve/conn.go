@@ -3,13 +3,80 @@ package serve
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/datasource"
+	"github.com/cangyunye/go-owl-migrate/internal/dsnfields"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
+
+// connIdentity is the password-free identity of one configured endpoint. The
+// browser only ever holds masked DSNs (and data-source references), so it is
+// resolved server-side; it lets the UI tell apart endpoints that share a
+// dialect but differ by machine, database, schema or user — the difference
+// between "postgres" and "postgres: appuser@10.0.0.9:5432/appdb (public)".
+type connIdentity struct {
+	Type     string `json:"type,omitempty"`
+	Ref      string `json:"ref,omitempty"` // data-source profile name, when the DSN is a reference
+	User     string `json:"user,omitempty"`
+	Host     string `json:"host,omitempty"`
+	Port     string `json:"port,omitempty"`
+	Database string `json:"database,omitempty"`
+	Schema   string `json:"schema,omitempty"`
+	// Label is the line the UI shows first: "user@host:port/database", or the
+	// file path for an embedded database. Empty when the DSN yields nothing.
+	Label string `json:"label,omitempty"`
+}
+
+// connIdentityOf resolves a configured endpoint into its display identity. A
+// data-source reference is expanded first (its stored schema fills in an empty
+// configured one); a DSN that cannot be parsed still yields type and schema so
+// the UI degrades to what it knows instead of showing nothing.
+func (s *Server) connIdentityOf(cfg config.DBConfig) connIdentity {
+	id := connIdentity{Type: cfg.Type, Schema: strings.TrimSpace(cfg.Schema)}
+	dsn := strings.TrimSpace(cfg.DSN)
+	if datasource.IsRef(dsn) {
+		id.Ref = datasource.RefName(dsn)
+		if resolved, refSchema, err := s.resolveDSNRef(dsn); err == nil {
+			dsn = resolved
+			if id.Schema == "" {
+				id.Schema = strings.TrimSpace(refSchema)
+			}
+		}
+	}
+	if dsn == "" {
+		return id
+	}
+	f, err := dsnfields.Decompose(cfg.Type, dsn)
+	if err != nil {
+		return id
+	}
+	id.User, id.Host, id.Port, id.Database = f.Username, f.Host, f.Port, f.Database
+	id.Label = connLabel(f)
+	return id
+}
+
+// connLabel renders the endpoint's primary identity line, dropping empty parts:
+// "user@host:port/database" for a network endpoint, the path for a file one.
+func connLabel(f *dsnfields.Fields) string {
+	if f.Host == "" {
+		return f.Database
+	}
+	host := f.Host
+	if f.Port != "" {
+		host += ":" + f.Port
+	}
+	if f.Database != "" {
+		host += "/" + f.Database
+	}
+	if f.Username != "" {
+		return f.Username + "@" + host
+	}
+	return host
+}
 
 // resolveDSNRef expands a "datasource:<name>" token into its stored plaintext
 // DSN (and default schema) so endpoints like connection-test and metadata-load

@@ -158,7 +158,11 @@ export function render(root /*Element*/, params) {
     /* local per-render job state (reset every mount) */
     let completedJobId = null;
     let outputFileCount = 0;
-    let prefilledTarget = null;
+    /* Endpoint identity from /api/v1/config/status: type plus the resolved
+       machine/database/schema/user, so two endpoints sharing a dialect stay
+       distinguishable. */
+    let sourceInfo = null;
+    let targetInfo = null;
     const confirmFocus = modalFocus(root.querySelector('#mig-confirm'));
 
     const modeDesc = root.querySelector('#mode-desc');
@@ -179,11 +183,41 @@ export function render(root /*Element*/, params) {
             : '直接模式：导出 CSV 后直接导入目标数据库。';
         if (mode === 'sql-out') {
             pvTarget.textContent = 'INSERT SQL';
+            pvTarget.title = '迁移产物是 INSERT SQL 文件，不连接目标库';
             psTarget.textContent = '生成 SQL 文件，不连接目标库';
+            psTarget.title = pvTarget.title;
         } else {
-            pvTarget.textContent = prefilledTarget || '—';
-            psTarget.textContent = '批量写入 / INSERT SQL';
+            fillEndpoint(pvTarget, psTarget, targetInfo, '批量写入 / INSERT SQL', '待配置');
         }
+    }
+
+    /* endpointTitle is the hover text: the full identity, including parts the
+       compact line drops. */
+    function endpointTitle(info) {
+        if (!info) return '';
+        const parts = [];
+        if (info.type) parts.push('类型 ' + info.type);
+        if (info.ref) parts.push('数据源档案 ' + info.ref);
+        if (info.user) parts.push('用户 ' + info.user);
+        if (info.host) parts.push('主机 ' + info.host + (info.port ? ':' + info.port : ''));
+        if (info.database) parts.push('库 ' + info.database);
+        if (info.schema) parts.push('Schema ' + info.schema);
+        return parts.join(' · ');
+    }
+
+    /* fillEndpoint renders an endpoint: the connection identity on the value
+       line, dialect/schema plus the caller's hint underneath. */
+    function fillEndpoint(valEl, subEl, info, tail, fallbackSub) {
+        const label = (info && info.label) || '';
+        valEl.textContent = label || (info && info.type) || '—';
+        valEl.title = endpointTitle(info);
+        const parts = [];
+        if (label && info.type) parts.push(info.type);
+        /* MySQL-family schemas repeat the database name; do not echo them. */
+        if (info && info.schema && info.schema !== info.database) parts.push('schema ' + info.schema);
+        if (tail) parts.push(tail);
+        subEl.textContent = parts.length ? parts.join(' · ') : (fallbackSub || '');
+        subEl.title = endpointTitle(info);
     }
 
     root.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -195,12 +229,11 @@ export function render(root /*Element*/, params) {
     (async function prefillPipeline() {
         try {
             const st = await window.api.get('/api/v1/config/status');
-            if (st.source_type) pvSource.textContent = st.source_type;
-            if (st.target_dialect && mode !== 'sql-out') {
-                prefilledTarget = st.target_dialect;
-                pvTarget.textContent = st.target_dialect;
-            }
-            if (st.metadata_loaded) psSource.textContent = st.table_count + ' 张表待迁移';
+            sourceInfo = st.source || null;
+            targetInfo = st.target || null;
+            fillEndpoint(pvSource, psSource, sourceInfo,
+                st.metadata_loaded ? st.table_count + ' 张表待迁移' : '', '读取元数据与数据');
+            applyMode();
         } catch (e) { /* best-effort */ }
     })();
 
@@ -577,7 +610,7 @@ export function render(root /*Element*/, params) {
         } catch (e) { /* best-effort */ }
     };
 
-    function summaryRow(label, value) {
+    function summaryRow(label, value, title) {
         const row = document.createElement('div');
         row.className = 'confirm-row';
         const l = document.createElement('span');
@@ -586,6 +619,7 @@ export function render(root /*Element*/, params) {
         const v = document.createElement('span');
         v.className = 'confirm-value';
         v.textContent = value;
+        if (title) v.title = title;
         row.appendChild(l);
         row.appendChild(v);
         return row;
@@ -599,18 +633,29 @@ export function render(root /*Element*/, params) {
     }
 
     /* Show what will actually run — and warn about destructive settings —
-       before a click can start writing to the target. */
-    function openConfirm(cfg) {
+       before a click can start writing to the target. Endpoints are named by
+       their connection identity, not just the dialect: "确认" must not be the
+       step where you find out the target was another machine. */
+    function openConfirm(cfg, st) {
         const body = root.querySelector('#mig-confirm-body');
         body.innerHTML = '';
         const isSQL = mode === 'sql-out';
         const tables = (cfg.export && cfg.export.tables && cfg.export.tables.include) || [];
+        const src = (st && st.source) || null;
+        const tgt = (st && st.target) || null;
+        const describe = (info, type, schema, schemaFallback) => {
+            const label = (info && (info.label || info.type)) || type || '—';
+            const sch = (info && info.schema) || schema;
+            return { label, schema: sch || schemaFallback };
+        };
         body.appendChild(summaryRow('模式', isSQL ? 'SQL 输出（不连接目标库）' : '直接迁移'));
-        body.appendChild(summaryRow('源数据库', (cfg.source && cfg.source.type) || '—'));
-        body.appendChild(summaryRow('源 Schema', (cfg.source && cfg.source.schema) || '（未指定）'));
+        const s = describe(src, cfg.source && cfg.source.type, cfg.source && cfg.source.schema, '（未指定）');
+        body.appendChild(summaryRow('源数据库', s.label, endpointTitle(src)));
+        body.appendChild(summaryRow('源 Schema', s.schema));
         if (!isSQL) {
-            body.appendChild(summaryRow('目标数据库', (cfg.target && cfg.target.type) || '—'));
-            body.appendChild(summaryRow('目标 Schema', (cfg.target && cfg.target.schema) || '（与源相同）'));
+            const t = describe(tgt, cfg.target && cfg.target.type, cfg.target && cfg.target.schema, '（与源相同）');
+            body.appendChild(summaryRow('目标数据库', t.label, endpointTitle(tgt)));
+            body.appendChild(summaryRow('目标 Schema', t.schema));
         }
         body.appendChild(summaryRow('迁移的表', tables.length ? tables.join(', ') : '*'));
         if (!isSQL && !(cfg.target && cfg.target.type)) {
@@ -634,14 +679,17 @@ export function render(root /*Element*/, params) {
     }
 
     async function startMigrate() {
-        let cfg;
+        let cfg, st = null;
         try { cfg = await window.api.get('/api/v1/config'); }
         catch (e) { window.toast.err('读取配置失败', e && e.message || ''); return; }
         if (!cfg || !cfg.metadata || !cfg.metadata.type) {
             window.toast.warn('尚未配置', '请先在「配置」页选择场景并保存配置');
             return;
         }
-        openConfirm(cfg);
+        /* Endpoint identities come from the status endpoint (the config payload
+           only carries masked DSNs), so the confirmation names the machines. */
+        try { st = await window.api.get('/api/v1/config/status'); } catch (e) { /* optional */ }
+        openConfirm(cfg, st);
     }
 
     let starting = false;

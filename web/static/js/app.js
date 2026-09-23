@@ -141,15 +141,32 @@ async function renderConfigBar() {
     if (!bar) return;
     try {
         const st = await api.get('/api/v1/config/status');
+        /* Endpoints are named by connection identity, not just dialect: the
+           same dialect on another machine/user must not look identical. */
+        const idText = (info) => (info && (info.label || info.type)) || '';
+        const idTitle = (info) => {
+            if (!info) return '';
+            const parts = [];
+            if (info.type) parts.push('类型 ' + info.type);
+            if (info.ref) parts.push('数据源档案 ' + info.ref);
+            if (info.user) parts.push('用户 ' + info.user);
+            if (info.host) parts.push('主机 ' + info.host + (info.port ? ':' + info.port : ''));
+            if (info.database) parts.push('库 ' + info.database);
+            if (info.schema) parts.push('Schema ' + info.schema);
+            return parts.join(' · ');
+        };
         const chips = [];
-        chips.push('<span class="cfg-chip" title="' + escapeHtml(st.path || '') + '"><span class="dot ' +
-            (st.metadata_loaded ? '' : 'off') + '"></span>' +
-            (st.target_dialect ? '<b>' + escapeHtml(st.target_dialect) + '</b>' : '未配置') + '</span>');
+        const targetId = idText(st.target) || st.target_dialect || '';
+        chips.push('<span class="cfg-chip" title="' + escapeHtml(idTitle(st.target) || st.path || '') +
+            '"><span class="dot ' + (st.metadata_loaded ? '' : 'off') + '"></span>' +
+            (targetId ? '<b>' + escapeHtml(targetId) + '</b>' : '未配置') + '</span>');
         if (st.metadata_loaded) {
             chips.push('<span class="cfg-chip hide-sm">' + st.table_count + ' 张表</span>');
         }
-        if (st.source_type) {
-            chips.push('<span class="cfg-chip hide-sm">源 <b>' + escapeHtml(st.source_type) + '</b></span>');
+        const sourceId = idText(st.source) || st.source_type || '';
+        if (sourceId) {
+            chips.push('<span class="cfg-chip hide-sm" title="' + escapeHtml(idTitle(st.source)) + '">源 <b>' +
+                escapeHtml(sourceId) + '</b></span>');
         }
         chips.push('<a class="cfg-bar-link" href="#/config">编辑配置</a>');
         bar.innerHTML = chips.join('');

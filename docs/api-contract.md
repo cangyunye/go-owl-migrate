@@ -64,7 +64,7 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/config | Returns the active config as JSON map; DSN passwords of `source`/`target` are masked. |
 | PUT /api/v1/config | Replaces the active config from a JSON object and persists it. |
 | GET /api/v1/config/download | Downloads the active config as `migrate.yaml` (re-serialized YAML, unmasked). |
-| GET /api/v1/config/status | Reports the config path, on-disk status, dialect/type, and metadata-loaded state. |
+| GET /api/v1/config/status | Reports the config path, on-disk status, dialect/type, metadata-loaded state, and the password-free `source`/`target` endpoint identities. Each identity carries `type`, `schema`, and — parsed from the real DSN server-side, since the browser only holds masked values — `user`, `host`, `port`, `database`, `label` ("user@host:port/database", or the file path for embedded databases) plus `ref` when the DSN is a `datasource:<name>` reference. Passwords never appear. |
 | POST /api/v1/config/upload | Legacy config upload: parses submitted YAML, makes it active, persists verbatim, echoes scenario + form values. |
 | GET /api/v1/configs | Lists the saved config library (name, size, modified, scenario, source/target types). |
 | POST /api/v1/configs | Saves an uploaded config to the library, makes it active, returns name/scenario/values/yaml. |
