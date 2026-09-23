@@ -51,6 +51,10 @@ type Server struct {
 	mu          sync.RWMutex
 	cfg         *config.Config
 	schemaModel *md.SchemaModel
+	// schemaSource fingerprints the config the loaded schemaModel came from:
+	// when the active config points at a different source, the model is
+	// reported as stale rather than served as if it were the new one's.
+	schemaSource metadataFingerprint
 
 	dsOnce sync.Once
 	dsErr  error
@@ -344,6 +348,7 @@ func (s *Server) handleMetadataLoad(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.schemaModel = sm
+	s.schemaSource = s.fingerprintOf(cfg)
 	s.cfg.Metadata = req.Metadata
 	s.cfg.Source = req.Source
 	s.mu.Unlock()

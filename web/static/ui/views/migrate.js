@@ -94,6 +94,7 @@ export function render(root /*Element*/, params) {
         +       '<input id="tbl-filter" type="text" placeholder="过滤表名…" spellcheck="false" autocomplete="off">'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-all">全选</button>'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-none">清空</button>'
+        +       '<button type="button" class="btn-ghost btn-sm" id="tbl-reload" title="按当前配置（源库 / Schema）重新抽取表列表">重新加载</button>'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-count-all" title="从上到下依次 COUNT(*) 统计每张表的实际行数">全量统计</button>'
         +     '</div>'
         +     '<div id="tbl-status" class="field-help" role="status">加载表列表…</div>'
@@ -225,8 +226,10 @@ export function render(root /*Element*/, params) {
         applyMode();
     }));
 
-    /* prefill pipeline endpoints from the active config */
-    (async function prefillPipeline() {
+    /* refreshEndpoints re-reads the active config and redraws the pipeline
+       nodes, so a reload after a config change also updates which endpoint the
+       run will actually use. */
+    async function refreshEndpoints() {
         try {
             const st = await window.api.get('/api/v1/config/status');
             sourceInfo = st.source || null;
@@ -235,7 +238,10 @@ export function render(root /*Element*/, params) {
                 st.metadata_loaded ? st.table_count + ' 张表待迁移' : '', '读取元数据与数据');
             applyMode();
         } catch (e) { /* best-effort */ }
-    })();
+    }
+
+    /* prefill pipeline endpoints from the active config */
+    refreshEndpoints();
 
     /* ── table picker: choose which tables this run covers ───── */
     let tblRows = [];
@@ -477,6 +483,9 @@ export function render(root /*Element*/, params) {
             await window.api.post('/api/v1/metadata/load', {});
             tblRows = await window.api.get('/api/v1/metadata/tables') || [];
             renderTablePicker();
+            /* The config that produced this list is the current one: refresh
+               the endpoint nodes and the topbar to match. */
+            await refreshEndpoints();
             if (window.refreshConfigBar) window.refreshConfigBar();
         } catch (e) {
             statusEl.textContent = '✗ 加载失败：' + ((e && e.message) || e);
@@ -485,9 +494,17 @@ export function render(root /*Element*/, params) {
 
     (async function initTables() {
         const statusEl = root.querySelector('#tbl-status');
+        /* The server reports whether the loaded tables still match the active
+           config (schema/DSN/source changed → metadata_stale). Stale tables
+           must never be shown as if they were the new source's. */
+        let stale = false;
+        try {
+            const st = await window.api.get('/api/v1/config/status');
+            stale = !!st.metadata_stale;
+        } catch (e) { /* best-effort: fall through and show what is loaded */ }
+
         try {
             tblRows = await window.api.get('/api/v1/metadata/tables') || [];
-            renderTablePicker();
         } catch (e) {
             statusEl.textContent = '元数据尚未加载。';
             const btn = document.createElement('button');
@@ -497,7 +514,14 @@ export function render(root /*Element*/, params) {
             btn.addEventListener('click', loadTables);
             statusEl.appendChild(btn);
             updateTblCount();
+            return;
         }
+        if (stale) {
+            statusEl.textContent = '配置已变更（源库 / Schema），正在按新配置重新抽取表列表…';
+            await loadTables();
+            return;
+        }
+        renderTablePicker();
     })();
 
     root.querySelector('#tbl-filter').addEventListener('input', () => {
@@ -517,6 +541,12 @@ export function render(root /*Element*/, params) {
         root.querySelectorAll('#tbl-list input[type="checkbox"]').forEach(cb => { cb.checked = false; });
         updateTblCount();
         scheduleTblApply();
+    });
+    /* 重新加载: re-extract the table list from the active config, whatever
+       changed behind it (schema, DSN, source). */
+    root.querySelector('#tbl-reload').addEventListener('click', () => {
+        if (rowCountAbort) rowCountAbort.abort();
+        loadTables();
     });
     /* 全量统计: count the visible tables in top-to-bottom order; a second click
        stops the run (results already streamed stay). Matches 全选, which also

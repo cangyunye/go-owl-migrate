@@ -46,11 +46,19 @@ func (s *Server) recordGenOutput(kind, dir string, meta service.GenerationMeta) 
 
 func (s *Server) requireMetadata() (*md.SchemaModel, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.schemaModel == nil {
+	sm := s.schemaModel
+	finger := s.schemaSource
+	cfg := s.cfg
+	s.mu.RUnlock()
+	if sm == nil {
 		return nil, fmt.Errorf("metadata not loaded; load it from the 元数据 page first")
 	}
-	return s.schemaModel, nil
+	// Generating DDL/SELECT/INSERT from tables that belong to a source the
+	// config no longer points at would silently describe the wrong schema.
+	if finger.staleAgainst(s.fingerprintOf(cfg)) {
+		return nil, fmt.Errorf("元数据已过期（配置中的源库或 Schema 已变更）；请先重新加载元数据")
+	}
+	return sm, nil
 }
 
 // findTableCaseInsensitive resolves schema.table with an exact-key hit first,

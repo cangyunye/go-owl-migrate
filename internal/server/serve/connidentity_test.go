@@ -1,10 +1,12 @@
 package serve
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
 // TestConnIdentityOf_DSNGrammars covers the endpoints the UI has to tell
@@ -163,5 +165,131 @@ func TestHandler_ConfigStatus_CarriesEndpointIdentity(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("status body missing %s: %s", want, body)
 		}
+	}
+}
+
+// TestMetadataStale covers the reported symptom: after the config changes
+// (e.g. a new schema), the loaded tables describe a different source and must
+// be reported as stale instead of being served as the new source's.
+func TestMetadataStale(t *testing.T) {
+	newRig := func(t *testing.T) *Server {
+		t.Helper()
+		srv := newTestServer(t)
+		sm := md.NewSchemaModel()
+		emp, _ := md.NewTableDef("public", "emp")
+		sm.AddTable(emp)
+		srv.cfg = &config.Config{
+			Metadata: config.MetadataConfig{Type: "database"},
+			Source: config.DBConfig{Type: "panweidb-mysql", Schema: "public",
+				DSN: "host=10.0.0.5 port=5432 user=miguser password=pw dbname=og_mysql sslmode=disable"},
+		}
+		srv.schemaModel = sm
+		srv.schemaSource = srv.fingerprintOf(srv.cfg)
+		return srv
+	}
+	stale := func(srv *Server) bool {
+		var resp map[string]any
+		w := doGet(t, srv, "/api/v1/config/status")
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode status: %v", err)
+		}
+		v, _ := resp["metadata_stale"].(bool)
+		return v
+	}
+
+	t.Run("fresh load is not stale", func(t *testing.T) {
+		srv := newRig(t)
+		if stale(srv) {
+			t.Error("metadata_stale = true right after loading")
+		}
+	})
+
+	t.Run("schema change invalidates", func(t *testing.T) {
+		srv := newRig(t)
+		srv.cfg.Source.Schema = "sales"
+		if !stale(srv) {
+			t.Error("metadata_stale = false after the schema changed")
+		}
+	})
+
+	t.Run("host and database change invalidates", func(t *testing.T) {
+		srv := newRig(t)
+		srv.cfg.Source.DSN = "host=10.0.0.6 port=5432 user=miguser password=pw dbname=og_mysql sslmode=disable"
+		if !stale(srv) {
+			t.Error("metadata_stale = false after the host changed")
+		}
+	})
+
+	t.Run("metadata file change invalidates", func(t *testing.T) {
+		srv := newRig(t)
+		srv.cfg.Metadata = config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{Path: "./other/"}}
+		if !stale(srv) {
+			t.Error("metadata_stale = false after the metadata source changed")
+		}
+	})
+
+	t.Run("password change keeps it fresh", func(t *testing.T) {
+		srv := newRig(t)
+		srv.cfg.Source.DSN = "host=10.0.0.5 port=5432 user=miguser password=NEW dbname=og_mysql sslmode=disable"
+		if stale(srv) {
+			t.Error("metadata_stale = true after only the password changed (same database)")
+		}
+	})
+
+	t.Run("same endpoint written differently stays fresh", func(t *testing.T) {
+		srv := newRig(t)
+		srv.cfg.Source.DSN = "port=5432 host=10.0.0.5 user=miguser dbname=og_mysql sslmode=disable password=pw"
+		if stale(srv) {
+			t.Error("metadata_stale = true although the endpoint identity is unchanged")
+		}
+	})
+
+	t.Run("partial config keeps it fresh", func(t *testing.T) {
+		// A config that omits a section (a partial PUT touching only ddl:) does
+		// not contradict what was loaded.
+		srv := newRig(t)
+		srv.cfg = &config.Config{DDL: config.DDLConfig{TargetDialect: "postgres"}}
+		if stale(srv) {
+			t.Error("metadata_stale = true after a config that omits the source")
+		}
+	})
+
+	t.Run("data source reference equals its resolved identity", func(t *testing.T) {
+		srv := newRig(t)
+		srv.dataSourcesDir = t.TempDir() + "/datasources"
+		store, err := srv.dsStore()
+		if err != nil {
+			t.Fatalf("dsStore: %v", err)
+		}
+		if err := store.Put("prod", "panweidb-mysql", "public",
+			"host=10.0.0.5 port=5432 user=miguser password=pw dbname=og_mysql sslmode=disable", ""); err != nil {
+			t.Fatalf("put profile: %v", err)
+		}
+		// The config now references the profile whose DSN was loaded above; the
+		// schema is left to the profile (its schema fills the configured one).
+		srv.cfg.Source.DSN = "datasource:prod"
+		srv.cfg.Source.Schema = ""
+		if stale(srv) {
+			t.Error("metadata_stale = true although the profile resolves to the loaded endpoint")
+		}
+	})
+}
+
+// TestRequireMetadata_RefusesStaleModel keeps generation endpoints from
+// describing the wrong schema after a config change.
+func TestRequireMetadata_RefusesStaleModel(t *testing.T) {
+	srv := newTestServer(t)
+	sm := md.NewSchemaModel()
+	emp, _ := md.NewTableDef("public", "emp")
+	sm.AddTable(emp)
+	srv.cfg = &config.Config{Source: config.DBConfig{Type: "postgres", Schema: "public", DSN: "host=h dbname=d"}}
+	srv.schemaModel = sm
+	srv.schemaSource = srv.fingerprintOf(srv.cfg)
+	if _, err := srv.requireMetadata(); err != nil {
+		t.Fatalf("fresh metadata rejected: %v", err)
+	}
+	srv.cfg.Source.Schema = "sales"
+	if _, err := srv.requireMetadata(); err == nil || !strings.Contains(err.Error(), "过期") {
+		t.Fatalf("stale metadata accepted: %v", err)
 	}
 }

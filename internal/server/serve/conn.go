@@ -13,6 +13,62 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
+// metadataFingerprint captures the source a loaded schema model came from:
+// which metadata source (csv/xlsx path) and which endpoint identity (type,
+// machine, database, schema, user) it was extracted from.
+type metadataFingerprint struct {
+	MetaType   string
+	CSVPath    string
+	XLSXPath   string
+	SourceType string
+	User       string
+	Host       string
+	Port       string
+	Database   string
+	Schema     string
+}
+
+// fingerprintOf resolves the metadata source and endpoint identity of cfg. The
+// DSN goes through connIdentityOf, so a password change (same database) does
+// not change the fingerprint, and a `datasource:<name>` reference fingerprints
+// the same as its resolved endpoint (the profile's *name* is deliberately not
+// part of it: two references reaching one endpoint are one source).
+func (s *Server) fingerprintOf(cfg *config.Config) metadataFingerprint {
+	if cfg == nil {
+		return metadataFingerprint{}
+	}
+	id := s.connIdentityOf(cfg.Source)
+	return metadataFingerprint{
+		MetaType:   cfg.Metadata.Type,
+		CSVPath:    cfg.Metadata.CSV.Path,
+		XLSXPath:   cfg.Metadata.XLSX.Path,
+		SourceType: id.Type,
+		User:       id.User,
+		Host:       id.Host,
+		Port:       id.Port,
+		Database:   id.Database,
+		Schema:     id.Schema,
+	}
+}
+
+// staleAgainst reports whether a model extracted with fingerprint f no longer
+// describes the source the current config points at. Only fields the current
+// config actually specifies are compared: a config that omits a section (a
+// partial PUT, metadata from CSV with no source) must not invalidate a model
+// that was loaded from it.
+func (f metadataFingerprint) staleAgainst(cur metadataFingerprint) bool {
+	changed := func(loaded, now string) bool { return now != "" && loaded != now }
+	return changed(f.MetaType, cur.MetaType) ||
+		changed(f.CSVPath, cur.CSVPath) ||
+		changed(f.XLSXPath, cur.XLSXPath) ||
+		changed(f.SourceType, cur.SourceType) ||
+		changed(f.User, cur.User) ||
+		changed(f.Host, cur.Host) ||
+		changed(f.Port, cur.Port) ||
+		changed(f.Database, cur.Database) ||
+		changed(f.Schema, cur.Schema)
+}
+
 // connIdentity is the password-free identity of one configured endpoint. The
 // browser only ever holds masked DSNs (and data-source references), so it is
 // resolved server-side; it lets the UI tell apart endpoints that share a
