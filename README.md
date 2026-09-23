@@ -84,6 +84,7 @@ owl-migrate migrate -c ./migrate.yaml --sql-out ./output/insert/
 | `gen-select`    | Generate paginated SELECT queries for data export |
 | `import`        | Import CSV data into target database |
 | `migrate`       | End-to-end: export → create tables → import → report |
+| `version`       | Show version, linked database drivers and compiled dialects |
 
 ## Supported Dialects
 
@@ -123,6 +124,11 @@ make build/ob                                                  # Makefile/Taskfi
 
 A base binary rejects configs for un-compiled dialects with an error naming
 the required tag (e.g. `rebuild with -tags ob`).
+
+Published release binaries are built with `-tags "ob og gdb"`, so a downloaded
+binary already reaches OceanBase, PanWeiDB/OpenGaussDB and GoldenDB; SQLite3 and
+DuckDB (CGo) remain local builds only. `owl-migrate version` reports exactly
+which drivers and dialects a given binary links.
 
 ## Documentation
 
