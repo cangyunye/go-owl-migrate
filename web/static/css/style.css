@@ -380,6 +380,10 @@ body.nav-collapsed .main { margin-left: var(--sidebar-w-collapsed); }
 }
 .cfg-chip b { color: var(--text); font-weight: 600; }
 .cfg-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+/* Endpoint chips carry host:port/database, which can outgrow the bar: clip
+   with an ellipsis instead of pushing the rest of the topbar out. */
+.cfg-chip { max-width: 34ch; }
+.cfg-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cfg-chip .dot.off { background: var(--text-3); box-shadow: none; }
 .cfg-bar-link {
   font-size: 12px;
@@ -1111,8 +1115,17 @@ body.modal-open { overflow: hidden; }
   align-items: center;
   gap: 7px;
 }
-.pipe-node .pn-val { font-family: var(--font-display); font-size: 14px; font-weight: 600; }
-.pipe-node .pn-sub { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+/* Endpoint lines carry a connection identity (user@host:port/db, or a file
+   path): clip them instead of stretching the pipeline node; the full string
+   stays available as the element's title. */
+.pipe-node .pn-val {
+  font-family: var(--font-display); font-size: 14px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pipe-node .pn-sub {
+  font-size: 11px; color: var(--text-3); margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .pipe-node.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .pipe-node.done { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
 .pipe-node.done .pn-name { color: var(--green); }
@@ -1174,8 +1187,19 @@ body.modal-open { overflow: hidden; }
 }
 .tbl-item { padding: 4px 8px; border-radius: 6px; font-size: 12.5px; }
 .tbl-item:hover { background: var(--bg-hover); }
-.tbl-name { font-family: var(--font-display); color: var(--text); }
-.tbl-rowcount { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.tbl-name { font-family: var(--font-display); color: var(--text); cursor: pointer; }
+.tbl-name:hover { color: var(--accent); }
+/* row count: a button — click counts the table for real (≈ marks an estimate) */
+.tbl-rowcount {
+  margin-left: auto; font-size: 11px; color: var(--text-3);
+  appearance: none; background: none; border: 0; padding: 2px 6px; border-radius: 4px;
+  font-family: inherit; cursor: pointer; font-variant-numeric: tabular-nums;
+  transition: color .15s, background .15s;
+}
+.tbl-rowcount:hover { color: var(--accent); background: var(--bg-hover); }
+.tbl-rowcount.is-exact { color: var(--text-2); }
+.tbl-rowcount.is-busy { color: var(--accent); font-style: italic; }
+.tbl-rowcount.is-error { color: var(--red); }
 
 /* datasources list: connection line under the name */
 .ds-conn { font-size: 11px; color: var(--text-3); margin-top: 2px; font-family: var(--font-display); }

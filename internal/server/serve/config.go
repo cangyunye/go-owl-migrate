@@ -75,6 +75,7 @@ func (s *Server) handleGetConfigStatus(w http.ResponseWriter, r *http.Request) {
 	cfg := s.cfg
 	path := s.configPath
 	sm := s.schemaModel
+	finger := s.schemaSource
 	s.mu.RUnlock()
 
 	metadataLoaded := sm != nil
@@ -82,6 +83,9 @@ func (s *Server) handleGetConfigStatus(w http.ResponseWriter, r *http.Request) {
 	if metadataLoaded {
 		tableCount = len(sm.GetTables())
 	}
+	// Loaded tables that came from a different source (schema/DSN/type/file
+	// changed since the extraction) must not pass as current.
+	metadataStale := metadataLoaded && finger.staleAgainst(s.fingerprintOf(cfg))
 
 	_, statErr := os.Stat(path)
 	onDisk := path != "" && statErr == nil
@@ -94,7 +98,12 @@ func (s *Server) handleGetConfigStatus(w http.ResponseWriter, r *http.Request) {
 		"source_type":     cfg.Source.Type,
 		"target_type":     cfg.Target.Type,
 		"metadata_loaded": metadataLoaded,
+		"metadata_stale":  metadataStale,
 		"table_count":     tableCount,
+		// Password-free endpoint identities: which machine/database/schema/user
+		// each side actually points at (the browser only holds masked DSNs).
+		"source": s.connIdentityOf(cfg.Source),
+		"target": s.connIdentityOf(cfg.Target),
 	})
 }
 

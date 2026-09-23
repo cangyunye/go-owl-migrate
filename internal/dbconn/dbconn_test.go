@@ -150,3 +150,64 @@ func TestInjectOracleParams(t *testing.T) {
 		}
 	})
 }
+
+// TestOptionalDriversMatchBuildTagMap guards the introspection used by
+// `owl-migrate version` against drifting from the lookup used by Open.
+func TestOptionalDriversMatchBuildTagMap(t *testing.T) {
+	if len(optionalDrivers) != len(driverBuildTag) {
+		t.Fatalf("optionalDrivers = %d entries, driverBuildTag holds %d", len(optionalDrivers), len(driverBuildTag))
+	}
+	for _, d := range optionalDrivers {
+		if d.driver == "" || d.tag == "" {
+			t.Errorf("incomplete optional driver entry: %+v", d)
+		}
+		if got := driverBuildTag[d.driver]; got != d.tag {
+			t.Errorf("driverBuildTag[%q] = %q, want %q", d.driver, got, d.tag)
+		}
+	}
+}
+
+func TestLinkedDrivers(t *testing.T) {
+	report := DriverReport()
+	if len(report) != len(baseDrivers)+len(optionalDrivers) {
+		t.Fatalf("DriverReport() = %d entries, want %d", len(report), len(baseDrivers)+len(optionalDrivers))
+	}
+	seen := map[string]bool{}
+	for _, d := range report {
+		if d.Driver == "" {
+			t.Error("empty driver name in report")
+		}
+		if seen[d.Driver] {
+			t.Errorf("driver %q reported twice", d.Driver)
+		}
+		seen[d.Driver] = true
+		// Linked must mirror the registry lookup that Open uses.
+		if d.Linked != DriverLinked(d.Driver) {
+			t.Errorf("DriverReport(%q).Linked = %v, DriverLinked = %v", d.Driver, d.Linked, DriverLinked(d.Driver))
+		}
+		// Only build-tag-gated drivers carry a hint. Base drivers are always
+		// compiled in — they register from blank imports in the command
+		// packages, which a dbconn-only test binary does not carry, so their
+		// Linked flag is meaningless here and only their tag matters.
+		if tag, gated := driverBuildTag[d.Driver]; gated {
+			if d.Tag != tag {
+				t.Errorf("report tag for %q = %q, want %q", d.Driver, d.Tag, tag)
+			}
+		} else if d.Tag != "" {
+			t.Errorf("base driver %q should carry no build tag, got %q", d.Driver, d.Tag)
+		}
+	}
+	// Every driver the tool can select must be covered, otherwise a missing
+	// build tag turns into a runtime connect error again.
+	for name := range knownTypes {
+		if drv, err := driverName(name); err == nil && !seen[drv] {
+			t.Errorf("selectable driver %q (type %q) missing from DriverReport()", drv, name)
+		}
+	}
+	if !seen["oboracle"] {
+		t.Error("oboracle (oceanbase-oracle over the MySQL wire) missing from DriverReport()")
+	}
+	if DriverLinked("definitely-not-a-driver") {
+		t.Error("DriverLinked(unknown) = true")
+	}
+}

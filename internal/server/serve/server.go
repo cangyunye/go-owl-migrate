@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -43,9 +44,17 @@ type Server struct {
 	dataSourcesDir string
 	token          string
 
+	// openDB opens a database connection; nil means service.OpenDB. The row
+	// count endpoint (rowcount.go) uses it as a test seam.
+	openDB func(config.DBConfig) (*sql.DB, error)
+
 	mu          sync.RWMutex
 	cfg         *config.Config
 	schemaModel *md.SchemaModel
+	// schemaSource fingerprints the config the loaded schemaModel came from:
+	// when the active config points at a different source, the model is
+	// reported as stale rather than served as if it were the new one's.
+	schemaSource metadataFingerprint
 
 	dsOnce sync.Once
 	dsErr  error
@@ -124,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/configs/{name}", s.handleDeleteConfig)
 	mux.HandleFunc("POST /api/v1/metadata/load", s.handleMetadataLoad)
 	mux.HandleFunc("GET /api/v1/metadata/tables", s.handleMetadataTables)
+	mux.HandleFunc("POST /api/v1/metadata/row-count", s.handleRowCount)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/ws", s.handleWebSocket)
 	mux.HandleFunc("POST /api/v1/migrate", s.handleStartMigrate)
 	mux.HandleFunc("POST /api/v1/migrate/preflight", s.handleMigratePreflight)
@@ -338,6 +348,7 @@ func (s *Server) handleMetadataLoad(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.schemaModel = sm
+	s.schemaSource = s.fingerprintOf(cfg)
 	s.cfg.Metadata = req.Metadata
 	s.cfg.Source = req.Source
 	s.mu.Unlock()

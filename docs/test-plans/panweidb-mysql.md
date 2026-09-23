@@ -6,10 +6,15 @@
 |------|-----|
 | 注册名 | `panweidb-mysql` |
 | 父方言 | MySQL (Dolphin 插件) |
-| 数据库驱动 | lib/pq (PG 协议，非 MySQL 协议) |
-| 元数据提取器 | MySQL (`normalizeDBType` → `mysql`) |
+| 数据库驱动 | openGauss-connector-go-pq（`opengauss` 注册名，PG 线协议，非 MySQL 协议） |
+| 元数据提取器 | PostgreSQL（`normalizeDBType` → `postgres`，`$N` 占位符） |
 | 端口 | 5432 (PG 协议) |
 | 连接串示例 | `host=127.0.0.1 port=5432 user=postgres password=pass dbname=mydb sslmode=disable`（B 模式，始终走 PG 协议而非 MySQL DSN；容器映射宿主机端口 5434） |
+
+> **避免的坑（2026-09-23 修复）**：B 模式曾按 `-mysql` 后缀选到 MySQL 提取器，其 `?`
+> 占位符在 PG 线协议上不是绑定标记，服务端解析到 `?` 之后的 token 直接报
+> `extract metadata from panweidb-mysql: query tables: pq 语法错误在"AND"处或附近`。
+> 现与 `opengaussdb-mysql` 一致：元数据一律走 PG 提取器，`-mysql` 只影响 DDL/类型方言。
 
 ## 已覆盖的 Override
 
@@ -25,7 +30,7 @@
 
 | 差异 | PanWeiDB MySQL | 标准 MySQL | 代码状态 |
 |------|----------------|------------|---------|
-| 数据库驱动 | lib/pq (PG 协议) | go-sql-driver | ✅ `openDB` 已区分 |
+| 数据库驱动 | openGauss-connector-go-pq (PG 协议) | go-sql-driver | ✅ `openDB` 已区分 |
 | TRUNCATE 事务安全 | ✅ openGauss 内核 | ❌ 否 | ✅ Features 用 PG |
 | 标识符引用 | 反引号 | 反引号 | ✅ 继承 MySQL |
 | ENGINE 子句 | ❌ 忽略 | ✅ 支持 | ⚠️ 无代码差异（Engine 字段为空则不输出） |
@@ -49,7 +54,7 @@ panweidb-mysql:
 | TABLE | ✅ 继承 MySQL | 反引号引用，但 ENGINE= 无意义 |
 | INDEX | ✅ 继承 MySQL | `` CREATE INDEX `name` ON `sch`.`tbl` `` |
 | VIEW | ✅ 继承 MySQL | `` CREATE VIEW `sch`.`name` AS `` |
-| SEQUENCE | ⚪ MySQL 空桩 | 但 PanWeiDB 基于 openGauss 可能支持序列，需实测 |
+| SEQUENCE | ⚪ DDL 为 MySQL 空桩 | 元数据侧由 PG 提取器读出（openGauss 内核支持序列）；B 模式是否真能 `CREATE SEQUENCE` 需实测 |
 | TRIGGER | ✅ 继承 MySQL | `` CREATE TRIGGER `` |
 | FUNCTION | ✅ 继承 MySQL | `` CREATE FUNCTION `` |
 

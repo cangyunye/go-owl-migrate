@@ -66,8 +66,9 @@ func Get(dbType string) (MetadataQuerier, error) {
 // normalizeDBType maps compound dialect names (e.g. "goldendb-mysql", "oceanbase-oracle")
 // to their base querier type.
 func normalizeDBType(t string) string {
+	t = strings.ToLower(strings.TrimSpace(t))
 	switch {
-	case t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
+	case isPGWireFamily(t):
 		return "postgres"
 	case strings.HasSuffix(t, "-mysql"):
 		return "mysql"
@@ -77,11 +78,25 @@ func normalizeDBType(t string) string {
 		return "oracle"
 	case t == "goldendb", t == "oceanbase":
 		return "mysql"
-	case t == "panweidb":
-		return "postgres"
 	default:
 		return t
 	}
+}
+
+// isPGWireFamily reports whether dbType is an openGauss-family product
+// (openGaussDB, PanWeiDB). Every one of their SQL compatibility modes — PG, A
+// (Oracle) and B (MySQL) — runs on the same kernel and speaks the PG wire
+// protocol, so the "-oracle"/"-mysql" suffix selects the DDL/type dialect
+// only, never the metadata querier or the bind style. A MySQL-style query with
+// "?" binds reaching one of these servers fails with
+// `pq: syntax error at or near "AND"`.
+func isPGWireFamily(t string) bool {
+	for _, p := range []string{"opengaussdb", "panweidb"} {
+		if t == p || strings.HasPrefix(t, p+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 // isOceanBaseOracle reports whether the dbType string identifies an
@@ -180,16 +195,23 @@ func listOracleSchemas(db *sql.DB) ([]string, error) {
 	return out, rows.Err()
 }
 
+// resolveQuerier returns the querier to use for a configured source type.
+// An exact registration wins (e.g. "oceanbase-oracle-wire" keeps its own
+// placeholder style); otherwise the compound name is normalized to its base
+// querier.
+func resolveQuerier(dbType string) (MetadataQuerier, error) {
+	q, err := Get(dbType)
+	if err == nil {
+		return q, nil
+	}
+	return Get(normalizeDBType(dbType))
+}
+
 // Extract connects to the database and retrieves full schema metadata.
 // Returns a fully populated SchemaModel with table definitions, columns,
 // primary keys, indexes, foreign keys, views, sequences, and triggers.
 func Extract(db *sql.DB, dbType, schema string) (*md.SchemaModel, error) {
-	// Exact registration wins (e.g. "oceanbase-oracle-wire" keeps its own
-	// placeholder style); otherwise fall back to the base querier mapping.
-	querier, err := Get(dbType)
-	if err != nil {
-		querier, err = Get(normalizeDBType(dbType))
-	}
+	querier, err := resolveQuerier(dbType)
 	if err != nil {
 		return nil, err
 	}

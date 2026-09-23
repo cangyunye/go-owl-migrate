@@ -19,7 +19,26 @@ ORDER BY table_name
 ```
 
 - 仅返回 `BASE TABLE`，排除视图
-- 不获取行数估算
+- 追加一次行数估算查询（best-effort，失败则保持 0）：
+
+```sql
+SELECT c.relname, GREATEST(c.reltuples::float8, 0)::bigint
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = $1
+    AND c.relkind IN ('r', 'p')
+```
+
+> 取的是**规划器统计值**（与 MySQL 的 `information_schema.table_rows`、Oracle 的
+> `all_tables.num_rows` 同类），`VACUUM`/`ANALYZE` 后才刷新：刚导入完还没 analyze 的表
+> 会偏小，`reltuples = -1`（从未 analyze）按 0 处理。该值只用于界面展示
+> （配置页/迁移页表清单的「≈N 行」，`≈` 表示估算），导出与迁移流程都不读它，因此查询失败
+> （例如服务端没有该列）只是不显示行数，不会让元数据抽取失败。
+> openGauss/PanWeiDB 的 PG、A、B 三种模式都走这条查询。
+>
+> 需要精确行数时，在迁移页表清单里点击某张表（或按「全量统计」自上而下逐表执行）
+> 触发 `POST /api/v1/metadata/row-count`：服务端按请求顺序逐表执行 `SELECT COUNT(*)`
+> 并以 NDJSON 逐条回传，界面随到随刷新（详见 `docs/api-contract.md`）。
 
 ## 2. 列信息 (QueryColumns)
 

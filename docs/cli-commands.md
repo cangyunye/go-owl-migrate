@@ -41,6 +41,49 @@ owl-migrate init \
   -o ./migrate.yaml
 ```
 
+## owl-migrate version
+
+Show the build identity plus what this binary can actually reach: the
+`database/sql` drivers linked in and the dialects compiled in. Both depend on
+the build tag set, so this is the way to check a build flavor without
+attempting a connection.
+
+```
+Usage:
+  owl-migrate version
+```
+
+Output for a full build (`-tags "ob og gdb"`, the flavor the release binaries use):
+
+```
+owl-migrate 0.4.0
+  commit:       72325d7
+  built:        2026-09-23 14:09:00
+  drivers:      postgres, mysql, oracle, opengauss, oboracle
+  dialects:     goldendb-mysql, goldendb-oracle, mysql, oceanbase-mysql, oceanbase-oracle, opengaussdb, opengaussdb-mysql, opengaussdb-oracle, oracle, panweidb, panweidb-mysql, panweidb-oracle, postgres
+  not linked:   sqlite3 (-tags sqlite3), duckdb (-tags duckdb)
+```
+
+A base build (`make build`, no tags) reports the gap instead of failing at
+connect time:
+
+```
+owl-migrate 0.4.0
+  commit:       unknown
+  built:        unknown
+  drivers:      postgres, mysql, oracle
+  dialects:     mysql, oracle, postgres
+  not linked:   opengauss (-tags og), oboracle (-tags ob), sqlite3 (-tags sqlite3), duckdb (-tags duckdb)
+```
+
+`drivers` lists only the drivers `Open` can actually select for this tool; the
+driver aliases and dependency drivers that show up in `sql.Drivers()` (for
+example `mogdb`, or the `sqlite` driver of a transitively imported library) are
+omitted. A name under `not linked` means connecting to that dialect fails with
+`database/sql driver "X" is not compiled into this binary; rebuild with -tags Y`
+— rebuild using the matching Makefile flavor (`make build/og`, `make build/ob`,
+`make build/gdb`, `make build/full`).
+
 ## owl-migrate validate
 
 Validate metadata from CSV files or a live database. Checks referential integrity — FK references, trigger table references, and missing primary keys.

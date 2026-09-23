@@ -24,6 +24,10 @@ let mode = 'direct';
 /* Escape handler for the pre-start confirmation, removed on each re-render. */
 let confirmEscHandler = null;
 
+/* In-flight row-count stream (module scope so a re-render aborts it instead of
+   leaving the server counting into a discarded view). */
+let rowCountAbort = null;
+
 function setStage(root, id, cls) {
     const el = root.querySelector('#' + id);
     if (!el) return;
@@ -44,6 +48,8 @@ export function render(root /*Element*/, params) {
     window.jobUI.onEvent = ORIG_ON_EVENT;
     /* the confirm overlay lives in this view; drop any stale scroll lock */
     document.body.classList.remove('modal-open');
+    /* abort a count stream left running by the previous render */
+    if (rowCountAbort) { rowCountAbort.abort(); rowCountAbort = null; }
 
     root.innerHTML = ''
         + '<div class="page-head reveal" style="--i:0">'
@@ -88,6 +94,8 @@ export function render(root /*Element*/, params) {
         +       '<input id="tbl-filter" type="text" placeholder="过滤表名…" spellcheck="false" autocomplete="off">'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-all">全选</button>'
         +       '<button type="button" class="btn-ghost btn-sm" id="tbl-none">清空</button>'
+        +       '<button type="button" class="btn-ghost btn-sm" id="tbl-reload" title="按当前配置（源库 / Schema）重新抽取表列表">重新加载</button>'
+        +       '<button type="button" class="btn-ghost btn-sm" id="tbl-count-all" title="从上到下依次 COUNT(*) 统计每张表的实际行数">全量统计</button>'
         +     '</div>'
         +     '<div id="tbl-status" class="field-help" role="status">加载表列表…</div>'
         +     '<div id="tbl-list" class="tbl-list" style="display:none"></div>'
@@ -151,7 +159,11 @@ export function render(root /*Element*/, params) {
     /* local per-render job state (reset every mount) */
     let completedJobId = null;
     let outputFileCount = 0;
-    let prefilledTarget = null;
+    /* Endpoint identity from /api/v1/config/status: type plus the resolved
+       machine/database/schema/user, so two endpoints sharing a dialect stay
+       distinguishable. */
+    let sourceInfo = null;
+    let targetInfo = null;
     const confirmFocus = modalFocus(root.querySelector('#mig-confirm'));
 
     const modeDesc = root.querySelector('#mode-desc');
@@ -172,11 +184,41 @@ export function render(root /*Element*/, params) {
             : '直接模式：导出 CSV 后直接导入目标数据库。';
         if (mode === 'sql-out') {
             pvTarget.textContent = 'INSERT SQL';
+            pvTarget.title = '迁移产物是 INSERT SQL 文件，不连接目标库';
             psTarget.textContent = '生成 SQL 文件，不连接目标库';
+            psTarget.title = pvTarget.title;
         } else {
-            pvTarget.textContent = prefilledTarget || '—';
-            psTarget.textContent = '批量写入 / INSERT SQL';
+            fillEndpoint(pvTarget, psTarget, targetInfo, '批量写入 / INSERT SQL', '待配置');
         }
+    }
+
+    /* endpointTitle is the hover text: the full identity, including parts the
+       compact line drops. */
+    function endpointTitle(info) {
+        if (!info) return '';
+        const parts = [];
+        if (info.type) parts.push('类型 ' + info.type);
+        if (info.ref) parts.push('数据源档案 ' + info.ref);
+        if (info.user) parts.push('用户 ' + info.user);
+        if (info.host) parts.push('主机 ' + info.host + (info.port ? ':' + info.port : ''));
+        if (info.database) parts.push('库 ' + info.database);
+        if (info.schema) parts.push('Schema ' + info.schema);
+        return parts.join(' · ');
+    }
+
+    /* fillEndpoint renders an endpoint: the connection identity on the value
+       line, dialect/schema plus the caller's hint underneath. */
+    function fillEndpoint(valEl, subEl, info, tail, fallbackSub) {
+        const label = (info && info.label) || '';
+        valEl.textContent = label || (info && info.type) || '—';
+        valEl.title = endpointTitle(info);
+        const parts = [];
+        if (label && info.type) parts.push(info.type);
+        /* MySQL-family schemas repeat the database name; do not echo them. */
+        if (info && info.schema && info.schema !== info.database) parts.push('schema ' + info.schema);
+        if (tail) parts.push(tail);
+        subEl.textContent = parts.length ? parts.join(' · ') : (fallbackSub || '');
+        subEl.title = endpointTitle(info);
     }
 
     root.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -184,22 +226,29 @@ export function render(root /*Element*/, params) {
         applyMode();
     }));
 
-    /* prefill pipeline endpoints from the active config */
-    (async function prefillPipeline() {
+    /* refreshEndpoints re-reads the active config and redraws the pipeline
+       nodes, so a reload after a config change also updates which endpoint the
+       run will actually use. */
+    async function refreshEndpoints() {
         try {
             const st = await window.api.get('/api/v1/config/status');
-            if (st.source_type) pvSource.textContent = st.source_type;
-            if (st.target_dialect && mode !== 'sql-out') {
-                prefilledTarget = st.target_dialect;
-                pvTarget.textContent = st.target_dialect;
-            }
-            if (st.metadata_loaded) psSource.textContent = st.table_count + ' 张表待迁移';
+            sourceInfo = st.source || null;
+            targetInfo = st.target || null;
+            fillEndpoint(pvSource, psSource, sourceInfo,
+                st.metadata_loaded ? st.table_count + ' 张表待迁移' : '', '读取元数据与数据');
+            applyMode();
         } catch (e) { /* best-effort */ }
-    })();
+    }
+
+    /* prefill pipeline endpoints from the active config */
+    refreshEndpoints();
 
     /* ── table picker: choose which tables this run covers ───── */
     let tblRows = [];
     let tblApplyTimer = null;
+    /* key(lowercase) -> {badge, schema, name} for the exact row-count refresh.
+       The badge shows the planner estimate (≈N 行) until COUNT(*) replaces it. */
+    let tblCountEls = new Map();
 
     function selectedKeys() {
         return Array.from(root.querySelectorAll('#tbl-list input[type="checkbox"]:checked'))
@@ -252,6 +301,7 @@ export function render(root /*Element*/, params) {
             return;
         }
         listEl.innerHTML = '';
+        tblCountEls = new Map();
         (async () => {
             let tablesValue = '*';
             try {
@@ -275,13 +325,21 @@ export function render(root /*Element*/, params) {
                 const name = document.createElement('span');
                 name.className = 'tbl-name';
                 name.textContent = key;
+                name.title = '点击统计实际行数（COUNT(*)）';
                 label.appendChild(name);
-                if (r.row_count !== undefined && r.row_count !== null) {
-                    const n = document.createElement('span');
-                    n.className = 'tbl-rowcount';
-                    n.textContent = r.row_count + ' 行';
-                    label.appendChild(n);
-                }
+                const badge = document.createElement('button');
+                badge.type = 'button';
+                badge.className = 'tbl-rowcount';
+                badge.title = '点击统计实际行数（COUNT(*)）';
+                label.appendChild(badge);
+                tblCountEls.set(key.toLowerCase(), { badge, schema: r.schema || '', name: r.name });
+                /* Clicking the table (name or count) counts it; the checkbox
+                   keeps toggling selection, so the default label activation is
+                   suppressed here. */
+                const countThis = ev => { ev.preventDefault(); ev.stopPropagation(); countRows([{ schema: r.schema || '', name: r.name }]); };
+                name.addEventListener('click', countThis);
+                badge.addEventListener('click', countThis);
+                setRowCountBadge(r, badge);
                 listEl.appendChild(label);
             });
             if (tblRows.length > cap) {
@@ -296,6 +354,126 @@ export function render(root /*Element*/, params) {
         })();
     }
 
+    /* setRowCountBadge renders one table's row count: the metadata estimate is
+       marked with ≈, an exact COUNT(*) plainly (and remembered on the row so a
+       re-render keeps it). */
+    function setRowCountBadge(r, badge) {
+        if (!badge) return;
+        const exact = r.rows_exact;
+        const n = exact ? r.row_count : (r.row_count || 0);
+        badge.classList.toggle('is-exact', !!exact);
+        badge.classList.remove('is-busy', 'is-error');
+        badge.textContent = (exact ? '' : '≈') + Number(n || 0).toLocaleString() + ' 行';
+        badge.title = exact
+            ? '精确统计（COUNT(*)）'
+            : '规划器估算值（ANALYZE/VACUUM 后刷新）· 点击统计实际行数';
+    }
+
+    function setBadgeState(key, text, cls, title) {
+        const entry = tblCountEls.get(String(key).toLowerCase());
+        if (!entry || !entry.badge.isConnected) return;
+        entry.badge.classList.remove('is-busy', 'is-error', 'is-exact');
+        if (cls) entry.badge.classList.add(cls);
+        entry.badge.textContent = text;
+        if (title) entry.badge.title = title;
+    }
+
+    /* countRows streams exact COUNT(*) results for the given tables, one at a
+       time from the server, and refreshes each row as its line arrives. */
+    async function countRows(tables) {
+        const statusEl = root.querySelector('#tbl-status');
+        const allBtn = root.querySelector('#tbl-count-all');
+        if (!tables.length) return;
+        if (rowCountAbort) {
+            setTblStatusText(statusEl, '正在统计中，请稍候…');
+            return;
+        }
+
+        const ctrl = new AbortController();
+        rowCountAbort = ctrl;
+        if (allBtn) allBtn.textContent = '停止';
+        setTblStatusText(statusEl, '统计中… 0/' + tables.length);
+        /* A single click gets feedback on its own row; a full run only shows
+           progress in the status line, so the estimates stay readable. */
+        if (tables.length === 1) {
+            const key = ((tables[0].schema ? tables[0].schema + '.' : '') + tables[0].name).toLowerCase();
+            setBadgeState(key, '统计中…', 'is-busy', '正在执行 COUNT(*)');
+        }
+
+        let done = 0, failed = 0, cancelled = false;
+        try {
+            const resp = await fetch('/api/v1/metadata/row-count', {
+                method: 'POST',
+                headers: window.api._headers({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ tables: tables }),
+                signal: ctrl.signal
+            });
+            if (resp.status === 401) {
+                window.dispatchEvent(new CustomEvent('owl-auth-required'));
+                throw new Error('unauthorized');
+            }
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || (resp.status + ' ' + resp.statusText));
+            }
+            /* NDJSON: one record per table, flushed as each count lands. */
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            for (;;) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                buf += decoder.decode(chunk.value, { stream: true });
+                let nl;
+                while ((nl = buf.indexOf('\n')) >= 0) {
+                    const line = buf.slice(0, nl).trim();
+                    buf = buf.slice(nl + 1);
+                    if (!line) continue;
+                    let rec;
+                    try { rec = JSON.parse(line); } catch (e) { continue; }
+                    if (rec.done) continue;
+                    if (rec.error) { failed++; } else { done++; }
+                    applyRowCountRecord(rec, tables);
+                    setTblStatusText(statusEl, '统计中… ' + (done + failed) + '/' + tables.length);
+                }
+            }
+        } catch (e) {
+            if (e && e.name === 'AbortError') { cancelled = true; }
+            else { statusEl.textContent = '✗ 统计失败：' + ((e && e.message) || e); }
+        } finally {
+            rowCountAbort = null;
+            if (allBtn) allBtn.textContent = '全量统计';
+        }
+        if (cancelled) {
+            setTblStatusText(statusEl, '统计已停止（已完成 ' + (done + failed) + ' / ' + tables.length + '）');
+            return;
+        }
+        setTblStatusText(statusEl, failed
+            ? '统计完成：成功 ' + done + ' 张，失败 ' + failed + ' 张'
+            : '统计完成：' + done + ' 张表');
+    }
+
+    /* applyRowCountLine folds one NDJSON record into its row. */
+    function applyRowCountRecord(rec, tables) {
+        const key = ((rec.schema ? rec.schema + '.' : '') + rec.name).toLowerCase();
+        if (rec.error) {
+            setBadgeState(key, '统计失败', 'is-error', rec.error);
+            return;
+        }
+        const entry = tblCountEls.get(key);
+        if (entry) setRowCountBadge({ row_count: rec.rows, rows_exact: true }, entry.badge);
+        for (const r of [tables, tblRows]) {
+            const row = r.find(t => (t.schema || '') === (rec.schema || '') && t.name === rec.name);
+            if (row) { row.row_count = rec.rows; row.rows_exact = true; }
+        }
+    }
+
+    function setTblStatusText(el, text) {
+        /* Keep the "已同步到配置" feedback from applyTableSelection readable:
+           only replace the status when the picker owns it. */
+        if (el && el.isConnected) el.textContent = text;
+    }
+
     async function loadTables() {
         const statusEl = root.querySelector('#tbl-status');
         statusEl.textContent = '正在从源库抽取元数据…';
@@ -305,6 +483,9 @@ export function render(root /*Element*/, params) {
             await window.api.post('/api/v1/metadata/load', {});
             tblRows = await window.api.get('/api/v1/metadata/tables') || [];
             renderTablePicker();
+            /* The config that produced this list is the current one: refresh
+               the endpoint nodes and the topbar to match. */
+            await refreshEndpoints();
             if (window.refreshConfigBar) window.refreshConfigBar();
         } catch (e) {
             statusEl.textContent = '✗ 加载失败：' + ((e && e.message) || e);
@@ -313,9 +494,17 @@ export function render(root /*Element*/, params) {
 
     (async function initTables() {
         const statusEl = root.querySelector('#tbl-status');
+        /* The server reports whether the loaded tables still match the active
+           config (schema/DSN/source changed → metadata_stale). Stale tables
+           must never be shown as if they were the new source's. */
+        let stale = false;
+        try {
+            const st = await window.api.get('/api/v1/config/status');
+            stale = !!st.metadata_stale;
+        } catch (e) { /* best-effort: fall through and show what is loaded */ }
+
         try {
             tblRows = await window.api.get('/api/v1/metadata/tables') || [];
-            renderTablePicker();
         } catch (e) {
             statusEl.textContent = '元数据尚未加载。';
             const btn = document.createElement('button');
@@ -325,7 +514,14 @@ export function render(root /*Element*/, params) {
             btn.addEventListener('click', loadTables);
             statusEl.appendChild(btn);
             updateTblCount();
+            return;
         }
+        if (stale) {
+            statusEl.textContent = '配置已变更（源库 / Schema），正在按新配置重新抽取表列表…';
+            await loadTables();
+            return;
+        }
+        renderTablePicker();
     })();
 
     root.querySelector('#tbl-filter').addEventListener('input', () => {
@@ -345,6 +541,25 @@ export function render(root /*Element*/, params) {
         root.querySelectorAll('#tbl-list input[type="checkbox"]').forEach(cb => { cb.checked = false; });
         updateTblCount();
         scheduleTblApply();
+    });
+    /* 重新加载: re-extract the table list from the active config, whatever
+       changed behind it (schema, DSN, source). */
+    root.querySelector('#tbl-reload').addEventListener('click', () => {
+        if (rowCountAbort) rowCountAbort.abort();
+        loadTables();
+    });
+    /* 全量统计: count the visible tables in top-to-bottom order; a second click
+       stops the run (results already streamed stay). Matches 全选, which also
+       only covers what the filter left visible. */
+    root.querySelector('#tbl-count-all').addEventListener('click', () => {
+        if (rowCountAbort) { rowCountAbort.abort(); return; }
+        const list = [];
+        root.querySelectorAll('#tbl-list .tbl-item').forEach(item => {
+            if (item.style.display === 'none') return;
+            const entry = tblCountEls.get(item.dataset.key);
+            if (entry) list.push({ schema: entry.schema, name: entry.name });
+        });
+        countRows(list);
     });
 
     /* wire jobUI overrides for this view (after reset above) */
@@ -425,7 +640,7 @@ export function render(root /*Element*/, params) {
         } catch (e) { /* best-effort */ }
     };
 
-    function summaryRow(label, value) {
+    function summaryRow(label, value, title) {
         const row = document.createElement('div');
         row.className = 'confirm-row';
         const l = document.createElement('span');
@@ -434,6 +649,7 @@ export function render(root /*Element*/, params) {
         const v = document.createElement('span');
         v.className = 'confirm-value';
         v.textContent = value;
+        if (title) v.title = title;
         row.appendChild(l);
         row.appendChild(v);
         return row;
@@ -447,18 +663,29 @@ export function render(root /*Element*/, params) {
     }
 
     /* Show what will actually run — and warn about destructive settings —
-       before a click can start writing to the target. */
-    function openConfirm(cfg) {
+       before a click can start writing to the target. Endpoints are named by
+       their connection identity, not just the dialect: "确认" must not be the
+       step where you find out the target was another machine. */
+    function openConfirm(cfg, st) {
         const body = root.querySelector('#mig-confirm-body');
         body.innerHTML = '';
         const isSQL = mode === 'sql-out';
         const tables = (cfg.export && cfg.export.tables && cfg.export.tables.include) || [];
+        const src = (st && st.source) || null;
+        const tgt = (st && st.target) || null;
+        const describe = (info, type, schema, schemaFallback) => {
+            const label = (info && (info.label || info.type)) || type || '—';
+            const sch = (info && info.schema) || schema;
+            return { label, schema: sch || schemaFallback };
+        };
         body.appendChild(summaryRow('模式', isSQL ? 'SQL 输出（不连接目标库）' : '直接迁移'));
-        body.appendChild(summaryRow('源数据库', (cfg.source && cfg.source.type) || '—'));
-        body.appendChild(summaryRow('源 Schema', (cfg.source && cfg.source.schema) || '（未指定）'));
+        const s = describe(src, cfg.source && cfg.source.type, cfg.source && cfg.source.schema, '（未指定）');
+        body.appendChild(summaryRow('源数据库', s.label, endpointTitle(src)));
+        body.appendChild(summaryRow('源 Schema', s.schema));
         if (!isSQL) {
-            body.appendChild(summaryRow('目标数据库', (cfg.target && cfg.target.type) || '—'));
-            body.appendChild(summaryRow('目标 Schema', (cfg.target && cfg.target.schema) || '（与源相同）'));
+            const t = describe(tgt, cfg.target && cfg.target.type, cfg.target && cfg.target.schema, '（与源相同）');
+            body.appendChild(summaryRow('目标数据库', t.label, endpointTitle(tgt)));
+            body.appendChild(summaryRow('目标 Schema', t.schema));
         }
         body.appendChild(summaryRow('迁移的表', tables.length ? tables.join(', ') : '*'));
         if (!isSQL && !(cfg.target && cfg.target.type)) {
@@ -482,14 +709,17 @@ export function render(root /*Element*/, params) {
     }
 
     async function startMigrate() {
-        let cfg;
+        let cfg, st = null;
         try { cfg = await window.api.get('/api/v1/config'); }
         catch (e) { window.toast.err('读取配置失败', e && e.message || ''); return; }
         if (!cfg || !cfg.metadata || !cfg.metadata.type) {
             window.toast.warn('尚未配置', '请先在「配置」页选择场景并保存配置');
             return;
         }
-        openConfirm(cfg);
+        /* Endpoint identities come from the status endpoint (the config payload
+           only carries masked DSNs), so the confirmation names the machines. */
+        try { st = await window.api.get('/api/v1/config/status'); } catch (e) { /* optional */ }
+        openConfirm(cfg, st);
     }
 
     let starting = false;

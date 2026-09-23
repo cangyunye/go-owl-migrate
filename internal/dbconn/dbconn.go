@@ -99,7 +99,7 @@ func Open(cfg config.DBConfig) (*sql.DB, error) {
 		}
 	}
 
-	if !driverLinked(driver) {
+	if !DriverLinked(driver) {
 		if tag, ok := driverBuildTag[driver]; ok {
 			return nil, fmt.Errorf("database/sql driver %q is not compiled into this binary (type %q); rebuild with -tags %s", driver, name, tag)
 		}
@@ -246,18 +246,63 @@ func ParseDuration(s string, fallback time.Duration) (time.Duration, error) {
 	return time.ParseDuration(s)
 }
 
-// driverBuildTag maps database/sql driver names that are linked only when the
-// matching build tag is set (see driver_ob.go / driver_og.go).
-var driverBuildTag = map[string]string{
-	"oboracle":  "ob",
-	"opengauss": "og",
-	"sqlite3":   "sqlite3",
-	"duckdb":    "duckdb",
+// buildTagDriver names a database/sql driver that is linked into the binary
+// only when its build tag is set (see driver_ob.go / driver_og.go).
+type buildTagDriver struct {
+	driver string // database/sql driver name
+	tag    string // build tag that links it
 }
 
-// driverLinked reports whether the named database/sql driver is registered in
-// this binary.
-func driverLinked(driver string) bool {
+// optionalDrivers lists the build-tag-gated drivers in display order. The
+// lookup map below is derived from it so the two cannot drift apart.
+var optionalDrivers = []buildTagDriver{
+	{driver: "opengauss", tag: "og"},
+	{driver: "oboracle", tag: "ob"},
+	{driver: "sqlite3", tag: "sqlite3"},
+	{driver: "duckdb", tag: "duckdb"},
+}
+
+// baseDrivers are the drivers of the always-compiled dialects; they register
+// from blank imports in the command packages.
+var baseDrivers = []string{"postgres", "mysql", "oracle"}
+
+// driverBuildTag maps database/sql driver names to the build tag that links them.
+var driverBuildTag = func() map[string]string {
+	m := make(map[string]string, len(optionalDrivers))
+	for _, d := range optionalDrivers {
+		m[d.driver] = d.tag
+	}
+	return m
+}()
+
+// DriverStatus reports one database/sql driver this tool can select, and
+// whether this binary links it.
+type DriverStatus struct {
+	Driver string
+	Tag    string // build tag that links it; empty when always compiled in
+	Linked bool
+}
+
+// DriverReport lists every driver Open can select, in display order, with its
+// linkage state. Drivers registered by dependencies but never selected by this
+// tool are omitted — connection aliases such as "mogdb"/"oceanbase", and the
+// "sqlite" driver of the pure-Go modernc.org/sqlite that arrives transitively —
+// so the report answers "which databases can this binary reach?".
+func DriverReport() []DriverStatus {
+	out := make([]DriverStatus, 0, len(baseDrivers)+len(optionalDrivers))
+	for _, d := range baseDrivers {
+		out = append(out, DriverStatus{Driver: d, Linked: DriverLinked(d)})
+	}
+	for _, d := range optionalDrivers {
+		out = append(out, DriverStatus{Driver: d.driver, Tag: d.tag, Linked: DriverLinked(d.driver)})
+	}
+	return out
+}
+
+// DriverLinked reports whether the named database/sql driver is registered in
+// this binary. A false result is what an Open call rejects with a
+// "rebuild with -tags X" error, and what `owl-migrate version` reports.
+func DriverLinked(driver string) bool {
 	for _, d := range sql.Drivers() {
 		if d == driver {
 			return true

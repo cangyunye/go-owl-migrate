@@ -19,9 +19,10 @@ func showQueryCmd() *cobra.Command {
 
 Dialect is required. Supported dialects:
 
-  Oracle-based:     oracle, goldendb-oracle, oceanbase-oracle, panweidb-oracle
-  PostgreSQL-based: postgres, panweidb, opengaussdb
-  MySQL-based:      mysql, goldendb-mysql, oceanbase-mysql, panweidb-mysql
+  Oracle-based:     oracle, goldendb-oracle, oceanbase-oracle
+  PostgreSQL-based: postgres, panweidb, panweidb-mysql, panweidb-oracle,
+                    opengaussdb, opengaussdb-mysql, opengaussdb-oracle
+  MySQL-based:      mysql, goldendb-mysql, oceanbase-mysql
   Short aliases:    goldendb, oceanbase
 
 Object type is optional. If omitted, all queries for the dialect are shown.
