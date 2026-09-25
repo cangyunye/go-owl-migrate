@@ -26,7 +26,7 @@ var FallbackHook func(dbType, reason string)
 
 // resolveChannel decides which channel serves cfg under the native-first
 // policy. linked reports whether a database/sql driver name is compiled into
-// this binary (pass driverLinked from production code). "auto" falls back to
+// this binary (pass DriverLinked from production code). "auto" falls back to
 // the agent channel only when the native driver is unavailable — unknown type
 // or not compiled in — and the owljdbc catalog covers the type; connection
 // errors never trigger fallback (stage-2 plan §2.3).
@@ -98,7 +98,7 @@ func buildAgentConfig(cfg config.DBConfig) (owljdbc.Config, error) {
 // ResolveChannel 是 resolveChannel 的导出入口（内部按已链接驱动判定），
 // 供 cmd 层在构造 SQL 占位符等决策时复用同一份通道结论。
 func ResolveChannel(cfg config.DBConfig) (string, error) {
-	return resolveChannel(cfg, driverLinked)
+	return resolveChannel(cfg, DriverLinked)
 }
 
 // openAgentChannel opens a *sql.DB through the owljdbc driver. The sidecar
