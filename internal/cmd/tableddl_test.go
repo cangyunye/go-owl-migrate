@@ -265,3 +265,34 @@ func TestTableExists_OracleWireQmark(t *testing.T) {
 		t.Errorf("expectations: %v", err)
 	}
 }
+
+func TestPlaceholderFamilyForAgentChannel(t *testing.T) {
+	channelFlag = "" // 隔离 flag 副作用
+	defer func() { channelFlag = "" }()
+
+	cases := []struct {
+		name string
+		cfg  config.DBConfig
+		want string
+	}{
+		{"agent + postgres → qmark", config.DBConfig{Type: "postgres", Channel: "agent"}, "qmark"},
+		{"agent + opengaussdb → qmark", config.DBConfig{Type: "opengaussdb", Channel: "agent"}, "qmark"},
+		{"agent + mysql → auto", config.DBConfig{Type: "mysql", Channel: "agent"}, ""},
+		{"agent + oracle → auto", config.DBConfig{Type: "oracle", Channel: "agent"}, ""},
+		{"native postgres → auto($N)", config.DBConfig{Type: "postgres"}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := placeholderFamilyFor(tc.cfg); got != tc.want {
+				t.Fatalf("placeholderFamilyFor = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	// flag 覆盖 yaml：--channel agent 时 yaml 未写 channel 的 PG 也强制 qmark。
+	channelFlag = "agent"
+	defer func() { channelFlag = "" }()
+	if got := placeholderFamilyFor(config.DBConfig{Type: "postgres"}); got != "qmark" {
+		t.Fatalf("flag override: got %q, want qmark", got)
+	}
+}

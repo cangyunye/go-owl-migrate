@@ -124,6 +124,7 @@ build/all: build build/linux build/windows
 
 test:
 	$(GO) test -v ./...
+	cd owljdbc && $(GO) test -v ./...   # owljdbc 嵌套模块（agent 通道）
 
 # Run tests including optional dialects (SQLite3 + DuckDB)
 test/full:
@@ -140,6 +141,7 @@ test/e2e:
 
 test-quick:
 	$(GO) test ./...
+	cd owljdbc && $(GO) test ./...
 
 fmt:
 	$(GO) fmt ./...

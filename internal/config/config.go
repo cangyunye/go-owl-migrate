@@ -137,21 +137,21 @@ func (t TableListConfig) isZero() bool { return len(t.Include) == 0 }
 
 // ValidDialects lists supported target dialects.
 var ValidDialects = map[string]bool{
-	"oracle":           true,
-	"postgres":         true,
-	"mysql":            true,
-	"sqlite3":          true,
-	"duckdb":           true,
-	"goldendb":         true,
-	"goldendb-mysql":   true,
-	"goldendb-oracle":  true,
-	"oceanbase":        true,
-	"oceanbase-mysql":  true,
-	"oceanbase-oracle": true,
-	"panweidb":         true,
-	"panweidb-mysql":   true,
-	"panweidb-oracle":  true,
-	"opengaussdb":      true,
+	"oracle":             true,
+	"postgres":           true,
+	"mysql":              true,
+	"sqlite3":            true,
+	"duckdb":             true,
+	"goldendb":           true,
+	"goldendb-mysql":     true,
+	"goldendb-oracle":    true,
+	"oceanbase":          true,
+	"oceanbase-mysql":    true,
+	"oceanbase-oracle":   true,
+	"panweidb":           true,
+	"panweidb-mysql":     true,
+	"panweidb-oracle":    true,
+	"opengaussdb":        true,
 	"opengaussdb-oracle": true,
 	"opengaussdb-mysql":  true,
 }
@@ -189,6 +189,10 @@ type Config struct {
 	Import     ImportConfig    `yaml:"import"`
 	Online     OnlineConfig    `yaml:"online"`
 	Extensions map[string]any  `yaml:"extensions"`
+
+	// Agent holds global owljdbc channel defaults (jars discovery, JVM) that
+	// apply to source/target connections unless overridden per connection.
+	Agent AgentConfig `yaml:"agent,omitempty"`
 
 	// ForceAllSections when true causes MarshalYAML to emit ALL sections
 	// even if they are zero-valued. Used by the "full" init scenario.
@@ -235,6 +239,17 @@ type DBConfig struct {
 	QueryTimeout   string     `yaml:"query_timeout,omitempty"`
 	Pool           PoolConfig `yaml:"pool,omitempty"`
 
+	// Channel selects the database/sql channel used by dbconn.Open.
+	// "" / "native" (default) keeps the native driver path and never starts
+	// the agent JVM; "agent" forces the owljdbc channel; "auto" uses native
+	// when available and falls back to owljdbc only when the native driver is
+	// absent or not compiled into this binary.
+	Channel string `yaml:"channel,omitempty"`
+
+	// Agent holds owljdbc channel settings; only read when the agent channel
+	// is selected. Empty paths resolve against the working directory.
+	Agent AgentConfig `yaml:"agent,omitempty"`
+
 	// Adapter references an external target adapter plugin YAML (mode
 	// native/client/file-batch) used by online incremental migration when the
 	// target has no built-in Go driver.
@@ -244,6 +259,18 @@ type DBConfig struct {
 	// ("mysql" or "oracle"). When empty it is auto-detected from the live
 	// connection and a mismatch raises an error.
 	CompatMode string `yaml:"compat_mode,omitempty"`
+}
+
+// AgentConfig holds owljdbc agent-channel connection settings.
+type AgentConfig struct {
+	// JarsDir is the directory searched for the owl-agent jar and per-type
+	// JDBC driver jars. When empty the working directory is searched.
+	JarsDir string `yaml:"jars_dir,omitempty"`
+	// AgentJar is the path to owl-agent.jar. When empty, "owl-agent.jar" is
+	// looked up in JarsDir then the working directory.
+	AgentJar string `yaml:"agent_jar,omitempty"`
+	// JavaHome selects the java executable directory; empty uses java from PATH.
+	JavaHome string `yaml:"java_home,omitempty"`
 }
 
 // PoolConfig holds connection pool tuning parameters.
@@ -486,6 +513,19 @@ func (c *Config) applyDefaults() {
 	}
 	if c.General.LogFormat == "" {
 		c.General.LogFormat = "text"
+	}
+	// Global agent defaults flow into per-connection settings so dbconn.Open
+	// (which only sees a DBConfig) resolves jars/JVM without root context.
+	for _, db := range []*DBConfig{&c.Source, &c.Target} {
+		if db.Agent.JarsDir == "" {
+			db.Agent.JarsDir = c.Agent.JarsDir
+		}
+		if db.Agent.AgentJar == "" {
+			db.Agent.AgentJar = c.Agent.AgentJar
+		}
+		if db.Agent.JavaHome == "" {
+			db.Agent.JavaHome = c.Agent.JavaHome
+		}
 	}
 	if c.Metadata.CSV.Delimiter == "" {
 		c.Metadata.CSV.Delimiter = ","
