@@ -225,3 +225,37 @@ ls /tmp/e2e/opengaussdb/*.sql
 - OB Oracle 目标建表为引号小写 `"dept"`；目标 schema 若有历史大写表（`DEPT`）需先清理再迁移，
   否则 `tableExists` 判存在跳过建表、导入按小写引用失败。
 - OB Oracle 空串即 NULL（Oracle 语义）：源空串迁入后为 NULL（符合预期）。
+
+---
+
+## 回归实测（2026-09-25，远程 openGauss 6.x 三兼容库）
+
+验证 `72325d7`（openGauss/PanWeiDB 按 PG 线协议路由元数据提取器）与 `742e601`
+（PG 系源补 `pg_class.reltuples` 行数估算）两项修复未回归。实例：`172.20.214.44:6432`，
+用户 `ogadmin`，库 `og_pg`（PG）/ `og_ora`（A）/ `og_mysql`（B，dolphin），schema `src`（dept 4 + emp 8 + special 6）。
+
+| 项 | og_pg | og_ora | og_mysql |
+|----|-------|--------|----------|
+| validate / 连接 | ✅ | ✅ | ✅ |
+| export-metadata（13 文件） | ✅ | ✅ | ✅ |
+| 外键抽取（`fk_emp_dept`） | ✅ | ✅ | ✅ |
+| export ddl | ✅ | ✅ | ✅ |
+| migrate src→tgt | ✅ 18/18 | ✅ 18/18 | ✅ 18/18 |
+
+- **路由修复**：三模式 `export-metadata` 全部走 PG 查询器（`$N`），无 `pq 语法错误在"AND"处`。
+- **行数修复**：`ANALYZE` 前 `emp.reltuples=0`，`ANALYZE` 后三模式 `RowCount=8`；
+  serve `POST /api/v1/metadata/load` 返回同一 `row_count` 字段。
+- **特殊字符保真**：引号 / `#@!%` / 逗号 / 分号 / 反斜杠 / 换行 / 制表符 / emoji 全部无损；
+  首尾与连续换行（id 4–6）在 `import.data_transforms.trim_strings: false` 下完整保留。
+- **已知限制（文档既有）**：字面 `"NULL"` 被 `null_if` 转 NULL、字面 `"\N"` 与空值标记冲突。
+- **配置注意**：`trim_strings: true` 会剥掉首尾换行/空白，追求字节级保真时须置 `false`。
+
+### 既有行为观察（非本次回归）
+
+- A 模式内核把 `DATE` 上报为 `timestamp without time zone`，Oracle 方言将命名空间/标识符大写
+  （`CREATE TABLE "TGT"."EMP"`），迁移与导入仍正确。
+- B 模式 dolphin 把 `DECIMAL` 上报为 `number(9,2)`，目标为 openGauss B 模式时可直接接受；
+  迁往标准 PG/MySQL 目标仍需 `ddl.type_overrides` 兜底（见上文）。
+- 单测 `extractor / dbconn / registry / opengaussdb / panweidb` 全绿；`go test ./...` 在 Windows 下
+  的若干失败（cdc、paths、dscrypto、serve offline export、master kill 等）已在合并前基线
+  `bca2508` 复现，属环境问题，与本次修复无关。

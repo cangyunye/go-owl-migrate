@@ -15,7 +15,7 @@ import (
 var (
 	cfgFile   string
 	logLevel  string
-	version   = "0.4.0"
+	version   = "0.5.1"
 	commitID  = "unknown"
 	buildTime = "unknown"
 
