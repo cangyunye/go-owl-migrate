@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/text/encoding"
 
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
@@ -172,13 +173,36 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 	}
 	defer f.Close()
 
+	// Non-UTF-8 CSV encoding (e.g. GBK) must apply to the paged live-export
+	// path too, not just the offline ExportWriter path: transcode every line
+	// from the in-process UTF-8 invariant to the configured file encoding.
+	var fileEnc *encoding.Encoder
+	if enc := encodingByName(e.cfg.CSVEncoding); enc != nil {
+		fileEnc = enc.NewEncoder()
+	}
+	writeCSVLine := func(line string) error {
+		if fileEnc == nil {
+			_, err := f.WriteString(line)
+			return err
+		}
+		b, err := fileEnc.Bytes([]byte(line))
+		if err != nil {
+			return fmt.Errorf("encode csv line: %w", err)
+		}
+		_, err = f.Write(b)
+		return err
+	}
+
 	// Write CSV header
 	if e.cfg.CSVHeader {
 		header := make([]string, len(columns))
 		for i, col := range columns {
 			header[i] = col.Name
 		}
-		f.WriteString(e.csvLine(header))
+		if err := writeCSVLine(e.csvLine(header)); err != nil {
+			result.Error = fmt.Errorf("write header: %w", err)
+			return result
+		}
 	}
 
 	// Batch read using cursor-based pagination
@@ -211,7 +235,10 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 
 		for _, row := range rows {
 			line := e.rowToCSV(row, columns)
-			f.WriteString(line)
+			if err := writeCSVLine(line); err != nil {
+				result.Error = fmt.Errorf("write row: %w", err)
+				return result
+			}
 		}
 
 		totalRows += int64(len(rows))

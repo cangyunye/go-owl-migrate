@@ -1,0 +1,28 @@
+# migrate · MySQL(owl_accept) → PostgreSQL(owl_accept_tgt)
+general:
+  log_level: info
+metadata:
+  type: database
+ddl:
+  target_dialect: postgres
+  schema_mapping:
+    owl_accept: public
+agent:
+  jars_dir: "."
+  agent_jar: "owljdbc/jvm/owl-agent/owl-agent.jar"
+source:
+  type: mysql
+  dsn: "__DSN__owl_accept"
+  schema: "owl_accept"
+target:
+  type: postgres
+  dsn: "__PG_DSN__"
+import:
+  csv:
+    delimiter: ","
+    null_marker: "\\N"
+  target:
+    truncate_before: true
+  batch:
+    commit_interval: 100
+    error_policy: stop

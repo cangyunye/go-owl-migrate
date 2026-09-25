@@ -1,0 +1,26 @@
+# openGauss 源 · 验收配置
+# native 通道需 -tags og 构建的二进制；agent 通道无需 tag。
+general:
+  log_level: info
+metadata:
+  type: database
+ddl:
+  target_dialect: postgres
+agent:
+  jars_dir: "../../jdbcdrivers/openGauss-JDBC-6.0.6"
+  agent_jar: "owljdbc/jvm/owl-agent/owl-agent.jar"
+source:
+  type: opengaussdb
+  dsn: "__OG_DSN__"
+  schema: "public"
+export:
+  format: csv
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    header: true
+    null_representation: "\\N"
+  batch:
+    page_size: 500
+  tables:
+    include: ["*"]

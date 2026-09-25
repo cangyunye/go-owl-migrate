@@ -1,0 +1,25 @@
+# PostgreSQL 源 · 验收配置
+general:
+  log_level: info
+metadata:
+  type: database
+ddl:
+  target_dialect: mysql
+agent:
+  jars_dir: "."
+  agent_jar: "owljdbc/jvm/owl-agent/owl-agent.jar"
+source:
+  type: postgres
+  dsn: "__PG_DSN__"
+  schema: "public"
+export:
+  format: csv
+  csv:
+    delimiter: ","
+    quote_char: "\""
+    header: true
+    null_representation: "\\N"
+  batch:
+    page_size: 500
+  tables:
+    include: ["*"]
