@@ -6,7 +6,7 @@ import (
 
 func TestOnlineConfig_Defaults(t *testing.T) {
 	var cfg Config
-	cfg.applyDefaults()
+	cfg.ApplyDefaults()
 	o := cfg.Online
 	if o.CDC.ChangelogPrefix != "owl_chg_" {
 		t.Errorf("ChangelogPrefix = %q, want owl_chg_", o.CDC.ChangelogPrefix)
@@ -44,7 +44,7 @@ func TestOnlineConfig_Validate(t *testing.T) {
 			DDL:      DDLConfig{TargetDialect: "postgres"},
 			Online:   o,
 		}
-		c.applyDefaults()
+		c.ApplyDefaults()
 		return c
 	}
 	tests := []struct {
@@ -59,7 +59,7 @@ func TestOnlineConfig_Validate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.cfg.applyDefaults()
+			tt.cfg.ApplyDefaults()
 			err := tt.cfg.validate()
 			if tt.wantErr == "" {
 				if err != nil {
@@ -79,7 +79,7 @@ func TestOnlineConfig_Validate(t *testing.T) {
 
 func TestOnlineConfig_ArchiveIsEnabledByDefault(t *testing.T) {
 	var cfg Config
-	cfg.applyDefaults()
+	cfg.ApplyDefaults()
 	if !cfg.Online.Archive.Enabled {
 		t.Error("online.archive.enabled should default to true")
 	}

@@ -60,7 +60,8 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/jobs/{id}/checkpoints | Returns the job's savepoint/checkpoint list. |
 | GET /api/v1/jobs/{id}/output | Reports a sql-out job's INSERT SQL output directory, file list, and sizes. |
 | GET /api/v1/jobs/{id}/output/download | Streams a completed job's SQL output as `tar.gz` (default), `zip`, or `raw` (`?format=`). 409 unless the job is `completed`. |
-| GET /api/v1/dialects | Returns the sorted list of valid dialect names. |
+| GET /api/v1/dialects | Returns the sorted list of valid dialect names. **静态全量表**——不反映当前二进制/部署的实际可用性；按部署事实做 UI 置灰请用 `/api/v1/capabilities`。 |
+| GET /api/v1/capabilities | 当前部署的能力事实：`java`（JRE 是否可用）、`agent_jar`（owl-agent.jar 是否可解析，缺失时的下载 URL 与指引）、`types`（每个数据库类型 `{type, native, native_tag, agent, jar_path}`——native 驱动是否已编译、agent catalog 是否覆盖、驱动 jar 是否在 jars_dir 里）。纯探测，无下载、无连接。 |
 | GET /api/v1/config | Returns the active config as JSON map; DSN passwords of `source`/`target` are masked. |
 | PUT /api/v1/config | Replaces the active config from a JSON object and persists it. |
 | GET /api/v1/config/download | Downloads the active config as `migrate.yaml` (re-serialized YAML, unmasked). |

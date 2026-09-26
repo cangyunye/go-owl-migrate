@@ -227,6 +227,7 @@ func (s *Server) activateConfig(data []byte) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return
 	}
+	cfg.ApplyDefaults() // 全局 agent 段折叠到单连接
 	s.mu.Lock()
 	s.cfg = &cfg
 	path := s.configPath

@@ -126,6 +126,9 @@ func (s *Server) handleUploadConfigLegacy(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "invalid YAML: "+err.Error())
 		return
 	}
+	// 与 config.Load 同一折叠：全局 agent 段落到 source/target 单连接配置，
+	// worker 子进程经 configToMap 往返后仍能解析 jar 路径。
+	cfg.ApplyDefaults()
 
 	s.mu.Lock()
 	s.cfg = &cfg

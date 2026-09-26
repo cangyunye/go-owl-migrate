@@ -7,6 +7,11 @@ Version: `0.4.0`
 ```
 -c, --config string   Config file path (default "./migrate.yaml")
     --log-level       Override log level (debug/info/warn/error)
+    --channel         数据库连接通道: native(默认) | agent | auto。auto = 有 native
+                      驱动走 native、没有则自动走 owljdbc agent（JVM sidecar）
+    --jars-dir        owl-agent.jar 与驱动 jar 的检索目录（agent 通道；flag 优先于
+                      yaml agent.jars_dir。owl-agent.jar 缺失时首次连接自动从
+                      owljdbc release 下载，离线环境按报错指引手动放置）
 ```
 
 ## owl-migrate init

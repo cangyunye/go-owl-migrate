@@ -59,6 +59,12 @@ java -version                    # JRE 8+ 即可
 `--jars-dir`（flag）**覆盖** `agent.jars_dir`（yaml）；两者都缺省时搜索当前工作目录。
 `agent.agent_jar` 可显式给 owl-agent.jar 路径（显式路径直接校验存在）。
 
+**owl-agent.jar 免自备（2026-09-26 起）**：缺失时首次 agent 连接会自动从
+[owljdbc release](https://github.com/cangyunye/owljdbc/releases/download/v0.1.0/owl-agent.jar)
+下载（3 次重试）落到 jars 目录；无网络环境会打印手动下载指引，可用
+`OWLJDBC_AGENT_JAR_URL` 指向内网镜像。驱动 jar 仍需自备或用 fetch-jars.sh。
+serve 端行为一致：任务启动预检 + `GET /api/v1/capabilities` 可查询就绪状态。
+
 ---
 
 ## 2. 测试场景与步骤

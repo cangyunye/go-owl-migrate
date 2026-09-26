@@ -56,10 +56,21 @@ metadata:
     path: ./metadata/schema.xlsx             # required when type=xlsx
     data_output_dir: ./output/data/          # @sheet data CSV output
 
+agent:                                      # 全局 agent 通道默认（source/target 未单独配置时生效）
+  jars_dir: ""                              # owl-agent.jar 与驱动 jar 的检索目录（留空 = 当前目录）
+  agent_jar: ""                             # owl-agent.jar 显式路径（可选；缺失时首次 agent 连接自动下载）
+  java_home: ""                             # JRE 路径（留空 = 用 PATH 里的 java）
+  # jar 自动下载源可用环境变量 OWLJDBC_AGENT_JAR_URL 覆盖（内网镜像）。
+
 source:
   type: postgres                            # postgres | mysql | oracle | goldendb | oceanbase | panweidb | opengaussdb
   dsn: "host=127.0.0.1 port=5432 dbname=mydb user=u password=p sslmode=disable"
   schema: public
+  channel: ""                               # 连接通道: native(默认) | agent | auto（见「连接通道」一节）
+  agent:                                    # 仅本连接覆盖全局 agent 段（可选）
+    jars_dir: ""
+    agent_jar: ""
+    java_home: ""
   compat_mode: ""                           # OceanBase 租户兼容模式: "mysql" | "oracle" (留空=连接后自动探测)
   connect_timeout: "30s"                    # Connection/ping timeout (e.g. 10s, 1m)
   query_timeout: ""                         # Overall operation timeout (e.g. 30m, 1h; empty = no limit)
@@ -72,6 +83,8 @@ source:
 target:
   type: mysql
   dsn: "root:pass@tcp(127.0.0.1:3306)/mydb"
+  channel: ""                               # 同 source.channel
+  agent: ""                                 # 同 source.agent（本连接覆盖）
   compat_mode: ""                           # OceanBase 租户兼容模式 (同 source)
   pool:                                     # Same pool options available for target
     max_open_conns: 10
@@ -258,6 +271,29 @@ Requires:
 - **OceanBase Oracle 租户**：驱动路径由 DSN 前缀决定——`oracle://...` 走 go-ora 的 TNS 协议（连 OBProxy Oracle 监听端口，通常 2883）；其余前缀（如 `oceanbase-oracle://`、`oboracle://` 或 MySQL 风格）走 `obconnector-go` 的 MySQL 线协议（直连 2881）。
   `source.compat_mode` / `target.compat_mode` 声明租户兼容模式（`mysql` 或 `oracle`），留空时连接后自动探测
   （`SHOW VARIABLES LIKE 'ob_compatibility_mode'`），配置与实际不符会直接报错；`type=oceanbase`（MySQL 模式）连到 Oracle 租户也会报错，需改用 `oceanbase-oracle`。
+
+## 连接通道（native / agent / auto）
+
+`source.channel` / `target.channel`（或 CLI `--channel`，flag 优先）选择数据库连接通道：
+
+| 取值 | 行为 |
+|---|---|
+| 留空 / `native` | **永远 native**（原生 Go 驱动），与旧版行为完全一致，JVM 进程数为 0 |
+| `auto` | native 驱动已编译 → native（连接失败报错不回退）；驱动未编译或该类型无 native 驱动 → 自动走 owljdbc agent |
+| `agent` | 强制走 owljdbc agent（JVM sidecar + JDBC 驱动） |
+
+**Agent 通道需要两样东西**（放到 `agent.jars_dir`，默认当前工作目录）：
+
+1. `owl-agent.jar`（JVM sidecar）——**缺失时首次 agent 连接自动从
+   [owljdbc release](https://github.com/cangyunye/owljdbc/releases) 下载**（3 次重试）；
+   无网络环境会打印手动下载指引，也可用 `OWLJDBC_AGENT_JAR_URL` 指向内网镜像。
+2. 目标数据库的 JDBC 驱动 jar（如 `ojdbc8.jar`、`mysql-connector-j-*.jar`、
+   `opengauss-jdbc-*.jar`、`oceanbase-client-*.jar`）——自备或
+   `bash owljdbc/scripts/fetch-jars.sh` 下载常用三个。
+
+`dm` / `kingbase` / `timesten` 等没有 Go 原生驱动的数据库**只能走 agent 通道**
+（`auto` 会自动落到 agent）；`sqlite3` / `duckdb` 无 JDBC 等价物，不参与回退。
+serve 端 `GET /api/v1/capabilities` 可查询当前部署对每个类型的实际可用性。
 
 ## Table Filtering
 

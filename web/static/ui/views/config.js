@@ -791,10 +791,13 @@ export async function render(root /*Element*/, params) {
         if (!dsn) { setStatus('请先填写 DSN', 'fail'); return; }
         setStatus('连接中…', 'pending');
         try {
+            const chName = side === 'source' ? 'source_channel' : 'target_channel';
+            const chInput = formEl.querySelector(`[name="${chName}"]`);
             const resp = await window.api.post('/api/v1/conn/test', {
                 type: typeInput ? typeInput.value : '',
                 dsn,
                 schema: schemaInput ? schemaInput.value : '',
+                channel: chInput ? chInput.value : '',
             });
             if (resp.error) {
                 setStatus('✗ ' + resp.error, 'fail');

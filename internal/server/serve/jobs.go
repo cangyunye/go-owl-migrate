@@ -5,7 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/cangyunye/owljdbc"
+
+	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 )
 
 var masterClient = &http.Client{Timeout: 10 * time.Second}
@@ -34,6 +40,31 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request, jobType string
 	}
 	if !decodeJSON(w, r, &body, maxBodyBytes) {
 		return
+	}
+
+	// agent 通道预检：解析每侧通道；选中 agent 时先备好 sidecar jar（缺失会
+	// 自动下载）并确认驱动 jar 可解析——让配置错误在启动时失败，而不是任务
+	// 跑到连接阶段。
+	s.mu.RLock()
+	sides := []config.DBConfig{s.cfg.Source, s.cfg.Target}
+	s.mu.RUnlock()
+	for _, side := range sides {
+		ch, err := dbconn.ResolveChannel(side)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if ch != dbconn.ChannelAgent {
+			continue
+		}
+		if _, err := owljdbc.EnsureAgentJar(owljdbc.JarSearchDirs(side.Agent.JarsDir), side.Agent.AgentJar); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if _, ok := owljdbc.FindProfileJars(dbconn.AgentProfileType(strings.ToLower(strings.TrimSpace(side.Type))), owljdbc.JarSearchDirs(side.Agent.JarsDir)); !ok {
+			writeError(w, http.StatusBadRequest, "agent 通道缺少 "+side.Type+" 的 JDBC 驱动 jar（jars_dir="+side.Agent.JarsDir+"），请下载放入或调整 agent.jars_dir")
+			return
+		}
 	}
 
 	payload := map[string]any{
