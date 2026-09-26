@@ -246,6 +246,33 @@ func TestTableExists_NotFound(t *testing.T) {
 	}
 }
 
+func TestTableExists_BModeFoldsCase(t *testing.T) {
+	// B 模式（dolphin）落库标识符一律小写：存在性检查必须用折叠后的
+	// 小写参数做精确匹配，否则误判不存在、重建再撞 already-exists。
+	for _, dbType := range []string{"opengaussdb-mysql", "panweidb-mysql"} {
+		t.Run(dbType, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("sqlmock: %v", err)
+			}
+			defer db.Close()
+			mock.ExpectQuery(regexp.QuoteMeta("information_schema")).
+				WithArgs("owlmig", "owl_parity").
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+			got, err := tableExists(context.Background(), db, dbType, "owlmig", "OWL_PARITY", false)
+			if err != nil {
+				t.Fatalf("tableExists: %v", err)
+			}
+			if !got {
+				t.Errorf("tableExists = false, want true")
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("expectations: %v", err)
+			}
+		})
+	}
+}
+
 func TestTableExists_OracleWireQmark(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

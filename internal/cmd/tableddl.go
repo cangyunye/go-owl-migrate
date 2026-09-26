@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -37,6 +39,12 @@ func placeholderFamilyFor(cfg config.DBConfig) string {
 // tableExists reports whether the target table already exists. wireQmark
 // selects "?" binds for Oracle-family targets reached over the MySQL wire.
 func tableExists(ctx context.Context, db *sql.DB, dbType, schema, table string, wireQmark bool) (bool, error) {
+	if registry.IsBCompatMySQL(dbType) {
+		// B 模式落库标识符一律折叠为小写（registry.IsBCompatMySQL），
+		// 精确匹配前先折叠，避免误判不存在后重建再撞 already-exists。
+		schema = strings.ToLower(strings.TrimSpace(schema))
+		table = strings.ToLower(strings.TrimSpace(table))
+	}
 	var query string
 	var args []any
 	switch targetTypeFamily(dbType) {

@@ -70,6 +70,21 @@ func Normalize(name string) string {
 	}
 }
 
+// IsBCompatMySQL reports dolphin-style MySQL-compat targets (openGauss B mode,
+// PanWeiDB B mode). These servers fold even backtick-quoted identifiers to
+// lowercase — only double-quoted ones keep their case — so the DDL path
+// (MySQL builder's backticks) always lands lowercase. Identifier references
+// from the data paths (INSERT column lists, existence checks) must use bare
+// lowercase names to agree with it; double quotes would preserve case and
+// miss every table.
+func IsBCompatMySQL(dbType string) bool {
+	switch strings.ToLower(strings.TrimSpace(dbType)) {
+	case "opengaussdb-mysql", "panweidb-mysql":
+		return true
+	}
+	return false
+}
+
 // dialectTag maps a dialect name to the build tag that provides it. Used to
 // make "unknown dialect" errors actionable when a product was not compiled in.
 var dialectTag = map[string]string{

@@ -20,6 +20,7 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
 // Config holds importer configuration.
@@ -1266,6 +1267,11 @@ func (imp *Importer) isBinaryColumn(tbl *md.TableDef, columnName string) bool {
 func (imp *Importer) quoteIdent(name string) string {
 	if imp.cfg.NoQuoteIdentifiers {
 		return name
+	}
+	if registry.IsBCompatMySQL(imp.cfg.TargetDBType) {
+		// dolphin(B 模式)把 DDL 路径的标识符全部折叠为小写（见
+		// registry.IsBCompatMySQL）；数据路径用裸小写名与之一致。
+		return strings.ToLower(name)
 	}
 	if imp.isMySQL() {
 		return "`" + strings.ReplaceAll(name, "`", "``") + "`"
