@@ -207,6 +207,10 @@ func TestUnit_QuoteIdent(t *testing.T) {
 		{"oracle double quote", Config{TargetDBType: "oracle"}, "emp", `"emp"`},
 		{"no quote", Config{TargetDBType: "mysql", NoQuoteIdentifiers: true}, "emp", "emp"},
 		{"mysql escape backtick", Config{TargetDBType: "mysql"}, "a`b", "`a``b`"},
+		{"og b-mode folds lowercase", Config{TargetDBType: "opengaussdb-mysql"}, "OWL_PARITY", "owl_parity"},
+		{"og b-mode folds schema too", Config{TargetDBType: "opengaussdb-mysql"}, "OWLmig", "owlmig"},
+		{"panwei b-mode folds lowercase", Config{TargetDBType: "panweidb-mysql"}, "ID", "id"},
+		{"og b-mode no-quote wins", Config{TargetDBType: "opengaussdb-mysql", NoQuoteIdentifiers: true}, "ID", "ID"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

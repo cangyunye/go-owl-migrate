@@ -71,3 +71,20 @@ func TestRegisterDuplicatePanics(t *testing.T) {
 	}()
 	Register("oracle", dialect.Dialect{})
 }
+
+func TestIsBCompatMySQL(t *testing.T) {
+	cases := map[string]bool{
+		"opengaussdb-mysql": true,
+		"panweidb-mysql":    true,
+		"OGDB-mysql":        false, // goldendb 走 MySQL 线程协议，非 dolphin 折叠
+		"mysql":             false,
+		"opengaussdb":       false,
+		"opengaussdb-ora":   false,
+		"":                  false,
+	}
+	for dbType, want := range cases {
+		if got := IsBCompatMySQL(dbType); got != want {
+			t.Errorf("IsBCompatMySQL(%q) = %v, want %v", dbType, got, want)
+		}
+	}
+}
