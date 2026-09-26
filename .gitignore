@@ -89,3 +89,9 @@ docs/archify/
 # 厂商参考文档 / 手册（仅本地查阅，不入库）
 /OceanBase-JDBC-*.pdf
 /OceanBase-JDBC-*.md
+
+# 厂商 JDBC 驱动 jar（root 兜底规则；正式存放处 jdbcdrivers/ 已整体忽略）
+/ojdbc*.jar
+
+# Windows/WSL 复制产生的 NTFS 流垃圾文件
+*:Zone.Identifier
