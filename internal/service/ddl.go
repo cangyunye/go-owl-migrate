@@ -25,7 +25,9 @@ func TargetTypeFamily(dbType string) string {
 		return "postgres"
 	case t == "mysql" || strings.HasSuffix(t, "-mysql"):
 		return "mysql"
-	case t == "oracle" || strings.HasSuffix(t, "-oracle"):
+	case t == "oracle" || strings.HasSuffix(t, "-oracle") ||
+			t == "dm" || t == "timesten":
+		// 达梦/TimesTen 使用 Oracle 风格数据字典与类型系统。
 		return "oracle"
 	case t == "sqlite3" || t == "duckdb":
 		return t
@@ -159,10 +161,16 @@ func ConvertSchemaModelForDDL(sm *md.SchemaModel, cfg *config.Config, tgt dialec
 // database using the dialect system. Cross-dialect type conversion goes through
 // the LogicalType IR; otherwise source types are emitted with qualifiers.
 func BuildCreateTableViaDialect(tbl *md.TableDef, cfg *config.Config) (string, error) {
-	targetName := registry.Normalize(strings.ToLower(cfg.Target.Type))
+	// ddl.target_dialect 显式覆盖 target.type 继承（dm 等 agent 通道专属类型
+	// 没有自己的 DDL 方言，靠 target_dialect 指到 oracle 等相近方言建表）。
+	name := strings.TrimSpace(cfg.DDL.TargetDialect)
+	if name == "" {
+		name = cfg.Target.Type
+	}
+	targetName := registry.Normalize(strings.ToLower(name))
 	target, err := registry.Get(targetName)
 	if err != nil {
-		return "", fmt.Errorf("unknown target dialect %q: %w", cfg.Target.Type, err)
+		return "", fmt.Errorf("unknown target dialect %q: %w", name, err)
 	}
 
 	opts := ToBuildOptions(cfg)
@@ -172,7 +180,11 @@ func BuildCreateTableViaDialect(tbl *md.TableDef, cfg *config.Config) (string, e
 	converted := tbl
 	if srcName := ResolveSourceDialect(cfg); srcName != "" {
 		srcNorm := registry.Normalize(strings.ToLower(srcName))
-		if srcNorm != targetName && TargetTypeFamily(srcNorm) != TargetTypeFamily(targetName) {
+		if srcNorm != targetName {
+			// 源/目标方言不同即走 IR 转换——即使同属一个 type family：
+			// openGauss(A 模式)与 oracle 同族，但 og 抽出的类型是 PG 风格
+			// （numeric/timestamp without time zone），oracle mapper 不认识，
+			// 直通会兜底成 CLOB；必须经 og mapper → LogicalType → oracle mapper。
 			if src, serr := registry.Get(srcNorm); serr == nil {
 				converted = ConvertTableTypes(tbl, src, target, opts)
 			} else {

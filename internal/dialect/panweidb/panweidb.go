@@ -82,6 +82,15 @@ type pdbOracleTypeMapper struct{ oracle.OracleTypeMapper }
 
 func (m pdbOracleTypeMapper) Name() string { return "panweidb-oracle" }
 
+// ToLogicalType 先归一 PG 风格类型名（PanWeiDB 经 PG wire 抽出的 data_type
+// 是 numeric/timestamp without time zone 等），再复用 oracle mapper。
+func (m pdbOracleTypeMapper) ToLogicalType(rawType string, length, precision, scale int) dialect.LogicalType {
+	if name, l, p, s, ok := dialect.NormalizePGStyleType(rawType, length, precision, scale); ok {
+		return m.OracleTypeMapper.ToLogicalType(name, l, p, s)
+	}
+	return m.OracleTypeMapper.ToLogicalType(rawType, length, precision, scale)
+}
+
 // NewOracle creates a PanWeiDB Oracle-compatible (A mode) dialect.
 func NewOracle() dialect.Dialect {
 	oracleD := oracle.New()

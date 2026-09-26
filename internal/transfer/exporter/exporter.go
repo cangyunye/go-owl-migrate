@@ -416,7 +416,8 @@ func (e *Exporter) isOracle() bool {
 	if t == "opengaussdb-oracle" || t == "panweidb-oracle" {
 		return false
 	}
-	return t == "oracle" || strings.HasSuffix(t, "-oracle")
+	// dm / timesten 只能经 agent 通道，:N 由 sidecar BindRewriter 改写为 ?。
+	return t == "oracle" || t == "dm" || t == "timesten" || strings.HasSuffix(t, "-oracle")
 }
 
 func (e *Exporter) isPostgres() bool {

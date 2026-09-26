@@ -559,6 +559,15 @@ func (c *Config) ApplyDefaults() {
 	if !c.Metadata.CSV.HasHeader {
 		c.Metadata.CSV.HasHeader = true
 	}
+	// export.csv.header / import.csv.has_header 的文档默认值为 true。
+	// migrate 管线内 exporter→importer 以 CSV 首行为表头衔接：缺省 false 时
+	// exporter 不写表头，importer 会把首行数据当列名，全部插入错位。
+	if !c.Export.CSV.Header {
+		c.Export.CSV.Header = true
+	}
+	if !c.Import.CSV.HasHeader {
+		c.Import.CSV.HasHeader = true
+	}
 	// online defaults
 	if c.Online.CDC.ChangelogPrefix == "" {
 		c.Online.CDC.ChangelogPrefix = "owl_chg_"

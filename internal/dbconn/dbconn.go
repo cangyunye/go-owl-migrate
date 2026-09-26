@@ -25,7 +25,9 @@ func Family(dbType string) string {
 		return "postgres"
 	case t == "mysql" || t == "mariadb" || strings.HasSuffix(t, "-mysql"):
 		return "mysql"
-	case t == "oracle" || strings.HasSuffix(t, "-oracle"):
+	case t == "oracle" || strings.HasSuffix(t, "-oracle") || t == "dm" || t == "timesten":
+		// 达梦/TimesTen 走 Oracle 风格字典与绑定语义（agent 通道下由 sidecar
+		// 把 :N 改写为 JDBC 的 ?）。
 		return "oracle"
 	case t == "sqlite3":
 		return "sqlite3"

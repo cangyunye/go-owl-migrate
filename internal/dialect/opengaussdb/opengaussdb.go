@@ -82,6 +82,15 @@ type ogOracleTypeMapper struct{ oracle.OracleTypeMapper }
 
 func (m ogOracleTypeMapper) Name() string { return "opengaussdb-oracle" }
 
+// ToLogicalType 先归一 PG 风格类型名（openGauss 经 PG wire 抽出的 data_type
+// 是 numeric/timestamp without time zone 等），再复用 oracle mapper。
+func (m ogOracleTypeMapper) ToLogicalType(rawType string, length, precision, scale int) dialect.LogicalType {
+	if name, l, p, s, ok := dialect.NormalizePGStyleType(rawType, length, precision, scale); ok {
+		return m.OracleTypeMapper.ToLogicalType(name, l, p, s)
+	}
+	return m.OracleTypeMapper.ToLogicalType(rawType, length, precision, scale)
+}
+
 // NewOracle creates an OpenGaussDB Oracle-compatible (A mode) dialect.
 func NewOracle() dialect.Dialect {
 	oracleD := oracle.New()

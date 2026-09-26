@@ -28,6 +28,9 @@ func init() {
 	Register("oracle", oracle.New())
 	Register("postgres", postgres.New())
 	Register("mysql", mysql.New())
+	// 达梦/TimesTen 的数据字典与类型系统是 Oracle 风格（NUMBER/VARCHAR2/DATE），
+	// 且只能经 agent 通道接入——DDL/类型映射直接复用 oracle 方言。
+	Register("dm", oracle.New())
 }
 
 // Register adds a dialect to the global registry.

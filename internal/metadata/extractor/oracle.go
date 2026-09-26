@@ -249,6 +249,82 @@ type OceanBaseOracleWireQuerier struct{ OracleMetadataQuerier }
 
 func (OceanBaseOracleWireQuerier) Type() string { return "oceanbase-oracle-wire" }
 
+// DamengQuerier extracts metadata from DM (达梦) / TimesTen. Both speak the
+// Oracle dictionary style (ALL_* views) but expose a narrower column set than
+// native Oracle — no all_tab_columns.collation, no identity columns — the same
+// narrowing the OceanBase variant applies.
+//
+// 周边对象（触发器/视图/序列/同义词/包/物化视图）的字典列集与 Oracle 仍有出入
+// （如 ALL_TRIGGERS 无 TRIGGER_TYPE），查询失败时降级为「该对象类型 0 条」，
+// 不中断整库抽取；核心对象（表/列/主键/索引/外键）保持严格报错。
+type DamengQuerier struct{ OracleMetadataQuerier }
+
+func (DamengQuerier) Type() string { return "dameng" }
+
+func (q DamengQuerier) QueryViews(db *sql.DB, schema string) ([]*md.ViewDef, error) {
+	v, err := q.OracleMetadataQuerier.QueryViews(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
+func (q DamengQuerier) QuerySequences(db *sql.DB, schema string) ([]*md.SequenceDef, error) {
+	v, err := q.OracleMetadataQuerier.QuerySequences(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
+func (q DamengQuerier) QueryTriggers(db *sql.DB, schema string) ([]*md.TriggerDef, error) {
+	v, err := q.OracleMetadataQuerier.QueryTriggers(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
+func (q DamengQuerier) QuerySynonyms(db *sql.DB, schema string) ([]*md.SynonymDef, error) {
+	v, err := q.OracleMetadataQuerier.QuerySynonyms(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
+func (q DamengQuerier) QueryFunctions(db *sql.DB, schema string) ([]*md.FunctionDef, error) {
+	v, err := q.OracleMetadataQuerier.QueryFunctions(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
+func (q DamengQuerier) QueryMViews(db *sql.DB, schema string) ([]*md.MViewDef, error) {
+	v, err := q.OracleMetadataQuerier.QueryMViews(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
+func (q DamengQuerier) QueryPackages(db *sql.DB, schema string) ([]*md.PackageDef, error) {
+	v, err := q.OracleMetadataQuerier.QueryPackages(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
+func (q DamengQuerier) QueryPackageBodies(db *sql.DB, schema string) ([]*md.PackageBodyDef, error) {
+	v, err := q.OracleMetadataQuerier.QueryPackageBodies(db, schema)
+	if err != nil {
+		return nil, nil
+	}
+	return v, nil
+}
+
 func (q OracleMetadataQuerier) QueryTables(db *sql.DB, schema string) ([]*md.TableDef, error) {
 	rows, err := db.Query(q.bind(`
 		SELECT t.table_name, t.tablespace_name, t.num_rows,

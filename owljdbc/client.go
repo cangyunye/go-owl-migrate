@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -57,10 +58,9 @@ func openAgent(ctx context.Context, cfg Config) (*AgentProc, error) {
 	if java == "" {
 		java = "java"
 	}
-	cp := cfg.AgentJar
-	for _, j := range cfg.Classpath {
-		cp += ":" + j
-	}
+	// Windows 的 java 只认 ";" 分隔 classpath,硬编码 ":" 会把整串路径
+	// 当成一个不存在的条目,主类 owl.agent.Main 因此加载失败。
+	cp := strings.Join(append([]string{cfg.AgentJar}, cfg.Classpath...), string(os.PathListSeparator))
 	cmd := exec.Command(java, "-cp", cp, "owl.agent.Main")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

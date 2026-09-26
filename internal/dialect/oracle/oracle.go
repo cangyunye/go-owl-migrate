@@ -21,11 +21,11 @@ func (OracleTypeMapper) ToLogicalType(rawType string, length, precision, scale i
 		return dialect.LogicalType{Base: dialect.LBVarchar, Length: length}
 	case upper == "CHAR" || upper == "NCHAR":
 		return dialect.LogicalType{Base: dialect.LBChar, Length: length}
-	case upper == "NUMBER" && scale == 0 && precision <= 4:
+	case upper == "NUMBER" && scale == 0 && precision > 0 && precision <= 4:
 		return dialect.LogicalType{Base: dialect.LBSmallInt, Precision: precision}
-	case upper == "NUMBER" && scale == 0 && precision <= 9:
+	case upper == "NUMBER" && scale == 0 && precision > 0 && precision <= 9:
 		return dialect.LogicalType{Base: dialect.LBInt, Precision: precision}
-	case upper == "NUMBER" && scale == 0 && precision <= 18:
+	case upper == "NUMBER" && scale == 0 && precision > 0 && precision <= 18:
 		return dialect.LogicalType{Base: dialect.LBBigInt, Precision: precision}
 	case upper == "NUMBER" && scale > 0:
 		return dialect.LogicalType{Base: dialect.LBNumeric, Precision: precision, Scale: scale}
@@ -84,7 +84,8 @@ func (OracleTypeMapper) FromLogicalType(lt dialect.LogicalType) string {
 		if lt.Precision > 38 {
 			return "NUMBER"
 		}
-		if lt.Scale > 0 {
+		if lt.Precision > 0 {
+			// 有精度即保留（含 scale=0 的 NUMBER(20,0)），否则大整型精度丢失。
 			return fmt.Sprintf("NUMBER(%d,%d)", lt.Precision, lt.Scale)
 		}
 		return "NUMBER"

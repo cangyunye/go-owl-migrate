@@ -209,7 +209,7 @@ func ensureOneTable(ctx context.Context, db *sql.DB, tbl *md.TableDef, cfg *conf
 		}
 		return fmt.Errorf("create table %s.%s: %w (SQL: %s)", schema, tbl.TableName, e, createSQL)
 	}
-	fmt.Printf("  Created table %s.%s\n", schema, tbl.TableName)
+	fmt.Printf("  Created table %s.%s\n    SQL: %s\n", schema, tbl.TableName, createSQL)
 	return nil
 }
 

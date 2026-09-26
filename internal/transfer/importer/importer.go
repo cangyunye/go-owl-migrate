@@ -164,7 +164,8 @@ func (imp *Importer) isOracle() bool {
 	if t == "opengaussdb-oracle" || t == "panweidb-oracle" {
 		return false
 	}
-	return t == "oracle" || strings.HasSuffix(t, "-oracle")
+	// dm / timesten 只能经 agent 通道（JDBC ?），:N 由 sidecar BindRewriter 改写。
+	return t == "oracle" || t == "dm" || t == "timesten" || strings.HasSuffix(t, "-oracle")
 }
 
 // maxBindParams is the bind-parameter ceiling of the MySQL and PostgreSQL wire
@@ -321,6 +322,52 @@ func (imp *Importer) salvageChunk(ctx context.Context, tx *sql.Tx, insertSQL str
 	return ok, false
 }
 
+// isDatetimeBindType reports whether values for this column type must be bound
+// as time.Time instead of string (DATE / DATETIME / TIMESTAMP families).
+func isDatetimeBindType(dataType string) bool {
+	dt := strings.ToUpper(strings.TrimSpace(dataType))
+	switch {
+	case dt == "DATE" || dt == "DATETIME":
+		return true
+	case strings.HasPrefix(dt, "TIMESTAMP") || strings.HasPrefix(dt, "DATETIME"):
+		return true
+	}
+	return false
+}
+
+// parseDatetimeBind parses the datetime string forms produced by the export
+// pipeline (compact yyyyMMddHHmmss and ISO-like) into time.Time.
+func parseDatetimeBind(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	layouts := []string{
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+		"20060102150405",
+		"20060102",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unparseable datetime %q", s)
+}
+
+// firstArgsAt 取诊断日志用:pos 行的前 3 个绑定值。
+func firstArgsAt(valsRows [][]any, pos int) []any {
+	if pos < 0 || pos >= len(valsRows) {
+		return nil
+	}
+	row := valsRows[pos]
+	if len(row) > 3 {
+		return row[:3]
+	}
+	return row
+}
+
 // isPlaceholderLimitError detects wire-protocol parameter-limit failures so the
 // batch can be bisected instead of falling back row by row.
 func isPlaceholderLimitError(err error) bool {
@@ -357,6 +404,16 @@ func (imp *Importer) convertRow(tbl *md.TableDef, header []string, record []stri
 			if imp.cfg.DateTimeTruncateToTarget {
 				if s, ok := val.(string); ok {
 					val = truncateDatetimeToTarget(s, tbl.GetColumn(header[j]))
+				}
+			}
+			// DATE/TIMESTAMP 目标列绑定 time.Time：部分驱动（达梦 JDBC 等）
+			// 对字符串→日期不做隐式转换（类型转换异常），且 time.Time 经
+			// owljdbc 帧协议携带 DATETIME 标记，微秒不丢失。
+			if col := tbl.GetColumn(header[j]); col != nil && isDatetimeBindType(col.DataType) {
+				if s, ok := val.(string); ok {
+					if t, perr := parseDatetimeBind(s); perr == nil {
+						val = t
+					}
 				}
 			}
 			if imp.needsNumericBoolean(tbl, header[j]) {
@@ -945,7 +1002,8 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 			imp.logger.Warn("Skipping row", zap.Int("row", rowIndex), zap.Error(execErr))
 			return imp.maxErrorsReached(&result)
 		default: // log_only
-			imp.logger.Warn("Row error (continuing)", zap.Int("row", rowIndex), zap.Error(execErr))
+			imp.logger.Warn("Row error (continuing)", zap.Int("row", rowIndex), zap.Error(execErr),
+				zap.String("sql", insertSQL), zap.Any("args_row0", firstArgsAt(valsRows, 0)))
 			return false
 		}
 	}

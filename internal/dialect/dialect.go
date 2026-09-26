@@ -226,3 +226,50 @@ func PartitionClause(t *md.TableDef, opts BuildOptions) string {
 	}
 	return "\n" + info
 }
+
+// NormalizePGStyleType 把 PG 线协议 information_schema 报出的 ANSI/PG 风格类型名
+// 归一为 Oracle 风格名，供 openGauss/PanWeiDB Oracle 兼容模式（A 模式）的
+// TypeMapper 复用 oracle mapper 前调用。这类库虽走 Oracle 兼容模式，抽取层
+// 经 PG wire 拿到的 data_type 仍是小写 PG 风格（numeric、timestamp without
+// time zone…），oracle mapper 不认识会兜底成 CLOB。返回 ok=false 表示不是
+// PG 风格（保持原样）。
+func NormalizePGStyleType(rawType string, length, precision, scale int) (string, int, int, int, bool) {
+	dt := strings.ToLower(strings.TrimSpace(rawType))
+	switch dt {
+	case "numeric", "decimal":
+		return "NUMBER", length, precision, scale, true
+	case "smallint":
+		return "NUMBER", length, 4, 0, true
+	case "integer", "int", "int4":
+		return "NUMBER", length, 10, 0, true
+	case "bigint", "int8":
+		return "NUMBER", length, 19, 0, true
+	case "real", "float4":
+		return "BINARY_FLOAT", length, precision, scale, true
+	case "double precision", "float8":
+		return "BINARY_DOUBLE", length, precision, scale, true
+	case "character varying", "varchar", "varchar2":
+		return "VARCHAR2", length, precision, scale, true
+	case "character", "char":
+		return "CHAR", length, precision, scale, true
+	case "text":
+		return "CLOB", length, precision, scale, true
+	case "timestamp without time zone", "timestamp":
+		return "TIMESTAMP", length, precision, scale, true
+	case "timestamp with time zone", "timestamptz":
+		return "TIMESTAMP WITH TIME ZONE", length, precision, scale, true
+	case "timestamp with local time zone":
+		return "TIMESTAMP WITH LOCAL TIME ZONE", length, precision, scale, true
+	case "date":
+		return "DATE", length, precision, scale, true
+	case "boolean", "bool":
+		return "NUMBER", length, 1, 0, true
+	case "bytea":
+		return "BLOB", length, precision, scale, true
+	case "json", "jsonb":
+		return "CLOB", length, precision, scale, true
+	case "uuid":
+		return "CHAR", 36, precision, scale, true
+	}
+	return rawType, length, precision, scale, false
+}

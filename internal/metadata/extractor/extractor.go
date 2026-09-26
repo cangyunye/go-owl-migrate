@@ -38,6 +38,7 @@ func init() {
 	Register(&PGMetadataQuerier{})
 	Register(&MySQLMetadataQuerier{})
 	Register(&OracleMetadataQuerier{})
+	Register(DamengQuerier{OracleMetadataQuerier{OceanBase: true}})
 	// OceanBase queriers register from plugin_ob.go (build tag: ob).
 }
 
@@ -78,6 +79,10 @@ func normalizeDBType(t string) string {
 		return "oracle"
 	case t == "goldendb", t == "oceanbase":
 		return "mysql"
+	case t == "dm", t == "timesten":
+		// 达梦/TimesTen 提供 Oracle 风格数据字典（ALL_*），但列集窄于
+		// 原生 Oracle（无 collation/identity）——用 dameng 窄字典变体。
+		return "dameng"
 	default:
 		return t
 	}
