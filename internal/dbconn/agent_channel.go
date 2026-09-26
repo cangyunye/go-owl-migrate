@@ -48,7 +48,7 @@ func resolveChannel(cfg config.DBConfig, linked func(string) bool) (string, erro
 			return ChannelNative, nil
 		}
 	}
-	if owljdbc.HasProfile(t) {
+	if owljdbc.HasProfile(agentProfileType(t)) {
 		if FallbackHook != nil {
 			reason := "native driver not available"
 			if _, known := knownTypes[t]; known {
@@ -61,6 +61,20 @@ func resolveChannel(cfg config.DBConfig, linked func(string) bool) (string, erro
 	// No owljdbc coverage: keep the native path so its exact error
 	// ("unsupported database type" / "rebuild with -tags <tag>") surfaces.
 	return ChannelNative, nil
+}
+
+// agentProfileType maps a database type to the owljdbc catalog profile that
+// serves it on the agent channel. The openGauss/PanWeiDB compatibility
+// variants share one JDBC path — same org.opengauss driver, jdbc:opengauss
+// URL and PG wire family (catalog "opengaussdb"); the SQL-mode suffix only
+// selects the native-side dialect, which the agent channel never sees.
+func agentProfileType(t string) string {
+	switch t {
+	case "opengaussdb", "opengaussdb-oracle", "opengaussdb-mysql",
+		"panweidb", "panweidb-mysql", "panweidb-oracle":
+		return "opengaussdb"
+	}
+	return t
 }
 
 // nativeDriverName reports which database/sql driver the native path would
@@ -92,7 +106,7 @@ func buildAgentConfig(cfg config.DBConfig) (owljdbc.Config, error) {
 		Password: f.Password,
 		Database: f.Database,
 	}
-	return owljdbc.BuildConfig(t, endpoint, cfg.DSN, cfg.Agent.JarsDir, cfg.Agent.AgentJar, cfg.Agent.JavaHome)
+	return owljdbc.BuildConfig(agentProfileType(t), endpoint, cfg.DSN, cfg.Agent.JarsDir, cfg.Agent.AgentJar, cfg.Agent.JavaHome)
 }
 
 // ResolveChannel 是 resolveChannel 的导出入口（内部按已链接驱动判定），

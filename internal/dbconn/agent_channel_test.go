@@ -40,6 +40,9 @@ func TestResolveChannelNativeFirst(t *testing.T) {
 		{"auto falls back when driver not compiled", config.DBConfig{Type: "oceanbase-oracle", Channel: ChannelAuto}, []string{"mysql", "postgres", "oracle"}, ChannelAgent, "native driver not compiled into this binary"},
 		{"auto keeps native when compiled", config.DBConfig{Type: "oceanbase-oracle", Channel: ChannelAuto}, []string{"oboracle"}, ChannelNative, ""},
 		{"auto falls back for catalog-only type", config.DBConfig{Type: "dm", Channel: ChannelAuto}, []string{"mysql"}, ChannelAgent, "native driver not available"},
+		{"auto falls back for og oracle-compat variant", config.DBConfig{Type: "opengaussdb-oracle", Channel: ChannelAuto}, []string{"mysql", "postgres", "oracle"}, ChannelAgent, "native driver not compiled into this binary"},
+		{"auto keeps native for compiled og variant", config.DBConfig{Type: "opengaussdb-mysql", Channel: ChannelAuto}, []string{"opengauss"}, ChannelNative, ""},
+		{"agent forced for panweidb variant", config.DBConfig{Type: "panweidb-mysql", Channel: ChannelAgent}, []string{}, ChannelAgent, ""},
 		{"auto keeps native error when catalog lacks type", config.DBConfig{Type: "sqlite3", Channel: ChannelAuto}, []string{}, ChannelNative, ""},
 	}
 	for _, tc := range cases {
@@ -78,6 +81,7 @@ func TestBuildAgentConfigProfiles(t *testing.T) {
 		"oceanbase-client-2.4.1.jar",
 		"postgresql-42.7.13.jar",
 		"ojdbc11.jar",
+		"opengauss-jdbc-6.0.6.jar",
 		"DmJdbcDriver18.jar",
 		"kingbase8-9.0.jar",
 		"ttjdbc16.jar",
@@ -132,6 +136,18 @@ func TestBuildAgentConfigProfiles(t *testing.T) {
 			config.DBConfig{Type: "oracle", DSN: "oracle://scott:tiger@oradb:1521/ORCL", Agent: ag},
 			"jdbc:oracle:thin:@//oradb:1521/ORCL",
 			"oracle.jdbc.OracleDriver", "oracle", "scott",
+		},
+		{
+			"opengaussdb-oracle maps to opengaussdb profile",
+			config.DBConfig{Type: "opengaussdb-oracle", DSN: "host=ora1 port=6432 user=ogadmin password=p dbname=og_ora", Agent: ag},
+			"jdbc:opengauss://ora1:6432/og_ora",
+			"org.opengauss.Driver", "postgres", "ogadmin",
+		},
+		{
+			"opengaussdb-mysql maps to opengaussdb profile",
+			config.DBConfig{Type: "opengaussdb-mysql", DSN: "host=my1 port=6432 user=ogadmin password=p dbname=og_mysql", Agent: ag},
+			"jdbc:opengauss://my1:6432/og_mysql",
+			"org.opengauss.Driver", "postgres", "ogadmin",
 		},
 		{
 			"dm host only dsn",
