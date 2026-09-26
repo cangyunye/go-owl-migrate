@@ -78,7 +78,7 @@ func driverName(dbType string) (string, error) {
 // resolveChannel): the native path keeps the pre-channel behavior, including
 // Oracle-family DSN post-processing for LOB-friendly streaming.
 func Open(cfg config.DBConfig) (*sql.DB, error) {
-	ch, err := resolveChannel(cfg, driverLinked)
+	ch, err := resolveChannel(cfg, DriverLinked)
 	if err != nil {
 		return nil, err
 	}

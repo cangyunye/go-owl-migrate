@@ -10,7 +10,7 @@ import (
 	"github.com/cangyunye/owljdbc"
 )
 
-// linkedSet fakes driverLinked for decision-table tests: dbconn itself links
+// linkedSet fakes DriverLinked for decision-table tests: dbconn itself links
 // no database/sql drivers — product binaries register them via internal/cmd
 // build tags, so availability must be injected.
 func linkedSet(names ...string) func(string) bool {

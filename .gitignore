@@ -82,3 +82,10 @@ testdata/acceptance/gen/
 
 # archify 产物暂不入库（本地保留查看）
 docs/archify/
+
+# 厂商 JDBC 驱动 jar（本地下载，勿入库；用 owljdbc/scripts/fetch-jars.sh 获取）
+/jdbcdrivers/
+
+# 厂商参考文档 / 手册（仅本地查阅，不入库）
+/OceanBase-JDBC-*.pdf
+/OceanBase-JDBC-*.md
