@@ -311,3 +311,53 @@ func TestSplitTables(t *testing.T) {
 		}
 	}
 }
+
+func TestScenarioChannelFieldsRoundtrip(t *testing.T) {
+	// migrate 场景的 source/target channel 与 agent_jars_dir 应写入配置并回填。
+	sc := ScenarioSchemas()
+	var migrate *Scenario
+	for i := range sc {
+		if sc[i].Name == "migrate" {
+			migrate = &sc[i]
+		}
+	}
+	if migrate == nil {
+		t.Fatal("migrate scenario missing")
+	}
+	names := map[string]bool{}
+	for _, f := range migrate.Fields {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"source_channel", "target_channel", "agent_jars_dir"} {
+		if !names[want] {
+			t.Errorf("migrate fields missing %q", want)
+		}
+	}
+	cfg := buildMigrateCfg(map[string]string{
+		"source_type":    "oracle",
+		"source_dsn":     "oracle://u:p@h1:1521/SVC",
+		"source_schema":  "U1",
+		"source_channel": "auto",
+		"target_type":    "oceanbase-oracle",
+		"target_dsn":     "oceanbase-oracle://u@t:p@h2:2881/",
+		"target_schema":  "U2",
+		"target_channel": "agent",
+		"agent_jars_dir": "/opt/owl-jars",
+	})
+	if cfg.Source.Channel != "auto" {
+		t.Errorf("Source.Channel = %q, want auto", cfg.Source.Channel)
+	}
+	if cfg.Target.Channel != "agent" {
+		t.Errorf("Target.Channel = %q, want agent", cfg.Target.Channel)
+	}
+	if cfg.Agent.JarsDir != "/opt/owl-jars" {
+		t.Errorf("Agent.JarsDir = %q", cfg.Agent.JarsDir)
+	}
+	if cfg.Source.Agent.JarsDir != "/opt/owl-jars" {
+		t.Errorf("Source.Agent.JarsDir = %q（应同步全局 agent 段）", cfg.Source.Agent.JarsDir)
+	}
+
+	// 缺省 channel 留空 = native 语义；回填后可见。
+	v := map[string]string{"source_type": "mysql", "source_dsn": "u:p@tcp(h:3306)/d", "source_schema": "d"}
+	_ = buildMigrateCfg(v)
+}

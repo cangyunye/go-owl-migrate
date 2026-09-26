@@ -77,6 +77,7 @@ func NewServer(cfg Config) *Server {
 		if data, err := os.ReadFile(cfg.ConfigPath); err == nil {
 			var loaded config.Config
 			if yaml.Unmarshal(data, &loaded) == nil {
+				loaded.ApplyDefaults() // 全局 agent 段折叠到单连接，重启后任务仍能解析 jar
 				s.cfg = &loaded
 			}
 		}
@@ -119,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/jobs/{id}/output", s.handleJobOutput)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/output/download", s.handleJobOutputDownload)
 	mux.HandleFunc("GET /api/v1/dialects", s.handleGetDialects)
+	mux.HandleFunc("GET /api/v1/capabilities", s.handleGetCapabilities)
 	mux.HandleFunc("POST /api/v1/conn/test", s.handleTestConn)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("GET /api/v1/config/current", s.handleGetCurrentConfig)
@@ -292,6 +294,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid config: "+err.Error())
 		return
 	}
+	cfg.ApplyDefaults()
 
 	s.mu.Lock()
 	s.cfg = cfg

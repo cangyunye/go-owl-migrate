@@ -497,7 +497,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	// Apply defaults
-	cfg.applyDefaults()
+	cfg.ApplyDefaults()
 
 	// Validate
 	if err := cfg.validate(); err != nil {
@@ -507,7 +507,11 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func (c *Config) applyDefaults() {
+// ApplyDefaults fills unset fields with documented defaults. Beyond Load it
+// must also run wherever a Config enters the system without going through
+// Load — e.g. the serve config-upload path — so the global agent section
+// reaches per-connection settings before dbconn.Open resolves jars.
+func (c *Config) ApplyDefaults() {
 	if c.General.LogLevel == "" {
 		c.General.LogLevel = "info"
 	}

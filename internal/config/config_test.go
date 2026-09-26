@@ -28,7 +28,7 @@ func TestTargetDialect_InheritsFromTargetType(t *testing.T) {
 			cfg.Target.Type = tt.targetType
 			cfg.DDL.TargetDialect = tt.targetDialect
 
-			cfg.applyDefaults()
+			cfg.ApplyDefaults()
 			err := cfg.validate()
 
 			if tt.wantErr != "" {

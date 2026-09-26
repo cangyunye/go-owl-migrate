@@ -115,9 +115,19 @@ func ResolveChannel(cfg config.DBConfig) (string, error) {
 	return resolveChannel(cfg, DriverLinked)
 }
 
+// AgentProfileType maps a database type to the owljdbc catalog profile that
+// serves it on the agent channel (og/panwei variants share the opengaussdb
+// profile). Exported for capability reporting.
+func AgentProfileType(t string) string { return agentProfileType(t) }
+
 // openAgentChannel opens a *sql.DB through the owljdbc driver. The sidecar
 // JVM is spawned lazily on first connection and shared per classpath profile.
+// The sidecar jar is provisioned first: found in jars_dir, or downloaded from
+// the released artifact (3 attempts) — with a manual-download hint on failure.
 func openAgentChannel(cfg config.DBConfig) (*sql.DB, error) {
+	if _, err := owljdbc.EnsureAgentJar(owljdbc.JarSearchDirs(cfg.Agent.JarsDir), cfg.Agent.AgentJar); err != nil {
+		return nil, fmt.Errorf("agent channel: %w", err)
+	}
 	ac, err := buildAgentConfig(cfg)
 	if err != nil {
 		return nil, err

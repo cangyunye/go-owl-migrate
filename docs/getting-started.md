@@ -174,6 +174,28 @@ target:
 
 See [Configuration Reference](config.md) for the full config structure.
 
+## 没有 Go 原生驱动的数据库（agent 通道）
+
+达梦、人大金仓、TimesTen 等**没有 Go 驱动**的国产/小众数据库，或未编译进当前
+二进制的方言（如 `oceanbase-oracle` 需要 `-tags ob`），把 `source.channel` /
+`target.channel` 设为 `auto`（推荐）或 `agent`，连接会自动改走内嵌的
+**owljdbc agent 通道**（JVM sidecar + JDBC 驱动）：
+
+```yaml
+agent:
+  jars_dir: ./jars          # owl-agent.jar 与驱动 jar 的检索目录
+source:
+  type: dm                  # catalog 已登记：dm / kingbase / timesten / goldendb-oracle …
+  dsn: "dm://SYSDBA:pass@host:5236"
+  channel: auto             # 有 native 走 native；没有自动走 agent
+```
+
+- `owl-agent.jar` 缺失时**首次连接自动下载**（3 次重试；离线环境按报错指引手动
+  下载放到 `jars_dir`，或用 `OWLJDBC_AGENT_JAR_URL` 指向内网镜像）。
+- 对应数据库的 JDBC 驱动 jar 需要自备一份放到 `jars_dir`（厂商渠道或 Maven Central）。
+- Web 界面：配置页的源/目标表单有「连接通道」下拉（默认 auto）与「Agent jar 目录」
+  输入框；`GET /api/v1/capabilities` 返回每个类型在当前部署的真实可用性。
+
 ## Next Steps
 
 - [CLI Commands](cli-commands.md) — Detailed command flags and options

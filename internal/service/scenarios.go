@@ -90,6 +90,26 @@ func tgtDSN() Field {
 	return Field{Name: "target_dsn", Label: "目标数据库 DSN", Type: "text", Placeholder: "点击「结构化填写」或粘贴连接串"}
 }
 
+// channelField 选择数据库连接通道：native=原生 Go 驱动（与旧版行为一致）；
+// auto=native 优先，本二进制没有该类型驱动（未编译/不存在）时自动走 owljdbc
+// agent（JVM sidecar），连接失败不静默回退；agent=强制 agent 通道。
+func channelField(prefix, label string) Field {
+	return Field{Name: prefix + "_channel", Label: label, Type: "select",
+		Options: []string{"auto", "native", "agent"}, Default: "auto",
+		Help: "auto：有 native 驱动走 native，没有则自动走 agent；native：仅原生驱动；agent：仅 JVM sidecar（需 agent jar，首次使用自动从 release 下载，无网络时按提示手动放置）"}
+}
+
+func srcChannel() Field { return channelField("source", "源连接通道") }
+func tgtChannel() Field { return channelField("target", "目标连接通道") }
+
+// agentJarsDir 是全局 agent 段的 jar 检索目录：owl-agent.jar 与各数据库驱动
+// jar 都从这里找；留空则在进程工作目录检索。
+func agentJarsDir() Field {
+	return Field{Name: "agent_jars_dir", Label: "Agent jar 目录（可选）", Type: "text",
+		Placeholder: "如 ./jars；留空 = 当前目录",
+		Help:        "owl-agent.jar 与驱动 jar 的检索目录；owl-agent.jar 缺失时首次连接会自动下载"}
+}
+
 // dsnFamily returns the connection family for a dialect, mirroring what the
 // DSN format example in DSNExamples() implies.
 func dsnFamily(dialect string) string {
@@ -216,8 +236,9 @@ func ScenarioSchemas() []Scenario {
 			Description: "源库 → 导出 CSV → 目标库，端到端自动完成",
 			Fields: []Field{
 				metaType(), csvPath(), xlsxPath(),
-				srcType(), srcDSN(), srcSchema(), tablesField(),
-				tgtType(), tgtDSN(), tgtSchema(), schemaMappingField(),
+				srcType(), srcDSN(), srcSchema(), srcChannel(), tablesField(),
+				tgtType(), tgtDSN(), tgtSchema(), tgtChannel(), schemaMappingField(),
+				agentJarsDir(),
 			},
 		},
 		{
@@ -235,14 +256,14 @@ func ScenarioSchemas() []Scenario {
 		{
 			Name: "export", Label: "导出数据", Command: "owl-migrate export data",
 			Description: "从源库导出 CSV / SQL / XLSX 文件",
-			Fields:      []Field{srcType(), srcDSN(), srcSchema(), tablesField()},
+			Fields:      []Field{srcType(), srcDSN(), srcSchema(), srcChannel(), tablesField(), agentJarsDir()},
 		},
 		{
 			Name: "import", Label: "导入数据", Command: "owl-migrate import",
 			Description: "将 CSV 文件导入目标数据库",
 			Fields: []Field{
 				{Name: "data_dir", Label: "CSV 数据目录", Type: "text", Default: "./output/data/", Required: true},
-				tgtType(), withCondRequired(tgtDSN()), tgtSchema(),
+				tgtType(), withCondRequired(tgtDSN()), tgtSchema(), tgtChannel(), agentJarsDir(),
 			},
 		},
 		{
@@ -259,8 +280,9 @@ func ScenarioSchemas() []Scenario {
 			Name: "export-metadata", Label: "导出元数据", Command: "owl-migrate export-metadata",
 			Description: "从源库抽取表结构元数据",
 			Fields: []Field{
-				srcType(), srcDSN(), srcSchema(),
+				srcType(), srcDSN(), srcSchema(), srcChannel(),
 				{Name: "format", Label: "输出格式", Type: "select", Options: []string{"csv", "xlsx", "sql"}, Default: "csv"},
+				agentJarsDir(),
 			},
 		},
 		{
@@ -358,7 +380,7 @@ func setMetadataSource(cfg *config.Config, v map[string]string) {
 		cfg.Metadata = config.MetadataConfig{Type: "xlsx", XLSX: config.XLSXConfig{Path: v["xlsx_path"]}}
 	case "database":
 		cfg.Metadata = config.MetadataConfig{Type: "database"}
-		cfg.Source = config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: v["source_schema"]}
+		cfg.Source = config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: v["source_schema"], Channel: v["source_channel"], Agent: config.AgentConfig{JarsDir: v["agent_jars_dir"]}}
 	}
 }
 
@@ -376,8 +398,9 @@ func buildMigrateCfg(v map[string]string) *config.Config {
 
 	cfg := &config.Config{
 		General: config.GeneralConfig{LogLevel: "info"},
-		Source:  config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: srcSchema},
-		Target:  config.DBConfig{Type: v["target_type"], DSN: v["target_dsn"], Schema: tgtSchema},
+		Agent:   config.AgentConfig{JarsDir: v["agent_jars_dir"]},
+		Source:  config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: srcSchema, Channel: v["source_channel"], Agent: config.AgentConfig{JarsDir: v["agent_jars_dir"]}},
+		Target:  config.DBConfig{Type: v["target_type"], DSN: v["target_dsn"], Schema: tgtSchema, Channel: v["target_channel"], Agent: config.AgentConfig{JarsDir: v["agent_jars_dir"]}},
 		DDL: config.DDLConfig{
 			TargetDialect:      v["target_type"],
 			IncludeIfNotExists: true,
@@ -472,12 +495,15 @@ func ExtractFormValues(cfg *config.Config) map[string]string {
 	v["source_type"] = cfg.Source.Type
 	v["source_dsn"] = cfg.Source.DSN
 	v["source_schema"] = cfg.Source.Schema
+	v["source_channel"] = cfg.Source.Channel
 	v["target_type"] = cfg.Target.Type
 	if v["target_type"] == "" {
 		v["target_type"] = cfg.DDL.TargetDialect
 	}
 	v["target_dsn"] = cfg.Target.DSN
 	v["target_schema"] = cfg.Target.Schema
+	v["target_channel"] = cfg.Target.Channel
+	v["agent_jars_dir"] = cfg.Agent.JarsDir
 	if len(cfg.Export.Tables.Include) > 0 {
 		v["tables"] = strings.Join(cfg.Export.Tables.Include, ",")
 	} else {
@@ -529,7 +555,7 @@ func buildExportCfg(v map[string]string) *config.Config {
 	return &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
 		Metadata: config.MetadataConfig{Type: "database"},
-		Source:   config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: v["source_schema"]},
+		Source:   config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: v["source_schema"], Channel: v["source_channel"], Agent: config.AgentConfig{JarsDir: v["agent_jars_dir"]}},
 		Export: config.ExportConfig{
 			OutputDir: "./output/data/",
 			Format:    "csv",
@@ -551,7 +577,7 @@ func buildImportCfg(v map[string]string) *config.Config {
 	return &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
 		Metadata: config.MetadataConfig{Type: "csv"},
-		Target:   config.DBConfig{Type: v["target_type"], DSN: v["target_dsn"], Schema: tgtSchema},
+		Target:   config.DBConfig{Type: v["target_type"], DSN: v["target_dsn"], Schema: tgtSchema, Channel: v["target_channel"], Agent: config.AgentConfig{JarsDir: v["agent_jars_dir"]}},
 		DDL: config.DDLConfig{
 			TargetDialect:      v["target_type"],
 			IncludeIfNotExists: true,
@@ -598,6 +624,6 @@ func buildExportMetadataCfg(v map[string]string) *config.Config {
 	return &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
 		Metadata: config.MetadataConfig{Type: "database"},
-		Source:   config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: v["source_schema"]},
+		Source:   config.DBConfig{Type: v["source_type"], DSN: v["source_dsn"], Schema: v["source_schema"], Channel: v["source_channel"], Agent: config.AgentConfig{JarsDir: v["agent_jars_dir"]}},
 	}
 }

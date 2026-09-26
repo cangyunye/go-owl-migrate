@@ -11,6 +11,9 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/dsnfields"
 	"github.com/cangyunye/go-owl-migrate/internal/metadata/extractor"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
+
+	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
+	"github.com/cangyunye/owljdbc"
 )
 
 // metadataFingerprint captures the source a loaded schema model came from:
@@ -159,6 +162,7 @@ func (s *Server) handleTestConn(w http.ResponseWriter, r *http.Request) {
 		DSN            string `json:"dsn"`
 		Schema         string `json:"schema"`
 		ConnectTimeout string `json:"connect_timeout"`
+		Channel        string `json:"channel"` // native(默认) | agent | auto
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
@@ -176,11 +180,27 @@ func (s *Server) handleTestConn(w http.ResponseWriter, r *http.Request) {
 		req.Schema = refSchema
 	}
 
+	// 通道决策与 CLI 同源（dbconn.ResolveChannel）：agent/auto 时先用全局
+	// agent 段（当前配置的 jars_dir/agent_jar/java_home）作为缺省。
 	cfg := config.DBConfig{
 		Type:           req.Type,
 		DSN:            dsn,
 		Schema:         req.Schema,
 		ConnectTimeout: req.ConnectTimeout,
+		Channel:        req.Channel,
+		Agent:          s.globalAgent(),
+	}
+	ch, err := dbconn.ResolveChannel(cfg)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if ch == dbconn.ChannelAgent {
+		// agent 路径先备齐 sidecar jar（可自动下载），让"测试连接"就暴露问题。
+		if _, err := owljdbc.EnsureAgentJar(owljdbc.JarSearchDirs(cfg.Agent.JarsDir), cfg.Agent.AgentJar); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	timeout := time.Duration(0)
