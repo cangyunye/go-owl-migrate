@@ -95,3 +95,10 @@ docs/archify/
 
 # Windows/WSL 复制产生的 NTFS 流垃圾文件
 *:Zone.Identifier
+
+# agent 通道本地 jar（owl-agent.jar + 厂商驱动，本地重建/下载，勿入库）
+/jars/
+
+# dameng 互迁 e2e 本地产物（配置/日志/对拍 CSV）
+/tmp_e2e/
+/tmp_seed/

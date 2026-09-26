@@ -1,6 +1,6 @@
 # CLI Commands
 
-Version: `0.4.0`
+Version: `0.6.0`
 
 ## Global Flags
 
