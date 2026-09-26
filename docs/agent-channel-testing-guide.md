@@ -169,6 +169,9 @@ owl-migrate export data -c mysql_gbk_dsn.yaml -o /tmp/x
 ```bash
 go test ./... && (cd owljdbc && go test ./...)          # 单测：无 JVM/真库
 go test -tags "e2e ob" ./internal/cmd/ ./internal/e2eagent/ -count=1   # 产品级对拍全套
+# Oracle→openGauss 三兼容模式（og_pg/og_ora/og_mysql）双通道对拍：
+#   env: OWL_E2E_ORACLE_DSN + OWL_E2E_OG_{PG,ORA,MYSQL}_DSN（+JARS_DIR/AGENT_JAR）
+go test -tags "e2e og" ./internal/cmd/ -run TestE2E_OGParity -count=1
 ```
 
 已知非问题：`internal/cmd` 里 `TestOpenDB_*` / `TestMigrateE2E_PGToMySQL` 硬编码
