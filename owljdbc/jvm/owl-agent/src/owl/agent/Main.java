@@ -79,11 +79,18 @@ public final class Main {
                 }
                 case "QUERY": {
                     Session s = SESSIONS.get(req.conn);
-                    ResultSet rs = null;
-                    Statement ps = null;
                     boolean headerSent = false;
+                    String err = null;
                     long rows = 0;
-                    try {
+                    // ojdbc 对 LONG 分段流的跨语句状态清理并不干净：close 提前到
+                    // 完成帧之前（消除并发误关）之后，真 Oracle 上 LONG 查询仍会
+                    // 偶发 ORA-17027「流已被关闭」（Oracle 26ai Free + ojdbc8 实测
+                    // 最小复现 ~20%，重 LONG 场景更高），且必然被下一条查询自愈。
+                    // 未发出任何行时原地重试一次吸收该缺陷；已出行的多行流无法
+                    // 安全重试（会向客户端发重复行），仍照常报错。
+                    for (int attempt = 1; ; attempt++) {
+                        ResultSet rs = null;
+                        Statement ps = null;
                         try {
                             rs = s.query(req.sql, req.family, req.args);
                             ps = rs.getStatement();
@@ -99,8 +106,10 @@ public final class Main {
                                     .append("\",\"type\":\"").append(Json.escape(typeName == null ? "" : typeName)).append("\"}");
                             }
                             cols.append(']');
-                            sendRespRaw(out, req, true, cols.toString(), null, 0, 0);
-                            headerSent = true;
+                            if (!headerSent) {
+                                sendRespRaw(out, req, true, cols.toString(), null, 0, 0);
+                                headerSent = true;
+                            }
                             int nCols = md.getColumnCount();
                             while (rs.next()) {
                                 // 先把整行编码进字节数组，再按 12 字节头 + 行负载精确分配缓冲
@@ -117,17 +126,32 @@ public final class Main {
                                 Protocol.writeFrame(out, Protocol.ROW_BATCH, bb.array());
                                 rows++;
                             }
-                            sendEnd(out, req, rows, null);
+                            break;
                         } catch (Exception e) {
-                            // 表头已发出后 Go 端 pending[id] 已删除：错误 RESPONSE 无人接收，
-                            // 必须以 END(ok:false) 收尾，否则 Go 的 Next() 永久阻塞。
-                            if (!headerSent) throw e;
-                            sendEnd(out, req, rows, e.getMessage() != null ? e.getMessage() : e.toString());
+                            if (attempt == 1 && rows == 0 && e.getMessage() != null
+                                && e.getMessage().contains("ORA-17027")) {
+                                System.err.println("[owl-agent] ORA-17027 (stream) on conn=" + req.conn
+                                    + ", no rows sent; retrying once");
+                                continue;
+                            }
+                            err = e.getMessage() != null ? e.getMessage() : e.toString();
+                            break;
+                        } finally {
+                            // 必须先释放 JDBC 资源再回完成包：客户端收到 END 即会发下一条
+                            // QUERY，而本 handler 跑在线程池里，若 close 与下一条的 execute
+                            // 在同一连接上并发，Oracle 的 LONG 分段流会被误关
+                            // （实测大于约 20 字节的 LONG 值必现 ORA-17027 流已被关闭）。
+                            try { if (rs != null) rs.close(); } catch (Exception ignored) { }
+                            try { if (ps != null) ps.close(); } catch (Exception ignored) { }
+                            if (s != null) s.clearCurrent();
                         }
-                    } finally {
-                        if (rs != null) rs.close();
-                        if (ps != null) ps.close();
-                        if (s != null) s.clearCurrent();
+                    }
+                    // 表头已发出后 Go 端 pending[id] 已删除：错误 RESPONSE 无人接收，
+                    // 必须以 END(ok:false) 收尾，否则 Go 的 Next() 永久阻塞。
+                    if (headerSent) {
+                        sendEnd(out, req, rows, err);
+                    } else if (err != null) {
+                        sendResp(out, req, false, null, err, 0, 0);
                     }
                     break;
                 }
