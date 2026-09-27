@@ -17,6 +17,7 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/owljdbc"
 )
 
 // Config holds exporter configuration.
@@ -412,6 +413,9 @@ func (e *Exporter) isMySQL() bool {
 
 func (e *Exporter) isOracle() bool {
 	t := strings.ToLower(e.cfg.DBType)
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		return f == "oracle"
+	}
 	// openGauss / PanWeiDB use PG wire protocol ($N placeholders), not Oracle's :N
 	if t == "opengaussdb-oracle" || t == "panweidb-oracle" {
 		return false
@@ -422,6 +426,9 @@ func (e *Exporter) isOracle() bool {
 
 func (e *Exporter) isPostgres() bool {
 	t := strings.ToLower(e.cfg.DBType)
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		return f == "postgres"
+	}
 	return t == "postgres" || t == "postgresql" ||
 		t == "opengaussdb" || t == "opengaussdb-mysql" || t == "opengaussdb-oracle" ||
 		t == "panweidb" || t == "panweidb-mysql" || t == "panweidb-oracle"

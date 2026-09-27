@@ -71,6 +71,7 @@ func populateFromYAML(data []byte) (string, map[string]string, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return "", nil, err
 	}
+	_ = cfg.RegisterOwlJDBCProfiles()
 	return service.DetectScenario(&cfg), service.ExtractFormValues(&cfg), nil
 }
 
@@ -228,6 +229,7 @@ func (s *Server) activateConfig(data []byte) {
 		return
 	}
 	cfg.ApplyDefaults() // 全局 agent 段折叠到单连接
+	_ = cfg.RegisterOwlJDBCProfiles()
 	s.mu.Lock()
 	s.cfg = &cfg
 	path := s.configPath

@@ -21,6 +21,7 @@ import (
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
+	"github.com/cangyunye/owljdbc"
 )
 
 // Config holds importer configuration.
@@ -120,6 +121,9 @@ func getEncoding(name string) encoding.Encoding {
 // isMySQL returns true if the target database is MySQL or a MySQL-compatible dialect.
 func (imp *Importer) isMySQL() bool {
 	t := strings.ToLower(imp.cfg.TargetDBType)
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		return f == "mysql"
+	}
 	// openGauss / PanWeiDB use PG wire protocol, not MySQL
 	if t == "opengaussdb-mysql" || t == "panweidb-mysql" {
 		return false
@@ -160,6 +164,9 @@ func (imp *Importer) buildPlaceholders(n int) []string {
 // isOracle returns true if the target database is Oracle or an Oracle-compatible dialect.
 func (imp *Importer) isOracle() bool {
 	t := strings.ToLower(imp.cfg.TargetDBType)
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		return f == "oracle"
+	}
 	// openGauss / PanWeiDB use PG wire protocol ($N placeholders), not Oracle's :N
 	if t == "opengaussdb-oracle" || t == "panweidb-oracle" {
 		return false

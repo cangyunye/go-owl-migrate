@@ -5,8 +5,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cangyunye/owljdbc"
 	"gopkg.in/yaml.v3"
 
+	"github.com/cangyunye/go-owl-migrate/internal/dsnfields"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 )
 
@@ -29,6 +31,8 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 		Import     *ImportConfig    `yaml:"import,omitempty"`
 		Online     *OnlineConfig    `yaml:"online,omitempty"`
 		Extensions map[string]any   `yaml:"extensions,omitempty"`
+		Agent      *AgentConfig     `yaml:"agent,omitempty"`
+		OwlJDBC    *OwlJDBCConfig   `yaml:"owljdbc,omitempty"`
 	}{
 		General: c.General,
 		Metadata: metaAlias{
@@ -78,6 +82,14 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 	}
 	if len(c.Extensions) > 0 {
 		m.Extensions = c.Extensions
+	}
+	if len(c.OwlJDBC.Profiles) > 0 {
+		v := c.OwlJDBC
+		m.OwlJDBC = &v
+	}
+	if c.Agent.JarsDir != "" || c.Agent.AgentJar != "" || c.Agent.JavaHome != "" {
+		v := c.Agent
+		m.Agent = &v
 	}
 	return m, nil
 }
@@ -194,6 +206,11 @@ type Config struct {
 	// apply to source/target connections unless overridden per connection.
 	Agent AgentConfig `yaml:"agent,omitempty"`
 
+	// OwlJDBC holds externally registered agent-channel database profiles
+	// (new database types without code changes; oracle/mysql/postgres-family
+	// compatible drivers). See OwlJDBCConfig.
+	OwlJDBC OwlJDBCConfig `yaml:"owljdbc,omitempty"`
+
 	// ForceAllSections when true causes MarshalYAML to emit ALL sections
 	// even if they are zero-valued. Used by the "full" init scenario.
 	ForceAllSections bool `yaml:"-"`
@@ -271,6 +288,71 @@ type AgentConfig struct {
 	AgentJar string `yaml:"agent_jar,omitempty"`
 	// JavaHome selects the java executable directory; empty uses java from PATH.
 	JavaHome string `yaml:"java_home,omitempty"`
+}
+
+// OwlJDBCConfig registers external agent-channel database profiles: new
+// database types (oracle/mysql/postgres-family compatible) that connect
+// through the owljdbc sidecar without code changes. Built-in catalog entries
+// remain the baseline; a profile registered here under the same type name
+// overrides it.
+type OwlJDBCConfig struct {
+	Profiles map[string]OwlJDBCProfileSpec `yaml:"profiles,omitempty"`
+}
+
+// OwlJDBCProfileSpec declares one externally registered database type. The
+// fields map 1:1 onto owljdbc.ProfileSpec; DSNSyntax additionally tells the
+// host-side DSN parser which grammar the source/target dsn uses.
+type OwlJDBCProfileSpec struct {
+	// DriverClass is the JDBC driver class name loaded by the sidecar.
+	DriverClass string `yaml:"driver_class"`
+	// JarGlobs are candidate file names of the driver jar inside jars_dir
+	// (any match wins).
+	JarGlobs []string `yaml:"jar_globs"`
+	// Family is the connection semantics family: oracle | mysql | postgres.
+	// It drives metadata-querier selection, placeholder family, and the
+	// TRUNCATE/identifier behaviors of the matched family.
+	Family string `yaml:"family"`
+	// URLTemplate builds the JDBC URL from the decomposed DSN; supports
+	// {host} {port} {database}. Credentials never go through the template.
+	URLTemplate string `yaml:"url_template,omitempty"`
+	// DSNRaw means the dsn itself is a complete JDBC URL and is passed
+	// through verbatim (URLTemplate is ignored).
+	DSNRaw bool `yaml:"dsn_raw,omitempty"`
+	// DSNSyntax declares how source/target dsn strings parse: url (scheme://
+	// user:pass@host:port/db), pg-kv (host=... port=...), mysql-tcp
+	// (user:pass@tcp(host:port)/db), or kv (semicolon-separated KEY=VALUE).
+	DSNSyntax string `yaml:"dsn_syntax,omitempty"`
+}
+
+// RegisterOwlJDBCProfiles publishes cfg.OwlJDBC.Profiles to the owljdbc
+// catalog and the dsnfields syntax registry. It must run wherever a Config
+// enters the system (config.Load and every serve-side yaml activation);
+// registration is idempotent per type name. Worker subprocesses re-run this
+// through Load, so registered types work across the serve→worker boundary.
+func (c *Config) RegisterOwlJDBCProfiles() error {
+	if len(c.OwlJDBC.Profiles) == 0 {
+		return nil
+	}
+	specs := make(map[string]owljdbc.ProfileSpec, len(c.OwlJDBC.Profiles))
+	syntaxes := make(map[string]string, len(c.OwlJDBC.Profiles))
+	for name, p := range c.OwlJDBC.Profiles {
+		specs[strings.ToLower(strings.TrimSpace(name))] = owljdbc.ProfileSpec{
+			DriverClass: p.DriverClass,
+			JarGlobs:    p.JarGlobs,
+			Family:      p.Family,
+			URLTemplate: p.URLTemplate,
+			DSNRaw:      p.DSNRaw,
+			DSNSyntax:   p.DSNSyntax,
+		}
+		if p.DSNSyntax != "" {
+			syntaxes[strings.ToLower(strings.TrimSpace(name))] = p.DSNSyntax
+		}
+	}
+	if err := owljdbc.RegisterSpecs(specs); err != nil {
+		return err
+	}
+	dsnfields.RegisterSyntaxes(syntaxes)
+	return nil
 }
 
 // PoolConfig holds connection pool tuning parameters.
@@ -498,6 +580,12 @@ func Load(path string) (*Config, error) {
 
 	// Apply defaults
 	cfg.ApplyDefaults()
+
+	// Publish external owljdbc profiles before validation so validation
+	// errors (if any) surface immediately.
+	if err := cfg.RegisterOwlJDBCProfiles(); err != nil {
+		return nil, err
+	}
 
 	// Validate
 	if err := cfg.validate(); err != nil {

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/owljdbc"
 )
 
 // MetadataQuerier defines per-dialect schema introspection queries.
@@ -67,6 +68,10 @@ func Get(dbType string) (MetadataQuerier, error) {
 // normalizeDBType maps compound dialect names (e.g. "goldendb-mysql", "oceanbase-oracle")
 // to their base querier type.
 func normalizeDBType(t string) string {
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		// 外部注册的 agent profile:按声明的语义族复用对应 querier。
+		return f
+	}
 	t = strings.ToLower(strings.TrimSpace(t))
 	switch {
 	case isPGWireFamily(t):

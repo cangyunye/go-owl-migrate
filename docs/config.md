@@ -62,8 +62,22 @@ agent:                                      # 全局 agent 通道默认（source
   java_home: ""                             # JRE 路径（留空 = 用 PATH 里的 java）
   # jar 自动下载源可用环境变量 OWLJDBC_AGENT_JAR_URL 覆盖（内网镜像）。
 
+owljdbc:                                    # 外部 agent 通道 profile 注册(新数据库类型免改代码接入)
+  profiles:
+    mydb:                                   # 自定义 type 名(注册后即可用于 source.type/target.type + channel: agent/auto)
+      driver_class: com.mydb.jdbc.Driver    # JDBC 驱动类(sidecar 加载)
+      jar_globs: ["mydb-jdbc-*.jar"]        # 驱动 jar 文件名 glob(放 agent.jars_dir,任一匹配)
+      family: oracle                        # 连接语义族: oracle | mysql | postgres(决定字典/占位符/分页行为)
+      url_template: "jdbc:mydb://{host}:{port}/{database}"   # 支持 {host} {port} {database};凭据不走模板
+      dsn_syntax: url                       # source/target.dsn 的语法: url | pg-kv | mysql-tcp | kv(分号 KEY=VALUE)
+    # tt:                                   # DSN 本身就是完整 JDBC URL 时(如手工 client DSN):
+    #   driver_class: com.timesten.jdbc.TimesTenDriver
+    #   jar_globs: ["ttjdbc*.jar"]
+    #   family: oracle
+    #   dsn_raw: true
+
 source:
-  type: postgres                            # postgres | mysql | oracle | goldendb | oceanbase | panweidb | opengaussdb
+  type: postgres                            # postgres | mysql | oracle | goldendb | oceanbase | panweidb | opengaussdb + owljdbc.profiles 注册的 type
   dsn: "host=127.0.0.1 port=5432 dbname=mydb user=u password=p sslmode=disable"
   schema: public
   channel: ""                               # 连接通道: native(默认) | agent | auto（见「连接通道」一节）
@@ -294,6 +308,24 @@ Requires:
 `dm` / `kingbase` / `timesten` 等没有 Go 原生驱动的数据库**只能走 agent 通道**
 （`auto` 会自动落到 agent）；`sqlite3` / `duckdb` 无 JDBC 等价物，不参与回退。
 serve 端 `GET /api/v1/capabilities` 可查询当前部署对每个类型的实际可用性。
+
+### 外部 profile 注册（owljdbc.profiles）—— 新数据库免改代码接入
+
+Oracle/MySQL/PostgreSQL 三大族兼容的 JDBC 数据库，可在配置的 `owljdbc.profiles`
+段直接注册新 type（内置 catalog 为基线，同名覆盖；serve 上传/激活配置同样生效，
+worker 子进程经 config.Load 重新注册）。`family` 驱动整条链路的语义归一：
+元数据字典族、绑定占位符（oracle `:N`→sidecar 改 `?`）、oracle 族分页
+（`FETCH NEXT`/ROWNUM）与批量 TRUNCATE 行为。
+
+- `url_template` 只支持 `{host}` `{port}` `{database}`；用户名/密码经连接参数
+  传递，不进 URL（不出现在日志）。
+- `dsn_raw: true` 时忽略模板，`dsn` 即完整 JDBC URL 原样透传。
+- `dsn_syntax` 声明 `source.dsn`/`target.dsn` 的语法：`url`
+  （`scheme://user:pass@host:port/db`）、`pg-kv`（`host=... port=...`）、
+  `mysql-tcp`（`user:pass@tcp(host:port)/db`）、`kv`（分号 `KEY=VALUE`，
+  识别 host/port/user/password/database 常见别名）。
+- 目标端为注册类型时，DDL 用 `ddl.target_dialect` 指向相近方言（如 oracle 族
+  填 `oracle`）。
 
 ## Table Filtering
 

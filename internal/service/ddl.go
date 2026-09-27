@@ -9,6 +9,7 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
+	"github.com/cangyunye/owljdbc"
 )
 
 // ── 类型边界（源方言元数据 → 目标方言 DDL），从 cmd/tableddl.go 迁入 ──
@@ -17,16 +18,19 @@ import (
 // (postgres/mysql/oracle/…), used to decide cross-dialect type conversion.
 func TargetTypeFamily(dbType string) string {
 	t := strings.ToLower(strings.TrimSpace(dbType))
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		return f
+	}
 	t = registry.Normalize(t)
 	switch {
 	case t == "panweidb" || strings.HasPrefix(t, "panweidb-") ||
-			t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
+		t == "opengaussdb" || strings.HasPrefix(t, "opengaussdb-"):
 		// PanWeiDB / openGauss speak the PostgreSQL wire protocol in all SQL modes.
 		return "postgres"
 	case t == "mysql" || strings.HasSuffix(t, "-mysql"):
 		return "mysql"
 	case t == "oracle" || strings.HasSuffix(t, "-oracle") ||
-			t == "dm" || t == "timesten":
+		t == "dm" || t == "timesten":
 		// 达梦/TimesTen 使用 Oracle 风格数据字典与类型系统。
 		return "oracle"
 	case t == "sqlite3" || t == "duckdb":

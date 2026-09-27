@@ -295,6 +295,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg.ApplyDefaults()
+	if err := cfg.RegisterOwlJDBCProfiles(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	s.mu.Lock()
 	s.cfg = cfg

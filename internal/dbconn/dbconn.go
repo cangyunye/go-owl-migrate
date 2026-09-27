@@ -12,12 +12,19 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
+	"github.com/cangyunye/owljdbc"
 )
 
 // Family classifies a database type into its wire-protocol family.
 // PanWeiDB always uses the PostgreSQL wire protocol regardless of SQL mode.
+// Externally registered owljdbc profiles (config owljdbc.profiles) take
+// precedence: their declared family drives metadata/dialect/placeholder
+// normalization for agent-only types.
 func Family(dbType string) string {
 	t := strings.ToLower(strings.TrimSpace(dbType))
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		return f
+	}
 	t = registry.Normalize(t)
 	switch {
 	case t == "panweidb" || strings.HasPrefix(t, "panweidb-") ||

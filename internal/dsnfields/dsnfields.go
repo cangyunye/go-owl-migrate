@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 // Fields is the structured, password-bearing form of a DSN. The password is
@@ -22,10 +23,49 @@ type Fields struct {
 	Extra    string `json:"extra"`
 }
 
+// 语法注册表:外部 profile(type → 语法名)。未注册的 type 走 familyFor 的
+// 内置推断;注册值必须是 syntaxName 之一。serve/CLI 加载配置时由
+// config.RegisterOwlJDBCProfiles 写入。
+var registeredSyntax sync.Map // type(lower) -> syntaxName
+
+// Syntax names accepted by RegisterSyntaxes; each maps onto one of the
+// decompose/build branches below.
+const (
+	SyntaxURL      = "url"       // scheme://user:pass@host:port/db
+	SyntaxPgKV     = "pg-kv"     // host=h port=p user=u password=p dbname=d
+	SyntaxMySQLTCP = "mysql-tcp" // user:pass@tcp(host:port)/db
+	SyntaxKV       = "kv"        // KEY=VALUE;KEY=VALUE (semicolon)
+)
+
+// RegisterSyntaxes wires externally registered database types to a DSN
+// grammar. Unknown names are ignored (the built-in inference stays in charge).
+func RegisterSyntaxes(m map[string]string) {
+	for t, s := range m {
+		switch s {
+		case SyntaxURL, SyntaxPgKV, SyntaxMySQLTCP, SyntaxKV:
+			registeredSyntax.Store(t, s)
+		}
+	}
+}
+
+// syntaxFor returns the registered grammar for dbType, if any.
+func syntaxFor(dbType string) (string, bool) {
+	v, ok := registeredSyntax.Load(strings.ToLower(strings.TrimSpace(dbType)))
+	if !ok {
+		return "", false
+	}
+	s, _ := v.(string)
+	return s, true
+}
+
 // familyFor maps a database type to a DSN grammar. It is kept separate from
 // dbconn.Family so the grammar matches the documented DSN examples rather than
-// the wire-protocol family.
+// the wire-protocol family. Externally registered syntaxes (owljdbc profile
+// configs) take precedence over the built-in type list.
 func familyFor(t string) string {
+	if s, ok := syntaxFor(t); ok {
+		return s
+	}
 	t = strings.ToLower(strings.TrimSpace(t))
 	switch {
 	case t == "sqlite3" || t == "duckdb":
@@ -51,6 +91,17 @@ func Decompose(dbType, dsn string) (*Fields, error) {
 	switch family {
 	case "file":
 		return &Fields{Database: dsn}, nil
+	case "kv":
+		return decomposeKV(dsn)
+	case "mysql-tcp":
+		return decomposeMySQL(dsn)
+	case "pg-kv":
+		return decomposePostgres(dsn)
+	case "url":
+		if i := strings.Index(dsn, "://"); i > 0 {
+			registeredScheme.Store(strings.ToLower(strings.TrimSpace(dbType)), strings.ToLower(dsn[:i]))
+		}
+		return decomposeURL(dsn)
 	case "mysql":
 		return decomposeMySQL(dsn)
 	case "oracle":
@@ -76,6 +127,14 @@ func Build(dbType string, f Fields, oldDSN string) (string, error) {
 			return "", fmt.Errorf("database path is required")
 		}
 		return f.Database, nil
+	case "kv":
+		return buildKV(f, oldDSN)
+	case "url":
+		return buildGenericURL(dbType, f, oldDSN)
+	case "mysql-tcp":
+		return buildMySQL(f)
+	case "pg-kv":
+		return buildPostgres(f)
 	case "mysql":
 		return buildMySQL(f)
 	case "oracle":
@@ -83,6 +142,105 @@ func Build(dbType string, f Fields, oldDSN string) (string, error) {
 	default:
 		return buildPostgres(f)
 	}
+}
+
+// registeredScheme 记录外部 url 语法 type 的 scheme,供 Build 重建时保留
+// 原生前缀(如 dm://、mydb://),而不是误拼 postgres://。
+var registeredScheme sync.Map // type(lower) -> scheme
+
+// kvKeyAliases 把常见连接字段别名归一到 Fields 语义。
+var kvKeyAliases = map[string]string{
+	"host": "host", "hostname": "host", "server": "host", "ttc_server": "host", "tcpaddr": "host",
+	"port": "port", "tcp_port": "port",
+	"user": "username", "uid": "username", "username": "username",
+	"password": "password", "pwd": "password",
+	"database": "database", "db": "database", "dbname": "database",
+	"sid": "database", "service_name": "database", "server_dsn": "database", "ttc_server_dsn": "database",
+}
+
+// decomposeKV 解析分号分隔的 KEY=VALUE 串(timesten TTC_*、部分国产库客户端
+// 格式)。键名大小写不敏感,别名归一见 kvKeyAliases;未识别的键进 Extra。
+func decomposeKV(dsn string) (*Fields, error) {
+	f := &Fields{}
+	var extra []string
+	for _, tok := range strings.Split(dsn, ";") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		eq := strings.Index(tok, "=")
+		if eq <= 0 {
+			continue
+		}
+		k := strings.ToLower(strings.TrimSpace(tok[:eq]))
+		v := strings.TrimSpace(tok[eq+1:])
+		if canon, ok := kvKeyAliases[k]; ok {
+			switch canon {
+			case "host":
+				f.Host = v
+			case "port":
+				f.Port = v
+			case "username":
+				f.Username = v
+			case "password":
+				f.Password = v
+			case "database":
+				f.Database = v
+			}
+			continue
+		}
+		extra = append(extra, tok)
+	}
+	f.Extra = strings.Join(extra, ";")
+	return f, nil
+}
+
+// buildKV 重建分号 KV 串;规范键在前,Extra 原样缀后。
+func buildKV(f Fields, oldDSN string) (string, error) {
+	_ = oldDSN
+	if f.Host == "" {
+		return "", fmt.Errorf("host is required")
+	}
+	parts := []string{"host=" + f.Host}
+	if f.Port != "" {
+		parts = append(parts, "port="+f.Port)
+	}
+	if f.Username != "" {
+		parts = append(parts, "user="+f.Username)
+	}
+	if f.Password != "" {
+		parts = append(parts, "password="+f.Password)
+	}
+	if f.Database != "" {
+		parts = append(parts, "database="+f.Database)
+	}
+	if f.Extra != "" {
+		parts = append(parts, f.Extra)
+	}
+	return strings.Join(parts, ";"), nil
+}
+
+// buildGenericURL 用 Decompose 时记录的 scheme 重建 scheme://user:pass@host[:port]/db。
+func buildGenericURL(dbType string, f Fields, oldDSN string) (string, error) {
+	_ = oldDSN
+	scheme := ""
+	if v, ok := registeredScheme.Load(strings.ToLower(strings.TrimSpace(dbType))); ok {
+		scheme, _ = v.(string)
+	}
+	if scheme == "" || f.Host == "" {
+		return "", fmt.Errorf("host and a previously parsed DSN are required")
+	}
+	s := scheme + "://" + userinfo(f.Username, f.Password) + "@" + f.Host
+	if f.Port != "" {
+		s += ":" + f.Port
+	}
+	if f.Database != "" {
+		s += "/" + f.Database
+	}
+	if f.Extra != "" {
+		s += "?" + f.Extra
+	}
+	return s, nil
 }
 
 func userinfo(u, p string) string {

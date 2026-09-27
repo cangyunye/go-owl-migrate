@@ -129,6 +129,10 @@ func (s *Server) handleUploadConfigLegacy(w http.ResponseWriter, r *http.Request
 	// 与 config.Load 同一折叠：全局 agent 段落到 source/target 单连接配置，
 	// worker 子进程经 configToMap 往返后仍能解析 jar 路径。
 	cfg.ApplyDefaults()
+	if err := cfg.RegisterOwlJDBCProfiles(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	s.mu.Lock()
 	s.cfg = &cfg
