@@ -211,6 +211,24 @@ target:
 
 ---
 
+## 3.x 配置化注册（owljdbc.profiles）的测试路径
+
+不改编译产物的接入验证：在测试配置里注册新 type（三族示例见 config.md
+「外部 profile 注册」），按以下顺序验证——
+
+1. `validate`：元数据抽取经 agent 通道逐对象通过（注册类型按 `family`
+   归一到对应字典 querier）；
+2. `export data`：选 1–2 张含中文/NULL/小数/时间戳的表，导出 CSV 与源端
+   逐值核对；
+3. `migrate`：以已验证的内置库作对端跑一次端到端，报告 SUCCESS；
+4. Web：配置上传后类型下拉出现注册类型；`GET /api/v1/capabilities` 列出
+   驱动 jar 探测结果。
+
+实测基线（2026-09-27）：orax(oracle 族)→dameng 迁移 45/45；pgx(postgres 族)
+与 myx(mysql 族) export 数据逐值全对（数据源：oracle-19c 容器、本机
+PG/MySQL）。注意 postgres 族作源端走 agent 通道需要 owljdbc v0.1.2+（$N→?
+连接层改写）。
+
 ## 4. 边界与注意事项（测试时的已知边界）
 
 1. **性能预期**：agent 通道吞吐约 0.14–0.30× native（row batching 是后续优化项）。

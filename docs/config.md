@@ -311,21 +311,98 @@ serve 端 `GET /api/v1/capabilities` 可查询当前部署对每个类型的实�
 
 ### 外部 profile 注册（owljdbc.profiles）—— 新数据库免改代码接入
 
-Oracle/MySQL/PostgreSQL 三大族兼容的 JDBC 数据库，可在配置的 `owljdbc.profiles`
-段直接注册新 type（内置 catalog 为基线，同名覆盖；serve 上传/激活配置同样生效，
-worker 子进程经 config.Load 重新注册）。`family` 驱动整条链路的语义归一：
-元数据字典族、绑定占位符（oracle `:N`→sidecar 改 `?`）、oracle 族分页
-（`FETCH NEXT`/ROWNUM）与批量 TRUNCATE 行为。
+**适用**：没有 Go 原生驱动、但提供标准 JDBC 驱动，且 SQL/字典与 Oracle、MySQL、
+PostgreSQL 三大族之一兼容的数据库（国产库绝大多数属于此类）。在配置里注册一段
+profile + 放一个驱动 jar 即可接入 agent 通道，无需改代码、重新编译。
 
-- `url_template` 只支持 `{host}` `{port}` `{database}`；用户名/密码经连接参数
-  传递，不进 URL（不出现在日志）。
-- `dsn_raw: true` 时忽略模板，`dsn` 即完整 JDBC URL 原样透传。
-- `dsn_syntax` 声明 `source.dsn`/`target.dsn` 的语法：`url`
-  （`scheme://user:pass@host:port/db`）、`pg-kv`（`host=... port=...`）、
-  `mysql-tcp`（`user:pass@tcp(host:port)/db`）、`kv`（分号 `KEY=VALUE`，
-  识别 host/port/user/password/database 常见别名）。
-- 目标端为注册类型时，DDL 用 `ddl.target_dialect` 指向相近方言（如 oracle 族
-  填 `oracle`）。
+#### 注册字段
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `driver_class` | ✅ | JDBC 驱动类名，sidecar JVM 加载，如 `oracle.jdbc.OracleDriver` |
+| `jar_globs` | ✅ | 驱动 jar 文件名 glob（放 `agent.jars_dir` 下，任一匹配即可），如 `["ojdbc*.jar"]` |
+| `family` | ✅ | 连接语义族：`oracle` \| `mysql` \| `postgres`。决定元数据字典、绑定占位符、分页语法、标识符引用与批量 TRUNCATE 行为 |
+| `url_template` | 二选一 | JDBC URL 模板，支持 `{host}` `{port}` `{database}` 占位符。**凭据不走模板**——用户名/密码经连接参数直传 sidecar，不出现在 URL/日志里 |
+| `dsn_raw` | 二选一 | `true` 时忽略模板，`dsn` 本身就是完整 JDBC URL，原样透传 |
+| `dsn_syntax` | 建议 | 声明 `source.dsn`/`target.dsn` 的语法（见下表），供结构化解析与表单回填 |
+
+#### 三族注册示例（均已实测）
+
+```yaml
+owljdbc:
+  profiles:
+    # Oracle 兼容库（示例 type 名 orax，任意取名）
+    orax:
+      driver_class: oracle.jdbc.OracleDriver
+      jar_globs: ["ojdbc*.jar"]
+      family: oracle
+      url_template: "jdbc:oracle:thin:@//{host}:{port}/{database}"
+      dsn_syntax: url
+    # MySQL 兼容库
+    myx:
+      driver_class: com.mysql.cj.jdbc.Driver
+      jar_globs: ["mysql-connector-j-*.jar"]
+      family: mysql
+      url_template: "jdbc:mysql://{host}:{port}/{database}?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8"
+      dsn_syntax: mysql-tcp
+    # PostgreSQL 兼容库
+    pgx:
+      driver_class: org.postgresql.Driver
+      jar_globs: ["postgresql-*.jar"]
+      family: postgres
+      url_template: "jdbc:postgresql://{host}:{port}/{database}"
+      dsn_syntax: url
+```
+
+注册后即可像内置类型一样使用（`channel` 置 `agent` 或 `auto`）：
+
+```yaml
+source:
+  type: orax
+  dsn: "oracle://user:pass@db-host:1521/ORCL"
+  schema: APPUSER
+  channel: agent
+```
+
+#### dsn_syntax 取值（source.dsn / target.dsn 的写法）
+
+| 取值 | DSN 形式 | 示例 |
+|------|----------|------|
+| `url` | `scheme://user:pass@host:port/db` | `oracle://scott:tiger@h:1521/ORCL`、`postgresql://u:p@h:5432/test` |
+| `mysql-tcp` | `user:pass@tcp(host:port)/db` | `root:pw@tcp(127.0.0.1:3306)/mydb` |
+| `pg-kv` | libpq 键值对 | `host=h port=5432 user=u password=p dbname=d` |
+| `kv` | 分号 `KEY=VALUE`（键名大小写不敏感，识别 host/hostname/server、port/tcp_port、user/uid、password/pwd、database/db/dbname/sid/service_name 等常见别名，其余原样保留） | `TTC_SERVER=h;TCP_PORT=6625;TTC_SERVER_DSN=sampledb` |
+
+**密码含特殊字符**（`@ : / # ?` 等）时，`url` 语法按 RFC3986 百分号转义后书写，
+工具自动还原：如密码 `AA@1122#` 写作 `postgresql://u:AA%401122%23@h:5432/test`。
+`mysql-tcp` 与 `kv` 语法无需转义。
+
+#### 生效位置与 Web 端
+
+- **CLI**：所有命令在读取配置时注册，随用随生效。
+- **serve**：上传 YAML、`PUT /api/v1/config`、激活配置即时生效；迁移任务的
+  worker 子进程经同一配置文件重新注册，跨进程一致。
+- **Web 表单**：注册的类型自动出现在「源/目标数据库类型」下拉中；**结构化填写**
+  弹窗按内置类型推断字段，自定义类型建议直接把 DSN 粘贴到 DSN 输入框。
+- `GET /api/v1/capabilities` 会列出注册类型的驱动 jar 探测结果。
+
+#### 目标端注意事项
+
+`owljdbc.profiles` 注册的是**连接层**类型；目标端建表的 **DDL 方言**仍由
+`ddl.target_dialect` 决定，应指向该库兼容的内置方言（Oracle 兼容库填 `oracle`、
+MySQL 兼容库填 `mysql`、PG 兼容库填 `postgres`）。`family` 与 `ddl.target_dialect`
+通常一致。
+
+#### 排查
+
+| 现象 | 原因与处理 |
+|------|-----------|
+| `unsupported database type` | 该命令的配置里没有 `owljdbc.profiles` 注册段（注册随配置走，不是全局注册表） |
+| `no jar matching ...` | `jar_globs` 没匹配到 `agent.jars_dir` 里的文件；核对文件名与 glob |
+| `owl.agent.Main` 找不到 / agent jar 相关报错 | owl-agent.jar 缺失；首次连接会自动下载，离线环境按报错指引手动放置或用 `OWLJDBC_AGENT_JAR_URL` 指向内网镜像 |
+| 连接认证失败但账密正确 | 检查 `dsn_syntax` 是否选对；`url` 语法下密码特殊字符需百分号转义 |
+| 语法错（如 MySQL 报双引号标识符错） | `family` 选错族；确认该库兼容的是 oracle/mysql/postgres 哪一族 |
+| 元数据抽取报列不存在（如 collation） | 属字典差异；三大族内置 querier 已含窄字典降级，若仍报错请反馈库型号 |
 
 ## Table Filtering
 

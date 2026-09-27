@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cangyunye/owljdbc"
+
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 )
 
@@ -40,9 +42,19 @@ type Scenario struct {
 }
 
 func dialectOptions() []string {
+	seen := make(map[string]bool, len(config.ValidDialects))
 	keys := make([]string, 0, len(config.ValidDialects))
 	for k := range config.ValidDialects {
 		keys = append(keys, k)
+		seen[k] = true
+	}
+	// owljdbc.profiles 注册的外部类型(内置没有的)追加进下拉,保证
+	// 配置化注册的类型在 Web 表单可直接选择。
+	for _, t := range owljdbc.ProfileTypes() {
+		if !seen[t] {
+			keys = append(keys, t)
+			seen[t] = true
+		}
 	}
 	sort.Strings(keys)
 	return keys

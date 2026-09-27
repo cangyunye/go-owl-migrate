@@ -196,6 +196,15 @@ source:
 - Web 界面：配置页的源/目标表单有「连接通道」下拉（默认 auto）与「Agent jar 目录」
   输入框；`GET /api/v1/capabilities` 返回每个类型在当前部署的真实可用性。
 
+## 更多数据库：配置化注册（免改代码）
+
+提供标准 JDBC 驱动、且 SQL 兼容 Oracle/MySQL/PostgreSQL 三大族之一的数据库
+（国产库大多属于此类），无需等待工具适配——在配置的 `owljdbc.profiles` 段注册
+一段 profile（驱动类 + jar 文件名 + 语义族 + JDBC URL 模板）并把驱动 jar 放进
+`agent.jars_dir`，即可作为新 type 走 agent 通道迁移。Web 表单的类型下拉会自动
+出现注册的类型。三族完整示例、DSN 写法与密码特殊字符转义见
+[Configuration Reference](config.md) 的「外部 profile 注册」一节。
+
 ## Next Steps
 
 - [CLI Commands](cli-commands.md) — Detailed command flags and options
