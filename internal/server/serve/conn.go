@@ -14,6 +14,8 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	"github.com/cangyunye/owljdbc"
+
+	"github.com/cangyunye/go-owl-migrate/internal/owlagent"
 )
 
 // metadataFingerprint captures the source a loaded schema model came from:
@@ -197,7 +199,7 @@ func (s *Server) handleTestConn(w http.ResponseWriter, r *http.Request) {
 	}
 	if ch == dbconn.ChannelAgent {
 		// agent 路径先备齐 sidecar jar（可自动下载），让"测试连接"就暴露问题。
-		if _, err := owljdbc.EnsureAgentJar(owljdbc.JarSearchDirs(cfg.Agent.JarsDir), cfg.Agent.AgentJar); err != nil {
+		if _, err := owlagent.EnsureAgentJar(owljdbc.JarSearchDirs(cfg.Agent.JarsDir), cfg.Agent.AgentJar); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}

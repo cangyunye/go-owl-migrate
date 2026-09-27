@@ -8,6 +8,8 @@ import (
 
 	"github.com/cangyunye/owljdbc"
 
+	"github.com/cangyunye/go-owl-migrate/internal/owlagent"
+
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 )
@@ -59,13 +61,13 @@ func agentJarStatus(dirs []string, configured string) map[string]any {
 			return map[string]any{"found": true, "path": configured, "configured": true}
 		}
 		return map[string]any{"found": false, "configured": configured,
-			"download_url": owljdbc.AgentJarURL(), "error": "agent_jar 指向的文件不存在"}
+			"download_url": owlagent.AgentJarURL(), "error": "agent_jar 指向的文件不存在"}
 	}
 	if jar, err := owljdbc.ResolveAgentJar(dirs, ""); err == nil {
 		return map[string]any{"found": true, "path": jar}
 	}
-	return map[string]any{"found": false, "download_url": owljdbc.AgentJarURL(),
-		"hint": "缺失时首次 agent 连接会自动下载（3 次重试）；离线环境请手动下载后放到 jars 目录，或用 " + owljdbc.AgentJarURLEnv + " 指向内网镜像"}
+	return map[string]any{"found": false, "download_url": owlagent.AgentJarURL(),
+		"hint": "缺失时首次 agent 连接会自动下载（3 次重试）；离线环境请手动下载后放到 jars 目录，或用 " + owlagent.AgentJarURLEnv + " 指向内网镜像"}
 }
 
 // globalAgent 返回当前加载配置的全局 agent 段，供 conn/test 这类独立连接

@@ -7,6 +7,8 @@ import (
 
 	"github.com/cangyunye/owljdbc"
 
+	"github.com/cangyunye/go-owl-migrate/internal/owlagent"
+
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dsnfields"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
@@ -125,7 +127,7 @@ func AgentProfileType(t string) string { return agentProfileType(t) }
 // The sidecar jar is provisioned first: found in jars_dir, or downloaded from
 // the released artifact (3 attempts) — with a manual-download hint on failure.
 func openAgentChannel(cfg config.DBConfig) (*sql.DB, error) {
-	if _, err := owljdbc.EnsureAgentJar(owljdbc.JarSearchDirs(cfg.Agent.JarsDir), cfg.Agent.AgentJar); err != nil {
+	if _, err := owlagent.EnsureAgentJar(owljdbc.JarSearchDirs(cfg.Agent.JarsDir), cfg.Agent.AgentJar); err != nil {
 		return nil, fmt.Errorf("agent channel: %w", err)
 	}
 	ac, err := buildAgentConfig(cfg)

@@ -10,6 +10,8 @@ import (
 
 	"github.com/cangyunye/owljdbc"
 
+	"github.com/cangyunye/go-owl-migrate/internal/owlagent"
+
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 )
@@ -57,7 +59,7 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request, jobType string
 		if ch != dbconn.ChannelAgent {
 			continue
 		}
-		if _, err := owljdbc.EnsureAgentJar(owljdbc.JarSearchDirs(side.Agent.JarsDir), side.Agent.AgentJar); err != nil {
+		if _, err := owlagent.EnsureAgentJar(owljdbc.JarSearchDirs(side.Agent.JarsDir), side.Agent.AgentJar); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}

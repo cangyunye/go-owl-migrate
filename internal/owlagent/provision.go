@@ -1,6 +1,8 @@
-package owljdbc
+package owlagent
 
 import (
+	"github.com/cangyunye/owljdbc"
+
 	"fmt"
 	"io"
 	"net/http"
@@ -31,7 +33,7 @@ func AgentJarURL() string {
 // wins when it points at an existing file. The error on failure tells the
 // user exactly what to download and where to put it.
 func EnsureAgentJar(dirs []string, configured string) (string, error) {
-	if jar, err := ResolveAgentJar(dirs, configured); err == nil {
+	if jar, err := owljdbc.ResolveAgentJar(dirs, configured); err == nil {
 		return jar, nil
 	}
 	url := AgentJarURL()
