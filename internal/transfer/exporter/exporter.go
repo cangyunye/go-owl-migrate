@@ -404,6 +404,9 @@ func (e *Exporter) getColumns(ctx context.Context, tbl *md.TableDef) ([]ColumnIn
 
 func (e *Exporter) isMySQL() bool {
 	t := strings.ToLower(e.cfg.DBType)
+	if f := owljdbc.ProfileFamily(t); f != "" {
+		return f == "mysql"
+	}
 	// openGauss / PanWeiDB use PG wire protocol ($N placeholders), not MySQL
 	if t == "opengaussdb-mysql" || t == "panweidb-mysql" {
 		return false

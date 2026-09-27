@@ -12,6 +12,8 @@ github.com/cangyunye/owljdbc v0.1.0 h1:1S6+El9TZaGwB2ALcleiQuKXxgkQIBypn2NuApNf7
 github.com/cangyunye/owljdbc v0.1.0/go.mod h1:v5irPjjJ27DpcGvwAVfGbCduExnBvn0iFHxKic387Io=
 github.com/cangyunye/owljdbc v0.1.1 h1:HaeXKkKOAhK9eILDAhrspiylJINo8kIAt4BgNCkT2LE=
 github.com/cangyunye/owljdbc v0.1.1/go.mod h1:v5irPjjJ27DpcGvwAVfGbCduExnBvn0iFHxKic387Io=
+github.com/cangyunye/owljdbc v0.1.2 h1:sF+qMUjRA0SNTmppjXiQqh+3HQV6Zhrmu3cNYoyCVsk=
+github.com/cangyunye/owljdbc v0.1.2/go.mod h1:v5irPjjJ27DpcGvwAVfGbCduExnBvn0iFHxKic387Io=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cncf/udpa/go v0.0.0-20191209042840-269d4d468f6f/go.mod h1:M8M6+tZqaGXZJjfX53e64911xZQV5JYwmTeXPW+k8Sc=

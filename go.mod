@@ -23,7 +23,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/apache/arrow/go/v14 v14.0.2 // indirect
-	github.com/cangyunye/owljdbc v0.1.1
+	github.com/cangyunye/owljdbc v0.1.2
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/google/flatbuffers v25.1.24+incompatible // indirect
