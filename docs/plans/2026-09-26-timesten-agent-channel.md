@@ -53,12 +53,23 @@ owljdbc 现有 Endpoint 机制即如此，不进 URL。
 
 - `Endpoint` 字段映射：`host → TTC_SERVER`、`port → TCP_PORT`（TT Server 默认 6624/6625 端口段）、**`database → TTC_SERVER_DSN`（服务端 DSN 名，不是库名——TT 单库实例，"库"即 server DSN 指向的 data store）**。
 - 用户 DSN 写 `jdbc:timesten:` 开头时按现 `URLFromDSN` 语义原样直通（覆盖 client DSN / direct / 特殊属性三种手工场景）。
-- `dsnfields` 需新增 timesten family：解析 `TTC_SERVER=h;TCP_PORT=p;TTC_SERVER_DSN=d`（分号 KV）与 `jdbc:timesten:client:` 前缀，供 web 表单结构化填写与 `Decompose→Endpoint` 反解。**这是唯一需要动 dsnfields 语法解析的点**（现有 postgres/mysql/oracle 三种语法都不匹配分号 KV）。
+- `dsnfields` 需新增 timesten family：解析 `TTC_SERVER=h;TCP_PORT=p;TTC_SERVER_DSN=d`（分号 KV）与 `jdbc:timesten:client:` 前缀，供 web 表单结构化填写与 `Decompose→Endpoint` 反解。**kv 语法已在 v0.7.0 的 dsnfields 中实现**（识别 TTC_SERVER/TTC_SERVER_DSN/TCP_PORT 等别名，未识别键进 Extra）。
+- **连接属性透传（GBK 适配）**：`url_template` 支持 `{extra}` 占位符——kv 解析出的未识别键（如 `Charset=ZHS16GBK`）以 `;` 拼接代入：
+
+  ```yaml
+  url_template: "jdbc:timesten:client:TTC_SERVER={host};TCP_PORT={port};TTC_SERVER_DSN={database}{extra}"
+  ```
+
+  是否需要 `Charset` 属性属待实测（JDBC String 接口理论上由驱动在 Java Unicode 与库字符集间直接转换，Charset 主要影响客户端字符数据接口）；实测确认后在文档定型。
 
 ### 2.4 环境前置（远端迁移的硬要求）
 
 - TT 主机必须运行 **TimesTen Server 守护进程**（`ttDaemonAdmin -startserver`）并定义**服务端 DSN**（`sys.odbc.ini`）；客户端只需 `ttjdbc*.jar`（Instant Client 即可）。
 - 工具侧无需安装 TT 客户端库（纯 JDBC client driver 走 TCP）——与 dameng 接入体验一致。
+- **库字符集核对（GBK 环境必做）**：TimesTen 的 database character set 在 `dbcreate` 时固定，合法值只有 **AL32UTF8**（UTF-8）与 US7ASCII/ISO8859-1 等单字节集——**不支持 GBK 作为库字符集**。GBK 的标准形态是「库 AL32UTF8 + 客户端 `Charset=ZHS16GBK`（连接属性）由驱动转换」。实施前先确认环境属于哪种：
+  - 库 = AL32UTF8：正常走方案全流程（中文种子可测）；
+  - 库 = 单字节（US7ASCII/ISO8859-1）：**中文存不进去**——测试数据降级 ASCII（同 ORCLCDB 教训），或 `dbcreate -charset AL32UTF8` 重建库；
+  - Oracle 源侧 ZHS16GBK：多字节字符集，中文可正常存取，go-ora/ojdbc 双通道均按 NLS 自动转 UTF-8，无需注入。
 
 ## 3. 类型映射方案（oracle → timesten）
 
@@ -98,16 +109,21 @@ owljdbc 现有 Endpoint 机制即如此，不进 URL。
 
 1. **环境前置（唯一硬依赖）**：TT 22.1（或 18.1）实例 + TimesTen Server + 服务端 DSN；无官方 docker 镜像，需用户提供虚机/物理机或自建容器（XE 版免费）。**测试环境需要你提供或确认自建方式。**
 2. 通道级：conn test / validate（`source.type: timesten` + agent 通道），验证 URL 拼装、驱动 jar 解析、窄字典抽取逐对象通过。
-3. 迁移 e2e：oracle → timesten（OWLE2E 模式种子，含中文[库需 UTF-8]/微秒/大整数），对拍 CSV。
+3. 迁移 e2e：oracle → timesten（OWLE2E 模式种子，含中文/微秒/大整数），对拍 CSV。
 4. 导出 e2e：timesten → export data CSV、→ export SQL，与源端导出对拍。
 5. 默认通道回归：`channel` 缺省时现有测试零 diff（timesten 仅显式/auto 且无 native 驱动时才进 agent）。
+6. **GBK 环境数据集与断言**（两档，参照 charset 矩阵既有做法）：
+   - **GBK 安全集**（常用中文、全角标点、GBK 范围生僻字、LATIN1 区）：全链路逐值一致；
+   - **UTF-8 超集集**（emoji、CJK 扩展 B）：在 oracle GBK 端**预期失败/替换**，断言 native(go-ora) 与 agent(ojdbc) 双通道失败语义一致，不静默吞掉；
+   - 管线不变量（进程内/CSV 一律 UTF-8）不变；GBK 环境文本工具看 CSV 乱码属查看器编码问题，不是数据问题（写进测试指南防误判）。
+7. **编码探测告警**：oracle 族 `ProbeServerEncoding`（NLS_CHARACTERSET）与 TT 库字符集查询在连接后打日志——提前暴露单字节库存不了中文/编码不匹配，本条从遗留清单提级为 M2 交付项。
 
 ## 7. 里程碑（确认后执行）
 
 | # | 内容 | 验收 |
 |---|---|---|
-| M1 | catalog `BuildURL` + dsnfields timesten family + knownTypes/registry 注册 + TT jar 就位 | conn test 通（需 TT 环境） |
-| M2 | TimestenQuerier 窄字典 + 降级策略实测校准 | export-metadata 逐对象通过 |
+| M1 | catalog `BuildURL`（含 `{extra}` 占位符透传 Charset 等连接属性）+ sidecar 拉起补 `-Dfile.encoding=UTF-8`（GBK console 下错误消息不乱码）+ dsnfields kv（v0.7.0 已有）+ TT jar 就位 | conn test 通（需 TT 环境；先核对库字符集形态，见 §2.4） |
+| M2 | TimestenQuerier 窄字典 + 降级策略实测校准 + oracle 族编码探测告警接线（§6.7） | export-metadata 逐对象通过；探测日志可见 |
 | M3 | oracle → timesten 迁移 e2e（DDL + 数据 + 对拍） | 45 行全量一致 |
 | M4 | timesten → export data（CSV/SQL）e2e | CSV/SQL 与源对拍一致 |
 
@@ -119,3 +135,5 @@ owljdbc 现有 Endpoint 机制即如此，不进 URL。
 4. NUMBER(p,0) → TT_INTEGER/TT_BIGINT 是否更优（约束/索引/空间）；先保守 NUMBER。
 5. TT JDBC 对 `setTimestamp(i, ts, Calendar)` 的支持（纳秒协议依赖）与 CLOB 绑定读取。
 6. 测试环境：TT 版本、字符集（建议 dbcreate 时 AL32UTF8）、Server 端口。
+7. **GBK 环境专项**：JDBC 链路是否需要 `Charset=ZHS16GBK` 连接属性（经 `{extra}` 透传实测）；GBK 生僻字在 oracle GBK 端经 go-ora/ojdbc 双通道的失败语义是否一致；TT 端 GBK 全集→AL32UTF8 往返是否逐值无损。
+8. 已实测基线（配置化注册机制侧，2026-09-27）：orax(oracle 族)→dameng 45/45、pgx(postgres 族)/myx(mysql 族) 导出逐值全对——M1 剩余工作仅为 TT 专属的连接与字典校准。
