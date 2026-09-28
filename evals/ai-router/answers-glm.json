@@ -1,0 +1,316 @@
+{
+ "model": "glm",
+ "stage": "route",
+ "answers": {
+  "r01": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r02": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r03": {
+   "route": "migrate",
+   "sub": "resume",
+   "confidence": "high"
+  },
+  "r04": {
+   "route": "migrate",
+   "sub": "skip-ddl",
+   "confidence": "high"
+  },
+  "r05": {
+   "route": "migrate",
+   "sub": "sql-out",
+   "confidence": "high"
+  },
+  "r06": {
+   "route": "migrate",
+   "sub": "continue-on-error",
+   "confidence": "high"
+  },
+  "r07": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r08": {
+   "route": "migrate",
+   "sub": "channel-agent",
+   "confidence": "high"
+  },
+  "r09": {
+   "route": "export-metadata",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r10": {
+   "route": "export-metadata",
+   "sub": "format:xlsx",
+   "confidence": "high"
+  },
+  "r11": {
+   "route": "export-metadata",
+   "sub": "objects",
+   "confidence": "high"
+  },
+  "r12": {
+   "route": "export-metadata",
+   "sub": "format:sql",
+   "confidence": "high"
+  },
+  "r13": {
+   "route": "show-query",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r14": {
+   "route": "export-ddl",
+   "sub": "csv-metadata",
+   "confidence": "high"
+  },
+  "r15": {
+   "route": "export-ddl",
+   "sub": "schema-mapping",
+   "confidence": "high"
+  },
+  "r16": {
+   "route": "export-ddl",
+   "sub": "no-quote",
+   "confidence": "high"
+  },
+  "r17": {
+   "route": "export-data",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r18": {
+   "route": "export-data",
+   "sub": "format:sql",
+   "confidence": "high"
+  },
+  "r19": {
+   "route": "export-data",
+   "sub": "format:xlsx",
+   "confidence": "high"
+  },
+  "r20": {
+   "route": "export-insert",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r21": {
+   "route": "gen-select",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r22": {
+   "route": "export-data",
+   "sub": "unsupported-filter",
+   "confidence": "high"
+  },
+  "r23": {
+   "route": "export-data",
+   "sub": "parallel",
+   "confidence": "high"
+  },
+  "r24": {
+   "route": "import",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r25": {
+   "route": "import",
+   "sub": "truncate",
+   "confidence": "high"
+  },
+  "r26": {
+   "route": "import",
+   "sub": "gbk",
+   "confidence": "high"
+  },
+  "r27": {
+   "route": "import",
+   "sub": "error-policy",
+   "confidence": "high"
+  },
+  "r28": {
+   "route": "import",
+   "sub": "use-copy",
+   "confidence": "high"
+  },
+  "r29": {
+   "route": "import",
+   "sub": "data-transforms",
+   "confidence": "high"
+  },
+  "r30": {
+   "route": "init",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r31": {
+   "route": "validate",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r32": {
+   "route": "datasource",
+   "sub": "create",
+   "confidence": "high"
+  },
+  "r33": {
+   "route": "datasource",
+   "sub": "conn-test",
+   "confidence": "high"
+  },
+  "r34": {
+   "route": "preflight",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r35": {
+   "route": "capabilities",
+   "sub": "version",
+   "confidence": "high"
+  },
+  "r36": {
+   "route": "howto",
+   "sub": "search-order",
+   "confidence": "high"
+  },
+  "r37": {
+   "route": "howto",
+   "sub": "channel-agent",
+   "confidence": "high"
+  },
+  "r38": {
+   "route": "online-init",
+   "sub": "apply",
+   "confidence": "high"
+  },
+  "r39": {
+   "route": "online-init",
+   "sub": "script-only",
+   "confidence": "high"
+  },
+  "r40": {
+   "route": "online-sync",
+   "sub": "once",
+   "confidence": "high"
+  },
+  "r41": {
+   "route": "online-status",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r42": {
+   "route": "online-archive",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r43": {
+   "route": "out-of-scope",
+   "sub": "rename",
+   "confidence": "high"
+  },
+  "r44": {
+   "route": "out-of-scope",
+   "sub": "compare",
+   "confidence": "high"
+  },
+  "r45": {
+   "route": "out-of-scope",
+   "sub": "proc-rewrite",
+   "confidence": "high"
+  },
+  "r46": {
+   "route": "out-of-scope",
+   "sub": "coding",
+   "confidence": "high"
+  },
+  "r47": {
+   "route": "out-of-scope",
+   "sub": "unsupported-db",
+   "confidence": "high"
+  },
+  "r48": {
+   "route": "migrate",
+   "sub": "kingbase-target",
+   "confidence": "high"
+  },
+  "r49": {
+   "route": "out-of-scope",
+   "sub": "db-admin",
+   "confidence": "high"
+  },
+  "r50": {
+   "route": "out-of-scope",
+   "sub": "binlog",
+   "confidence": "high"
+  },
+  "r51": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r52": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r53": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r54": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r55": {
+   "route": "export-metadata",
+   "sub": "exclude-note",
+   "confidence": "high"
+  },
+  "r56": {
+   "route": "export-data",
+   "sub": "format:xlsx",
+   "confidence": "high"
+  },
+  "r57": {
+   "route": "migrate",
+   "sub": "skip-ddl",
+   "confidence": "high"
+  },
+  "r58": {
+   "route": "export-metadata",
+   "sub": "objects",
+   "confidence": "high"
+  },
+  "r59": {
+   "route": "export-data",
+   "sub": "datasource-ref",
+   "confidence": "high"
+  },
+  "r60": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r61": {
+   "route": "export-data",
+   "sub": "",
+   "confidence": "high"
+  },
+  "r62": {
+   "route": "howto",
+   "sub": "dsn-example",
+   "confidence": "high"
+  }
+ }
+}

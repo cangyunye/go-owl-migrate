@@ -1,0 +1,594 @@
+{
+ "model": "deepseek-flash",
+ "stage": "route",
+ "usage": {
+  "prompt_tokens": 85564,
+  "completion_tokens": 19251
+ },
+ "answers": {
+  "r01": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "源库、目标库、库用户与表范围（scott.emp、scott.dept）及两边连接串均已给全，按端到端迁移执行。"
+  },
+  "r02": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户明确要把 MySQL sales 库整体迁移到 PostgreSQL app 库，且源/目标连接信息齐全，走端到端迁移。"
+  },
+  "r03": {
+   "route": "migrate",
+   "sub": "resume",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "已指明配置文件 migrate.yaml 且要求断点续传，属于 migrate 的 resume 变体。"
+  },
+  "r04": {
+   "route": "migrate",
+   "sub": "skip-ddl",
+   "confidence": "medium",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "目标表已手工建好、只灌数据，走迁移的 skip-ddl 变体（跳过建表 DDL，沿用上下文中已有的源/目标库）。"
+  },
+  "r05": {
+   "route": "migrate",
+   "sub": "sql-out",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "要执行迁移但不连目标库、只产出 INSERT SQL 脚本，属于 migrate 的 sql-out 变体（离线出脚本人工执行）。"
+  },
+  "r06": {
+   "route": "migrate",
+   "sub": "continue-on-error",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要求整库迁移且允许个别表失败不中断，对应 migrate 的 continue-on-error 变体，记录失败表后继续执行其余表。"
+  },
+  "r07": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "medium",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "已明确源数据源「生产Oracle」、表范围 SCOTT.EMP* 与目标本地 PostgreSQL，属端到端迁移，表名通配符收敛为白名单，可直接走 migrate（目标本地库连接信息在配置/交互中补齐即可）。"
+  },
+  "r08": {
+   "route": "migrate",
+   "sub": "channel-agent",
+   "confidence": "medium",
+   "missing_slots": [
+    "postgres 目标库连接信息（host/port/db/user/password）"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "达梦经 agent/JDBC 通道作源、postgres 作目标方言，意图明确属端到端迁移，仅缺目标 postgres 的连接信息待补。"
+  },
+  "r09": {
+   "route": "export-metadata",
+   "sub": "objects",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "已给定 oracle 连接串和 SCOTT 用户，属于抽取元数据清单（表/视图）场景，直接走 export-metadata。"
+  },
+  "r10": {
+   "route": "export-metadata",
+   "sub": "format:xlsx",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "抽取 10.3.0.8 达梦源库的全部元数据并导出为 xlsx；达梦只能作连接类型，需走 agent 通道（配 Java 与驱动 jar）。"
+  },
+  "r11": {
+   "route": "export-metadata",
+   "sub": "objects",
+   "confidence": "medium",
+   "missing_slots": [
+    "数据源连接信息（DSN 或已配置的数据源名）"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": true,
+   "reason": "要抽 scott 模式下表结构并输出 csv，按对象类型收敛为表/列/主键/索引，但缺数据源连接信息，需要先补上才能执行。"
+  },
+  "r12": {
+   "route": "export-metadata",
+   "sub": "unsupported-format",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "抽元数据属 export-metadata，但 --format sql 只支持 oracle 家族源，mysql 8.4 源只能导 csv/xlsx，如需 DDL 可再走 export-ddl。"
+  },
+  "r13": {
+   "route": "show-query",
+   "sub": "columns",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户想看 postgres 抽取列信息的元数据 SQL 语句，属于查看抽取 SQL 的用法。"
+  },
+  "r14": {
+   "route": "export-ddl",
+   "sub": "csv-metadata",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "明确要求由已抽取的 CSV 元数据生成 postgres 建表 DDL，属 export-ddl 的 CSV 元数据输入变体，上下文已具备源文件信息。"
+  },
+  "r15": {
+   "route": "export-ddl",
+   "sub": "schema-mapping,drop",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "从 oracle 源库抽取元数据并生成 postgres 目标方言建表语句，属 export-ddl，schema 级映射 scott→public 与附带 drop 语句按对应参数处理。"
+  },
+  "r16": {
+   "route": "export-ddl",
+   "sub": "no-quote",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要求生成建表 DDL 时不对标识符加引号（no-quote 变体），属 export-ddl 路由的选项调整。"
+  },
+  "r17": {
+   "route": "export-data",
+   "sub": "format:csv",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "已明确要导出 oracle scott.emp 表数据为 csv 并给出连接串，直接走数据导出。"
+  },
+  "r18": {
+   "route": "export-data",
+   "sub": "format:sql",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "从 mysql owl_demo.users 导出数据并生成 postgres 方言的 INSERT SQL，属数据导出（sql 格式）能力。"
+  },
+  "r19": {
+   "route": "export-data",
+   "sub": "format:xlsx",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "明确要导出 scott 下 E 开头表的数据并用 excel 格式输出，走数据导出即可，表名前缀作为表范围过滤传入。"
+  },
+  "r20": {
+   "route": "export-insert",
+   "sub": "offline-csv2sql",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "已有离线 CSV 且明确要生成 postgres 的 INSERT 语句，属于离线 CSV 转 INSERT 能力，表名可直接取自 schema.table.csv 文件名。"
+  },
+  "r21": {
+   "route": "gen-select",
+   "sub": "cursor",
+   "confidence": "medium",
+   "missing_slots": [
+    "源数据源/连接信息",
+    "表名",
+    "cursor 排序列（如自增主键、时间列）"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": true,
+   "reason": "意图是生成分页 SELECT 语句，属 gen-select，但只说了「大表」，缺表名和连接信息，请补上后即可生成；若工具只出偏移分页，按 cursor 需改成基于排序列的 where > 上批最大值 形式。"
+  },
+  "r22": {
+   "route": "export-data",
+   "sub": "unsupported-filter",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "导出数据不支持 WHERE 条件与行数上限（含 status=1 和 100 条限制），只能用 gen-select 生成带条件的 SELECT 自行执行，或先全量导出 CSV 后再过滤。"
+  },
+  "r23": {
+   "route": "export-data",
+   "sub": "parallel,format:csv",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "明确要并发多线程导出 MySQL sales 库全部表的数据为 CSV，属数据导出，走并行导出变体。"
+  },
+  "r24": {
+   "route": "import",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "已给明 CSV 目录、目标库(postgres)与配置文件 migrate.yaml，属 CSV 导入目标库的 import 操作，要素齐备无需澄清。"
+  },
+  "r25": {
+   "route": "import",
+   "sub": "truncate",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要求在导入前清空目标表，属于 import 的 truncate 变体（先清空再导入）。"
+  },
+  "r26": {
+   "route": "import",
+   "sub": "gbk",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户是在给 CSV 导入补一个编码约束，按 GBK 编码导入即可（若尚未指定 CSV 路径和目标库连接，执行前需补齐）。"
+  },
+  "r27": {
+   "route": "import",
+   "sub": "error-policy",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "把 CSV 导入目标库并容忍脏数据、跳过错误行，属导入的错误策略配置，错误行上限可在 error-policy 参数中设置。"
+  },
+  "r28": {
+   "route": "import",
+   "sub": "use-copy",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要求 PostgreSQL 目标库导入时优先走 COPY 通道提速，属 CSV 导入的 use-copy 变体。"
+  },
+  "r29": {
+   "route": "import",
+   "sub": "data-transforms",
+   "confidence": "medium",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "这是 CSV 导入时的取值转换要求：空字符串按 NULL 处理、日期按 20260102 紧凑格式解析，属于导入的 data-transforms 配置项；如需实际执行请补上 CSV 路径与目标数据源。"
+  },
+  "r30": {
+   "route": "init",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户明确只要 oracle→mysql 的配置模板，无需真实连接信息，走 init 生成模板即可。"
+  },
+  "r31": {
+   "route": "validate",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户明确要校验 migrate.yaml 配置与元数据，直接走 validate 命令。"
+  },
+  "r32": {
+   "route": "datasource",
+   "sub": "create",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要在 Web 界面新增一个 MySQL 数据源，名称、地址端口、账号密码、库名等要素齐全，走数据源管理的新建操作。"
+  },
+  "r33": {
+   "route": "datasource",
+   "sub": "conn-test",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要测试 PostgreSQL 连接串的连通性，属数据源管理下的连接测试（该能力仅 Web API 提供，CLI 不提供）。"
+  },
+  "r34": {
+   "route": "preflight",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户明确要求在迁移前做只读预检，检查配置、元数据与两端连通性，对应 preflight 能力。"
+  },
+  "r35": {
+   "route": "capabilities",
+   "sub": "capabilities",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "问的是工具本身支持哪些库，属于能力自检，用 owl-migrate version（或 serve 的 /api/v1/capabilities）确认：OceanBase 系可作目标方言，达梦仅支持走 agent 通道当连接类型、不能当目标方言。"
+  },
+  "r36": {
+   "route": "howto",
+   "sub": "search-order",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户在问配置文件该放哪、为什么家目录的 migrate.yaml 没被加载，属工具用法问答（配置搜索顺序），不执行任务。"
+  },
+  "r37": {
+   "route": "howto",
+   "sub": "channel-agent",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户在问 Oracle 源走 agent 通道时 channel（源端 channel: agent、Java 环境与 ./jars 驱动目录）该怎么配，属于工具用法问答，不触发执行。"
+  },
+  "r38": {
+   "route": "online-init",
+   "sub": "apply",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "明确要求在源库不停机前提下走触发器 CDC 在线增量，第一步是安装并直接应用触发器，路由到 online-init（apply），并会校验源表主键。"
+  },
+  "r39": {
+   "route": "online-init",
+   "sub": "script-only",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户明确要求只生成触发器脚本待审核、不立即执行，属在线初始化的脚本产出模式。"
+  },
+  "r40": {
+   "route": "online-sync",
+   "sub": "once",
+   "confidence": "medium",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要跑一轮增量同步即停（online-sync 的 once 变体），顺带通过同步结果核对是否有积压；若只想查看积压不动数据，可改用 online-status。"
+  },
+  "r41": {
+   "route": "online-status",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户要查看在线增量同步的检查点与 pending/failed 积压情况，属于 online-status 状态查询。"
+  },
+  "r42": {
+   "route": "online-archive",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "要清理已同步完成的增量批次以释放空间，对应触发器 CDC 的在线归档操作。"
+  },
+  "r43": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "工具不支持表级重命名，只有 ddl.schema_mapping 的 schema 级映射；如需改名请在目标库迁移后用 ALTER TABLE RENAME 手动处理。"
+  },
+  "r44": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "工具没有跨库数据比对能力，只能迁移；如需人工核验可用 export-data 分别导出两边数据后自行比对。"
+  },
+  "r45": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "工具不支持存储过程/函数的语法改写，只能导出原始定义（对应 export-metadata），如需 plpgsql 改写请人工或第三方工具处理。"
+  },
+  "r46": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "写 Java 代码属于通用开发任务，不在 owl-migrate 能力范围内；工具本身是 CLI/HTTP 服务，可直接调用命令或接口，无需额外写程序。"
+  },
+  "r47": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "工具不支持 MongoDB 等文档型数据库作为源，仅支持关系型库之间的迁移。"
+  },
+  "r48": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "Kingbase 只能作为连接类型走 agent 通道（需 Java+驱动 jar），不在 17 个内置目标方言内，target_dialect 不能写 kingbase；建表方言请改用 oracle/postgres/mysql 等内置目标，或把 kingbase 当作源库抽取。"
+  },
+  "r49": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "查活跃连接数、锁等待属于数据库运行状态巡检，owl-migrate 不做 DBA 巡检/监控，建议用数据库自身视图（如 v$session、pg_stat_activity、information_schema.innodb_trx）或专用监控工具；若只是迁移前确认目标库可用，可改用 preflight 预检。"
+  },
+  "r50": {
+   "route": "out-of-scope",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": true,
+   "needs_clarify": false,
+   "reason": "本工具只支持触发器方式的在线增量 CDC，不提供 binlog 解析能力，无法满足 binlog 实时同步需求。"
+  },
+  "r51": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [
+    "源库连接信息（数据源/DSN）",
+    "导出内容（表结构元数据 / 建表 DDL / 表数据）",
+    "输出格式（csv/xlsx/sql）及导出范围（哪些表）"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": true,
+   "reason": "“这个库”未指明具体数据源，“导出”也分不清是要表结构还是表数据，需先确认这两点才能路由到具体命令。"
+  },
+  "r52": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [
+    "源库连接信息",
+    "目标库连接信息",
+    "要迁移的表范围"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": true,
+   "reason": "「表」「迁过去」指代不明，未给出源库、目标库和表范围，需先补齐这几项才能路由到 migrate。"
+  },
+  "r53": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [
+    "任务类型（迁移/抽元数据/导出DDL/导出数据/导入等）",
+    "目标库连接信息（若为迁移）",
+    "表范围或对象类型"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": true,
+   "reason": "只给了一个 Oracle 连接串，没说要对这个库做什么，需要您说明具体任务。"
+  },
+  "r54": {
+   "route": "online-sync",
+   "sub": "",
+   "confidence": "medium",
+   "missing_slots": [
+    "源库连接信息（类型/DSN）",
+    "目标库连接信息（类型/DSN）",
+    "同步范围（整库或具体表）"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": true,
+   "reason": "要实现两库持续一致需走触发器 CDC 在线增量同步（init 装触发器+存量快照，再 sync 追增量），但未提供源库/目标库连接信息和同步范围，请补充后我再给出具体命令；另提醒本工具不含两库数据比对能力。"
+  },
+  "r55": {
+   "route": "export-metadata",
+   "sub": "unsupported-filter",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "要列出 scott 下的表属于元数据抽取，但工具没有表级排除语法，无法直接排除 BIN$ 回收站表，只能改用白名单指定表或抽取后再过滤。"
+  },
+  "r56": {
+   "route": "export-data",
+   "sub": "format:xlsx",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "复用上文已给的 mysql 连接串与 owl_demo.users 表，仅把导出格式改为 xlsx。"
+  },
+  "r57": {
+   "route": "migrate",
+   "sub": "skip-ddl",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "上下文已明确 oracle scott.emp → postgres 且配置就绪，用户要求跳过建表只导数据，对应 migrate 的 skip-ddl 变体。"
+  },
+  "r58": {
+   "route": "export-metadata",
+   "sub": "objects",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "沿用上文 scott.emp 与 csv 格式，将抽取对象收敛为索引和外键，属元数据导出并限定对象类型。"
+  },
+  "r59": {
+   "route": "export-data",
+   "sub": "format:csv",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "沿用上文的 sales 库全表导出 csv，仅把数据源换成「生产库」重跑一次，属导出表数据。"
+  },
+  "r60": {
+   "route": "migrate",
+   "sub": "",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "源为 OceanBase Oracle 租户（OBProxy 2883，含集群/租户/账号密码）目标 PostgreSQL 连接信息齐全，直接走端到端迁移。"
+  },
+  "r61": {
+   "route": "clarify",
+   "sub": "",
+   "confidence": "medium",
+   "missing_slots": [
+    "导出内容：表数据（export-data）还是表结构元数据（export-metadata）"
+   ],
+   "out_of_scope": false,
+   "needs_clarify": true,
+   "reason": "连接串和表名已明确，但「导出 owl_users 表为 csv」未说清是拉表数据还是抽表结构，两者都支持 csv，需先确认再路由。"
+  },
+  "r62": {
+   "route": "howto",
+   "sub": "dsn-example",
+   "confidence": "high",
+   "missing_slots": [],
+   "out_of_scope": false,
+   "needs_clarify": false,
+   "reason": "用户在问 openGauss 的连接方式与 DSN 写法，属工具用法咨询，不执行任务。"
+  }
+ }
+}
