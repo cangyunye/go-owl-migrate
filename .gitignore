@@ -1,5 +1,5 @@
 # Binaries
-owl-migrate
+/owl-migrate
 *.exe
 *.dll
 *.so

@@ -1,6 +1,7 @@
 package exporter
 
 import (
+	"time"
 	"fmt"
 	"os"
 	"strings"
@@ -90,6 +91,8 @@ func (w *csvWriter) formatValue(v any, col ColumnInfo) string {
 		} else {
 			s = string(t)
 		}
+	case time.Time:
+		s = t.Format("20060102150405")
 	case string:
 		s = t
 	default:
@@ -189,10 +192,13 @@ func (w *sqlWriter) WriteRow(row []any, columns []ColumnInfo) error {
 	for i, v := range row {
 		if v == nil {
 			vals[i] = "NULL"
-		} else {
-			s := fmt.Sprintf("%v", v)
-			vals[i] = generator.FormatSQLValue(s, w.nullMarker, w.dialect)
+			continue
 		}
+		if t, ok := v.(time.Time); ok {
+			v = t.Format("2006-01-02 15:04:05")
+		}
+		s := fmt.Sprintf("%v", v)
+		vals[i] = generator.FormatSQLValue(s, w.nullMarker, w.dialect)
 	}
 	w.rows = append(w.rows, strings.Join(vals, ", "))
 

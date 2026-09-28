@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"golang.org/x/text/encoding"
 
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	"github.com/cangyunye/go-owl-migrate/internal/generator"
@@ -164,43 +163,25 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 			zap.String("table", key),
 		)
 	}
-	// Build output file
-	filename := fmt.Sprintf("%s.%s.csv", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName))
-	filepath := filepath.Join(e.cfg.OutputDir, filename)
-	f, err := os.Create(filepath)
+	// Build the format-aware output writer (csv / insert.sql / xlsx). The
+	// paged streaming loop below is format-agnostic: writers consume
+	// WriteHeader/WriteRow, so sql and xlsx honor --format here just like the
+	// offline ExportTablesFromData path.
+	writer, err := e.createWriter(tbl, columns)
 	if err != nil {
-		result.Error = fmt.Errorf("create file: %w", err)
+		result.Error = fmt.Errorf("create writer: %w", err)
 		return result
 	}
-	defer f.Close()
-
-	// Non-UTF-8 CSV encoding (e.g. GBK) must apply to the paged live-export
-	// path too, not just the offline ExportWriter path: transcode every line
-	// from the in-process UTF-8 invariant to the configured file encoding.
-	var fileEnc *encoding.Encoder
-	if enc := encodingByName(e.cfg.CSVEncoding); enc != nil {
-		fileEnc = enc.NewEncoder()
-	}
-	writeCSVLine := func(line string) error {
-		if fileEnc == nil {
-			_, err := f.WriteString(line)
-			return err
+	// The writer owns the output file; make sure error exits don't leak it.
+	defer func() {
+		if result.Error != nil {
+			_ = writer.Close()
 		}
-		b, err := fileEnc.Bytes([]byte(line))
-		if err != nil {
-			return fmt.Errorf("encode csv line: %w", err)
-		}
-		_, err = f.Write(b)
-		return err
-	}
+	}()
 
-	// Write CSV header
+	// Write header
 	if e.cfg.CSVHeader {
-		header := make([]string, len(columns))
-		for i, col := range columns {
-			header[i] = col.Name
-		}
-		if err := writeCSVLine(e.csvLine(header)); err != nil {
+		if err := writer.WriteHeader(columns); err != nil {
 			result.Error = fmt.Errorf("write header: %w", err)
 			return result
 		}
@@ -235,8 +216,7 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 		}
 
 		for _, row := range rows {
-			line := e.rowToCSV(row, columns)
-			if err := writeCSVLine(line); err != nil {
+			if err := writer.WriteRow(row, columns); err != nil {
 				result.Error = fmt.Errorf("write row: %w", err)
 				return result
 			}
@@ -251,10 +231,15 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 		}
 	}
 
+	if err := writer.Close(); err != nil {
+		result.Error = fmt.Errorf("close writer: %w", err)
+		return result
+	}
+
 	result.Rows = totalRows
 	result.Batches = batches
 	result.Duration = time.Since(start)
-	result.OutputFile = filepath
+	result.OutputFile = writer.OutputFile()
 
 	e.logger.Info("Export completed",
 		zap.String("table", key),
