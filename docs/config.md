@@ -94,6 +94,17 @@ source:
     conn_max_lifetime: "30m"                # Max connection lifetime (default: 30m)
     conn_max_idle_time: "5m"                # Max idle time before close (default: 5m)
 
+ai:                                         # 可选：AI 对话路由层（serve /api/v1/ai/*）。密钥只存环境变量，绝不入配置文件
+  provider: deepseek                        # 首轮单供应商 deepseek；custom 走 OpenAI 兼容 base_url
+  base_url: ""                              # 留空 = 供应商预设根地址
+  api_key_env: OWL_AI_API_KEY               # 密钥所在环境变量名（回退读 DEEPSEEK_API_KEY）
+  model: deepseek-flash                     # deepseek-flash（V4.1-Flash，推理模型）/ deepseek-v4-pro
+  context_window: 1048576                   # 仅本地预截断/会话预算用，不发给供应商
+  effort: low                               # 思考强度 low|high|max（仅推理模型生效；路由用 low）
+  max_tokens: 32768                         # 思考 token 计入此预算，勿设过小
+  timeout: 2m                               # 单次尝试 HTTP 超时
+  max_repair_rounds: 3                      # 配置生成修复回路上限
+
 target:
   type: mysql
   dsn: "root:pass@tcp(127.0.0.1:3306)/mydb"

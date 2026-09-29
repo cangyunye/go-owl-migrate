@@ -61,6 +61,8 @@ new endpoints). Breaking changes ship as `/api/v2` in 2.0.
 | GET /api/v1/jobs/{id}/output | Reports a sql-out job's INSERT SQL output directory, file list, and sizes. |
 | GET /api/v1/jobs/{id}/output/download | Streams a completed job's SQL output as `tar.gz` (default), `zip`, or `raw` (`?format=`). 409 unless the job is `completed`. |
 | GET /api/v1/dialects | Returns the sorted list of valid dialect names. **静态全量表**——不反映当前二进制/部署的实际可用性；按部署事实做 UI 置灰请用 `/api/v1/capabilities`。 |
+| GET /api/v1/ai/status | AI 路由层的配置事实：`{enabled, provider, model, base_url, effort, key_set, key_env}`。零配置即 deepseek 预设（`deepseek-flash`）；`enabled`/`key_set` 仅反映密钥环境变量（`ai.api_key_env` 指向的变量，缺省 `OWL_AI_API_KEY`，回退 `DEEPSEEK_API_KEY`）是否存在，**永不应答密钥内容**。不发起供应商调用。 |
+| POST /api/v1/ai/route | 自然语言 → 工具意图路由。入参 `{"utterance": "...", "context": ["前几轮原文，可选"]}`；服务端用内嵌路由提示词（与 `evals/ai-router` 同源）调供应商 LLM，返回 `{ok, route, result:{route, sub, confidence, missing_slots, out_of_scope, needs_clarify, reason}, usage, model}`。未配 key → 503；供应商失败/回复非 JSON → 502。**只路由不执行**；配置生成端点见设计稿 `docs/plans/2026-09-28-ai-chat-router-design.md`。 |
 | GET /api/v1/capabilities | 当前部署的能力事实：`java`（JRE 是否可用）、`agent_jar`（owl-agent.jar 是否可解析，缺失时的下载 URL 与指引）、`types`（每个数据库类型 `{type, native, native_tag, agent, jar_path}`——native 驱动是否已编译、agent catalog 是否覆盖、驱动 jar 是否在 jars_dir 里）。owljdbc.profiles 注册的外部类型包含在 `agent` 列表中。纯探测，无下载、无连接。 |
 | GET /api/v1/config | Returns the active config as JSON map; DSN passwords of `source`/`target` are masked. |
 | PUT /api/v1/config | Replaces the active config from a JSON object and persists it. |

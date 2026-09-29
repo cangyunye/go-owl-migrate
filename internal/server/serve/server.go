@@ -121,6 +121,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/jobs/{id}/output/download", s.handleJobOutputDownload)
 	mux.HandleFunc("GET /api/v1/dialects", s.handleGetDialects)
 	mux.HandleFunc("GET /api/v1/capabilities", s.handleGetCapabilities)
+	mux.HandleFunc("GET /api/v1/ai/status", s.handleAIStatus)
+	mux.HandleFunc("POST /api/v1/ai/route", s.handleAIRoute)
 	mux.HandleFunc("POST /api/v1/conn/test", s.handleTestConn)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("GET /api/v1/config/current", s.handleGetCurrentConfig)

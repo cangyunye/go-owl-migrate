@@ -148,6 +148,8 @@
 - 修复回路：CLI 校验失败 → 报错回喂 → 最多 3 轮，只许改配置不许改意图。
 - 推理模型注意：思考 token 计入 `max_tokens`（默认 4096 会截断答案），路由用 `effort=low` + `max_tokens=32768`。
 
+**落地状态（2026-09-29）**：`POST /api/v1/ai/route` 与 `GET /api/v1/ai/status` 已实现（`internal/server/serve/ai.go` + `internal/ai` 包，提示词 go:embed 与 `evals/ai-router/router_system.md` 有 parity 测试锁定）；`ai:` 配置段见 `docs/config.md`。语料 e2e 回归：serve 端点实连 DeepSeek 62 条 route 命中 60/62（`evals/ai-router/run_serve_route_eval.py`）。下一步：配置生成端点（`/ai/plan`，凭据占位符协议 + 修复回路）与会话对象存储。
+
 ### 供应商接入 schema（配置段草案）
 
 ```yaml

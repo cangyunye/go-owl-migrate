@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/cangyunye/owljdbc"
 	"gopkg.in/yaml.v3"
@@ -33,6 +34,7 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 		Extensions map[string]any   `yaml:"extensions,omitempty"`
 		Agent      *AgentConfig     `yaml:"agent,omitempty"`
 		OwlJDBC    *OwlJDBCConfig   `yaml:"owljdbc,omitempty"`
+		AI         *AIConfig        `yaml:"ai,omitempty"`
 	}{
 		General: c.General,
 		Metadata: metaAlias{
@@ -90,6 +92,10 @@ func (c *Config) MarshalYAML() (interface{}, error) {
 	if c.Agent.JarsDir != "" || c.Agent.AgentJar != "" || c.Agent.JavaHome != "" {
 		v := c.Agent
 		m.Agent = &v
+	}
+	if c.AI != (AIConfig{}) {
+		v := c.AI
+		m.AI = &v
 	}
 	return m, nil
 }
@@ -211,6 +217,12 @@ type Config struct {
 	// compatible drivers). See OwlJDBCConfig.
 	OwlJDBC OwlJDBCConfig `yaml:"owljdbc,omitempty"`
 
+	// AI holds the optional vendor-API settings for serve's natural-language
+	// routing endpoints (/api/v1/ai/*). The API key itself is never stored in
+	// config files — only the environment variable name to read it from. See
+	// AIConfig.
+	AI AIConfig `yaml:"ai,omitempty"`
+
 	// ForceAllSections when true causes MarshalYAML to emit ALL sections
 	// even if they are zero-valued. Used by the "full" init scenario.
 	ForceAllSections bool `yaml:"-"`
@@ -288,6 +300,97 @@ type AgentConfig struct {
 	AgentJar string `yaml:"agent_jar,omitempty"`
 	// JavaHome selects the java executable directory; empty uses java from PATH.
 	JavaHome string `yaml:"java_home,omitempty"`
+}
+
+// AIConfig holds vendor-API settings for the natural-language routing layer
+// (serve /api/v1/ai/*). First-round vendor is DeepSeek; custom vendors are
+// any OpenAI-compatible endpoint via base_url. The API key itself must live
+// in an environment variable — APIKeyEnv names it and is read per request,
+// so keys never land in config files, logs, or session objects.
+type AIConfig struct {
+	// Provider selects the vendor preset. Empty = deepseek.
+	Provider string `yaml:"provider,omitempty"`
+	// BaseURL is the OpenAI-compatible API root (no /chat/completions suffix).
+	// Empty = the provider preset's default.
+	BaseURL string `yaml:"base_url,omitempty"`
+	// APIKeyEnv names the environment variable holding the API key.
+	// Empty = OWL_AI_API_KEY (DEEPSEEK_API_KEY is also accepted as fallback).
+	APIKeyEnv string `yaml:"api_key_env,omitempty"`
+	// Model is the vendor model id, e.g. deepseek-flash.
+	Model string `yaml:"model,omitempty"`
+	// ContextWindow is the model context budget in tokens. Only used locally
+	// for pre-truncation and session budgeting; never sent to the vendor.
+	ContextWindow int `yaml:"context_window,omitempty"`
+	// Effort is the thinking intensity: low | high | max. Only meaningful for
+	// reasoning models (deepseek-flash default level is high; routing uses low).
+	Effort string `yaml:"effort,omitempty"`
+	// MaxTokens caps completion tokens per request. Reasoning models spend
+	// thinking tokens from this budget, so keep it generous (default 32768).
+	MaxTokens int `yaml:"max_tokens,omitempty"`
+	// TimeoutStr is the per-attempt HTTP timeout, e.g. "2m". YAML key stays
+	// timeout; the Go field is TimeoutStr so Timeout() can be the parsed form.
+	TimeoutStr string `yaml:"timeout,omitempty"`
+	// MaxRepairRounds bounds the config repair loop (validate error fed back
+	// to the model; only slot values may change, never the intent).
+	MaxRepairRounds int `yaml:"max_repair_rounds,omitempty"`
+}
+
+// DefaultAIBaseURL maps a provider preset to its OpenAI-compatible API root.
+var DefaultAIBaseURL = map[string]string{
+	"deepseek": "https://api.deepseek.com",
+}
+
+// ValidAIEfforts lists supported thinking-intensity levels.
+var ValidAIEfforts = map[string]bool{"low": true, "high": true, "max": true}
+
+func (a *AIConfig) ApplyDefaults() {
+	if a.Provider == "" {
+		a.Provider = "deepseek"
+	}
+	if a.BaseURL == "" {
+		a.BaseURL = DefaultAIBaseURL[a.Provider]
+	}
+	if a.APIKeyEnv == "" {
+		a.APIKeyEnv = "OWL_AI_API_KEY"
+	}
+	if a.Model == "" {
+		a.Model = "deepseek-flash"
+	}
+	if a.ContextWindow == 0 {
+		a.ContextWindow = 1048576
+	}
+	if a.Effort == "" {
+		a.Effort = "low"
+	}
+	if a.MaxTokens == 0 {
+		a.MaxTokens = 32768
+	}
+	if a.TimeoutStr == "" {
+		a.TimeoutStr = "2m"
+	}
+	if a.MaxRepairRounds == 0 {
+		a.MaxRepairRounds = 3
+	}
+}
+
+// APIKey resolves the key: the configured env var first, then the well-known
+// DEEPSEEK_API_KEY fallback. Empty means the AI layer is not provisioned.
+func (a *AIConfig) APIKey() string {
+	if v := os.Getenv(a.APIKeyEnv); v != "" {
+		return v
+	}
+	if a.APIKeyEnv != "DEEPSEEK_API_KEY" {
+		return os.Getenv("DEEPSEEK_API_KEY")
+	}
+	return ""
+}
+
+func (a *AIConfig) Timeout() time.Duration {
+	d, err := time.ParseDuration(a.TimeoutStr)
+	if err != nil || d <= 0 {
+		return 2 * time.Minute
+	}
+	return d
 }
 
 // OwlJDBCConfig registers external agent-channel database profiles: new
@@ -606,6 +709,11 @@ func (c *Config) ApplyDefaults() {
 	if c.General.LogFormat == "" {
 		c.General.LogFormat = "text"
 	}
+	// AI vendor settings default to the deepseek preset; zero-value stays
+	// zero in MarshalYAML except for provider-dependent resolution done here.
+	if c.AI != (AIConfig{}) {
+		c.AI.ApplyDefaults()
+	}
 	// Global agent defaults flow into per-connection settings so dbconn.Open
 	// (which only sees a DBConfig) resolves jars/JVM without root context.
 	for _, db := range []*DBConfig{&c.Source, &c.Target} {
@@ -742,6 +850,19 @@ func (c *Config) validate() error {
 	case "", "skip", "stop", "retry":
 	default:
 		return fmt.Errorf("invalid online.sync.on_error %q: must be skip/stop/retry", c.Online.Sync.OnError)
+	}
+	if c.AI != (AIConfig{}) {
+		a := c.AI
+		a.ApplyDefaults()
+		if !ValidAIEfforts[a.Effort] {
+			return fmt.Errorf("invalid ai.effort %q: must be low, high or max", a.Effort)
+		}
+		if a.BaseURL == "" {
+			return fmt.Errorf("ai.base_url is required for provider %q (no preset)", a.Provider)
+		}
+		if a.MaxTokens <= 0 || a.ContextWindow <= 0 || a.MaxRepairRounds <= 0 {
+			return fmt.Errorf("ai.max_tokens / ai.context_window / ai.max_repair_rounds must be positive")
+		}
 	}
 	return nil
 }
