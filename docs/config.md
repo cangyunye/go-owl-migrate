@@ -100,7 +100,8 @@ ai:                                         # 可选：AI 对话路由层（serv
   api_key_env: OWL_AI_API_KEY               # 密钥所在环境变量名（回退读 DEEPSEEK_API_KEY）
   model: deepseek-flash                     # deepseek-flash（V4.1-Flash，推理模型）/ deepseek-v4-pro
   context_window: 1048576                   # 仅本地预截断/会话预算用，不发给供应商
-  effort: low                               # 思考强度 low|high|max（仅推理模型生效；路由用 low）
+  effort: low                               # 路由思考强度 low|high|max（仅推理模型生效；路由用 low）
+  plan_effort: high                         # 配置生成的思考强度（默认 high，生成质量优先）
   max_tokens: 32768                         # 思考 token 计入此预算，勿设过小
   timeout: 2m                               # 单次尝试 HTTP 超时
   max_repair_rounds: 3                      # 配置生成修复回路上限

@@ -15,6 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/cangyunye/go-owl-migrate/internal/ai"
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/datasource"
 	"github.com/cangyunye/go-owl-migrate/internal/dscrypto"
@@ -25,10 +26,14 @@ import (
 
 type Config struct {
 	Store      *service.JobStore
-	MasterURL  string
-	ConfigPath string
-	TempDir    string
-	ConfigDir  string
+	MasterURL      string
+	ConfigPath     string
+	TempDir        string
+	ConfigDir      string
+	// AISessionsDir is where the optional AI session database lives
+	// (~/.owl/migrate/ai/sessions). Empty defaults to paths.AISessionsDir.
+	AISessionsDir string
+
 	// DataSourcesDir is where reusable data-source profiles live
 	// (~/.owl/migrate/datasources). Empty defaults to paths.DataSourcesDir.
 	DataSourcesDir string
@@ -42,6 +47,7 @@ type Server struct {
 	tempDir        string
 	configDir      string
 	dataSourcesDir string
+	aiSessionsDir  string
 	token          string
 
 	// openDB opens a database connection; nil means service.OpenDB. The row
@@ -59,6 +65,28 @@ type Server struct {
 	dsOnce sync.Once
 	dsErr  error
 	ds     *datasource.Store
+
+	aiOnce  sync.Once
+	aiErr   error
+	aiStore *ai.SessionStore
+}
+
+// aiSessions lazily opens the AI conversation-session store. The AI layer is
+// optional: servers that never receive /ai/plan calls never create the file.
+func (s *Server) aiSessions() (*ai.SessionStore, error) {
+	s.aiOnce.Do(func() {
+		dir := s.aiSessionsDir
+		if dir == "" {
+			dir = paths.AISessionsDir()
+		}
+		store, err := ai.OpenSessions(dir)
+		if err != nil {
+			s.aiErr = err
+			return
+		}
+		s.aiStore = store
+	})
+	return s.aiStore, s.aiErr
 }
 
 func NewServer(cfg Config) *Server {
@@ -69,6 +97,7 @@ func NewServer(cfg Config) *Server {
 		tempDir:        cfg.TempDir,
 		configDir:      cfg.ConfigDir,
 		dataSourcesDir: cfg.DataSourcesDir,
+		aiSessionsDir:  cfg.AISessionsDir,
 		token:          cfg.Token,
 		cfg:            &config.Config{},
 	}
@@ -123,6 +152,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/capabilities", s.handleGetCapabilities)
 	mux.HandleFunc("GET /api/v1/ai/status", s.handleAIStatus)
 	mux.HandleFunc("POST /api/v1/ai/route", s.handleAIRoute)
+	mux.HandleFunc("POST /api/v1/ai/plan", s.handleAIPlan)
 	mux.HandleFunc("POST /api/v1/conn/test", s.handleTestConn)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("GET /api/v1/config/current", s.handleGetCurrentConfig)

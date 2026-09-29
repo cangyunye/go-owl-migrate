@@ -57,6 +57,11 @@ func DataSourcesDir() string {
 	return filepath.Join(Home(), "datasources")
 }
 
+// AISessionsDir is where the optional AI conversation-session database lives.
+func AISessionsDir() string {
+	return filepath.Join(Home(), "ai", "sessions")
+}
+
 func TempDir() string {
 	return filepath.Join(Home(), "temp")
 }

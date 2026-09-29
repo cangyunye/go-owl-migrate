@@ -11,6 +11,8 @@
 | `corpus.jsonl` | 62 条用户语料：七大场景全子命令变体 + out-of-scope（8）+ 歧义（5）+ 多轮上下文（4），每条带 gold 路由 |
 | `router_system.md` | 路由系统提示词（路由词表 + 硬约束 + 输出 JSON schema） |
 | `run_router_eval.py` | harness：`--stage route`（意图路由）/ `--stage config`（配置生成 + CLI 实连验证） |
+| `run_serve_route_eval.py` | 起 serve 实连 `/api/v1/ai/route` 跑全语料（端点契约回归） |
+| `run_serve_plan_eval.py` | 两轮会话 e2e：新会话→续轮改格式→意图切换自动开新一轮（13 项检查） |
 | `compare_answers.py` | 多模型 × gold 三方对比报告 |
 | `answers-*.json` | 各模型作答（flash / pro / glm） |
 | `config-<model>/` | 阶段二产物：生成的 migrate.yaml + 验证日志 + results.json |

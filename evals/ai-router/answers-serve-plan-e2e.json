@@ -1,0 +1,199 @@
+{
+ "turns": [
+  {
+   "continuity": {
+    "mode": "new",
+    "reason": "新会话"
+   },
+   "next": "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
+   "ok": true,
+   "plan_id": "s-1d9bb944d7648c21ee72be09",
+   "repair_rounds": 2,
+   "route": "export-data",
+   "session": {
+    "session_id": "s-242aded49cdbe896e26084aa",
+    "intent": "export-data",
+    "sub": "format:csv",
+    "slots": {
+     "format": "csv",
+     "source_dsn": "root:root123456@tcp(127.0.0.1:3306)/owl_demo",
+     "source_schema": "owl_demo",
+     "source_type": "mysql",
+     "target_dialect": "mysql"
+    },
+    "turns": [
+     {
+      "role": "user",
+      "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
+      "created_at": "2026-09-29T08:51:42.528914+08:00"
+     },
+     {
+      "role": "user",
+      "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
+      "created_at": "2026-09-29T08:51:55.68435+08:00"
+     },
+     {
+      "role": "assistant",
+      "content": "已生成配置草案 s-1d9bb944d7648c21ee72be09（等待确认执行）",
+      "created_at": "2026-09-29T08:51:55.68503+08:00"
+     }
+    ],
+    "stage": "confirming",
+    "artifacts": [
+     {
+      "kind": "plan",
+      "id": "s-1d9bb944d7648c21ee72be09",
+      "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\nddl:\n  target_dialect: mysql\nexport:\n  format: csv\n  tables:\n    include:\n      - users",
+      "created_at": "2026-09-29T08:51:55.682859+08:00"
+     }
+    ],
+    "created_at": "2026-09-29T08:51:42.527084+08:00",
+    "updated_at": "2026-09-29T08:51:55.685055+08:00",
+    "round": 0
+   },
+   "session_id": "s-242aded49cdbe896e26084aa",
+   "sub": "format:csv",
+   "warnings": null,
+   "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\nddl:\n  target_dialect: mysql\nexport:\n  format: csv\n  tables:\n    include:\n      - users"
+  },
+  {
+   "continuity": {
+    "from_session": "s-242aded49cdbe896e26084aa",
+    "mode": "continued",
+    "reason": "同意图，沿用会话与槽位"
+   },
+   "next": "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
+   "ok": true,
+   "plan_id": "s-8751a18c0da1b204ce3b262e",
+   "repair_rounds": 1,
+   "route": "export-data",
+   "session": {
+    "session_id": "s-242aded49cdbe896e26084aa",
+    "intent": "export-data",
+    "sub": "format:csv",
+    "slots": {
+     "channel": "native",
+     "format": "xlsx",
+     "source_dsn": "root:root123456@tcp(127.0.0.1:3306)/owl_demo",
+     "source_schema": "owl_demo",
+     "source_type": "mysql",
+     "target_dialect": "mysql",
+     "target_type": "mysql"
+    },
+    "turns": [
+     {
+      "role": "user",
+      "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
+      "created_at": "2026-09-29T08:51:42.528914+08:00"
+     },
+     {
+      "role": "user",
+      "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
+      "created_at": "2026-09-29T08:51:55.68435+08:00"
+     },
+     {
+      "role": "assistant",
+      "content": "已生成配置草案 s-1d9bb944d7648c21ee72be09（等待确认执行）",
+      "created_at": "2026-09-29T08:51:55.68503+08:00"
+     },
+     {
+      "role": "user",
+      "content": "再导一份 xlsx 格式的",
+      "created_at": "2026-09-29T08:51:56.908123+08:00"
+     },
+     {
+      "role": "user",
+      "content": "再导一份 xlsx 格式的",
+      "created_at": "2026-09-29T08:52:00.290549+08:00"
+     },
+     {
+      "role": "assistant",
+      "content": "已生成配置草案 s-8751a18c0da1b204ce3b262e（等待确认执行）",
+      "created_at": "2026-09-29T08:52:00.290893+08:00"
+     }
+    ],
+    "stage": "confirming",
+    "artifacts": [
+     {
+      "kind": "plan",
+      "id": "s-1d9bb944d7648c21ee72be09",
+      "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\nddl:\n  target_dialect: mysql\nexport:\n  format: csv\n  tables:\n    include:\n      - users",
+      "created_at": "2026-09-29T08:51:55.682859+08:00"
+     },
+     {
+      "kind": "plan",
+      "id": "s-8751a18c0da1b204ce3b262e",
+      "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: mysql\nddl:\n  target_dialect: mysql\nexport:\n  format: xlsx\n  parallel:\n    enabled: true\n    max_workers: 4",
+      "created_at": "2026-09-29T08:52:00.289779+08:00"
+     }
+    ],
+    "created_at": "2026-09-29T08:51:42+08:00",
+    "updated_at": "2026-09-29T08:52:00.290901+08:00",
+    "round": 0
+   },
+   "session_id": "s-242aded49cdbe896e26084aa",
+   "sub": "format:xlsx",
+   "warnings": null,
+   "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: mysql\nddl:\n  target_dialect: mysql\nexport:\n  format: xlsx\n  parallel:\n    enabled: true\n    max_workers: 4"
+  },
+  {
+   "continuity": {
+    "from_session": "s-242aded49cdbe896e26084aa",
+    "mode": "new_round",
+    "reason": "意图从 export-data 变为 migrate：已自动开新一轮（继承库/表等事实槽位，不回放旧对话）；原会话 s-242aded49cdbe896e26084aa 保留可引用",
+    "session_id": "s-7158468313252074e41342b9"
+   },
+   "next": "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
+   "ok": true,
+   "plan_id": "s-b00b1485090983ad703efb0f",
+   "repair_rounds": 0,
+   "route": "migrate",
+   "session": {
+    "session_id": "s-7158468313252074e41342b9",
+    "intent": "migrate",
+    "slots": {
+     "channel": "native",
+     "format": "xlsx",
+     "source_dsn": "root:root123456@tcp(127.0.0.1:3306)/owl_demo",
+     "source_schema": "owl_demo",
+     "source_type": "mysql",
+     "target_dialect": "postgres",
+     "target_type": "postgres"
+    },
+    "turns": [
+     {
+      "role": "user",
+      "content": "把刚才那张表迁移到 postgres，host 127.0.0.1 port 5432 user postgres",
+      "created_at": "2026-09-29T08:52:03.874661+08:00"
+     },
+     {
+      "role": "user",
+      "content": "把刚才那张表迁移到 postgres，host 127.0.0.1 port 5432 user postgres",
+      "created_at": "2026-09-29T08:52:06.334115+08:00"
+     },
+     {
+      "role": "assistant",
+      "content": "已生成配置草案 s-b00b1485090983ad703efb0f（等待确认执行）",
+      "created_at": "2026-09-29T08:52:06.33478+08:00"
+     }
+    ],
+    "stage": "confirming",
+    "artifacts": [
+     {
+      "kind": "plan",
+      "id": "s-b00b1485090983ad703efb0f",
+      "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: postgres\n  dsn: host=127.0.0.1 port=5432 user=postgres password=****** dbname=postgres sslmode=disable\nddl:\n  target_dialect: postgres\nexport:\n  format: xlsx\nimport:\n  source_dir: ./output/data/",
+      "created_at": "2026-09-29T08:52:06.332412+08:00"
+     }
+    ],
+    "created_at": "2026-09-29T08:52:03.872906+08:00",
+    "updated_at": "2026-09-29T08:52:06.334798+08:00",
+    "round": 1
+   },
+   "session_id": "s-7158468313252074e41342b9",
+   "sub": "",
+   "warnings": null,
+   "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: postgres\n  dsn: host=127.0.0.1 port=5432 user=postgres password=****** dbname=postgres sslmode=disable\nddl:\n  target_dialect: postgres\nexport:\n  format: xlsx\nimport:\n  source_dir: ./output/data/"
+  }
+ ]
+}

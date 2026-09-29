@@ -321,9 +321,13 @@ type AIConfig struct {
 	// ContextWindow is the model context budget in tokens. Only used locally
 	// for pre-truncation and session budgeting; never sent to the vendor.
 	ContextWindow int `yaml:"context_window,omitempty"`
-	// Effort is the thinking intensity: low | high | max. Only meaningful for
-	// reasoning models (deepseek-flash default level is high; routing uses low).
+	// Effort is the thinking intensity for routing: low | high | max. Only
+	// meaningful for reasoning models (deepseek-flash default level is high;
+	// routing uses low for speed/cost).
 	Effort string `yaml:"effort,omitempty"`
+	// PlanEffortStr is the thinking intensity for config generation, which
+	// benefits from deeper reasoning than routing. YAML key: plan_effort.
+	PlanEffortStr string `yaml:"plan_effort,omitempty"`
 	// MaxTokens caps completion tokens per request. Reasoning models spend
 	// thinking tokens from this budget, so keep it generous (default 32768).
 	MaxTokens int `yaml:"max_tokens,omitempty"`
@@ -362,6 +366,9 @@ func (a *AIConfig) ApplyDefaults() {
 	if a.Effort == "" {
 		a.Effort = "low"
 	}
+	if a.PlanEffortStr == "" {
+		a.PlanEffortStr = "high"
+	}
 	if a.MaxTokens == 0 {
 		a.MaxTokens = 32768
 	}
@@ -383,6 +390,14 @@ func (a *AIConfig) APIKey() string {
 		return os.Getenv("DEEPSEEK_API_KEY")
 	}
 	return ""
+}
+
+// PlanEffort returns the thinking intensity for config generation.
+func (a *AIConfig) PlanEffort() string {
+	if a.PlanEffortStr == "" {
+		return "high"
+	}
+	return a.PlanEffortStr
 }
 
 func (a *AIConfig) Timeout() time.Duration {
@@ -856,6 +871,9 @@ func (c *Config) validate() error {
 		a.ApplyDefaults()
 		if !ValidAIEfforts[a.Effort] {
 			return fmt.Errorf("invalid ai.effort %q: must be low, high or max", a.Effort)
+		}
+		if !ValidAIEfforts[a.PlanEffortStr] {
+			return fmt.Errorf("invalid ai.plan_effort %q: must be low, high or max", a.PlanEffortStr)
 		}
 		if a.BaseURL == "" {
 			return fmt.Errorf("ai.base_url is required for provider %q (no preset)", a.Provider)
