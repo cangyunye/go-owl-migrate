@@ -34,7 +34,7 @@
 4. 表范围无排除语法（"排除 xx"→白名单收敛，不是 out-of-scope，是受限路由）。
 5. 目标方言仅 17 个内置：oracle/postgres/mysql/sqlite3/duckdb/goldendb 系/oceanbase 系/panweidb 系/opengaussdb 系；dm/kingbase/timesten 仅可作**连接类型**（agent 通道），不能当目标方言。
 6. 不支持 MongoDB 等 document 库；不做 binlog CDC（只有触发器 CDC）；不做 DBA 巡检/写代码等通用任务。
-7. **export data 无 WHERE 条件过滤、无行数上限**——用户要条件/限量导出时，route 仍为 export-data，sub 填 `unsupported-filter`，并在 reason 里如实说明不支持与替代方案（gen-select 生成 SELECT 人工执行/导出后过滤），不得假装能做。
+7. **export data 支持 WHERE 条件导出**（export.filters，条件 COUNT 门禁会在执行前校验条件合法性）；但**仍无行数上限**——用户要限量导出时，route 仍为 export-data，sub 填 `unsupported-limit`，并在 reason 里如实说明与替代方案（gen-select 生成 SELECT 人工执行/导出后取前 N 行），不得假装能做。
 
 ## 判定规则
 

@@ -15,14 +15,21 @@ target:                                    # 目标库（字段同 source）
 ddl:
   schema_mapping:                          # 子键形式
     owl_demo: public
+  column_types: {"SCOTT.EMP.SAL": "number(10,2)"}   # 按列类型覆盖（自动建表/export ddl）
 export:
   format: csv|sql|xlsx
   parallel: {enabled: true, max_workers: 4}
+  filters:                                    # WHERE 条件导出（字面 SQL 片段，禁 ; 注释与绑定占位符）
+    "SCOTT.EMP": "deptno = 20"
+  filters_check: count|off                    # 缺省 count（执行前条件 COUNT 校验）
+  columns:                                    # 列投影/改名（include 列表顺序=输出顺序）
+    include: {"SCOTT.EMP": ["empno", "sal", "ename"]}
+    rename: {"SCOTT.EMP": {SAL: salary}}
 import:
   source_dir: ./output/data/
   target: {truncate_before: true|false, disable_constraints: ...}
   batch: {error_policy: stop|skip_row|log_only, use_copy: true|false}
-  data_transforms: {source_encoding: GBK, datetime_format: yyyyMMddHHmmss|yyyyMMdd, null_if: [...], trim_strings: bool}
+  data_transforms: {source_encoding: GBK, datetime_format: yyyyMMddHHmmss|yyyyMMdd, column_datetime_formats: {"SCOTT.EMP.HIREDATE": "yyyyMMdd"}, null_if: [...], trim_strings: bool}
 agent:                                     # agent 通道全局段
   jars_dir: ""
   agent_jar: ""
@@ -45,6 +52,6 @@ agent:                                     # agent 通道全局段
 ## 其他规则
 
 - 迁移/导出/生成器场景目标方言 `ddl.target_dialect` 只能是 17 个内置方言；金仓/达梦/TimesTen 只能作源（channel: agent）。
-- `export data` 不支持 WHERE 条件过滤与行数上限——用户要求时不要假装支持，输出能落地的最接近配置并在 reason 里说明替代方案（gen-select / 导出后过滤）。
+- `export data` 支持 WHERE 条件（export.filters，含条件 COUNT 预校验）；不支持行数上限——用户要求限量时输出最接近配置并在 reason 里说明替代（gen-select / 导出后取前 N 行），不得假装支持。
 - 用户消息与已知槽位冲突时，以用户最新一句话为准。
 - 「已知槽位」中标注（上轮）的值是上轮任务的延续，本轮未显式修改就沿用。

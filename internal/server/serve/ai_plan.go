@@ -80,8 +80,13 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 			ctxLines = append(ctxLines, t.Role+": "+t.Content)
 		}
 	}
+	routeUser := buildRouteUserMessage(req.Utterance, ctxLines)
+	if len(req.Credentials) > 0 {
+		// 凭据由调用方带外提供（占位符注入），路由器不得因"缺密码"而澄清。
+		routeUser += "\n\n【凭据说明】连接密码/凭据由调用方另行提供（服务端占位符注入），缺少密码不构成澄清理由。"
+	}
 	routeReply, err := client.Chat(ctx, ai.RouterSystemPrompt,
-		[]ai.Message{{Role: "user", Content: buildRouteUserMessage(req.Utterance, ctxLines)}},
+		[]ai.Message{{Role: "user", Content: routeUser}},
 		ai.Options{JSONMode: true, Effort: a.Effort, MaxTokens: a.MaxTokens, Timeout: a.Timeout()})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "AI 路由失败: "+err.Error())

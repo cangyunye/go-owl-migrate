@@ -1,6 +1,6 @@
 # 方案：export data / migrate 的 WHERE 条件导出（2026-09-29）
 
-状态：草案（待评审拍板）。前置事实（已对代码核实）：
+状态：**已落地**（2026-09-30，P1-P4 提交于 feat/ai-chat-router-research；e2e：`scripts/e2e_where_filter.sh` ALL PASS——oracle 同库双用户列序/改名/行数断言、mysql 列裁剪、门禁负路径、online 拒绝）。前置事实（已对代码核实）：
 
 1. `migrate_cmd.go` Step 5 与 `export data` 走**同一个** `exporter.ExportTables`——WHERE 做在 exporter 层，两个命令一处受益。
 2. `buildBatchQuery` 有四条分页路径需注入：无 PK OFFSET、ORDER BY+LIMIT、keyset 游标、Oracle legacy ROWNUM（`buildOracleLegacyQuery`）。

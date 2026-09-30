@@ -135,6 +135,7 @@ ddl:
       schemas: ["SYS", "SYSTEM"]            # Schema exclusion
       tables: ["SCOTT.TEMP_DATA"]           # Exact table exclusion
   type_overrides: {}                        # Override specific type mappings
+  column_types: {}                          # 按列类型覆盖，键 "SCHEMA.TABLE.COLUMN"（大小写不敏感，列级优先；支持 %l/%p/%s）
   identity_to_serial: false                 # Convert identity columns to SERIAL (PG)
   add_rowid_column: false                   # Add a ROWID column (Oracle targets)
   empty_string_to_null: false               # Convert '' to NULL (Oracle compatibility)
@@ -157,6 +158,12 @@ select_gen:
 export:
   output_dir: ./output/data/                # Output directory for exported data files
   format: csv                               # Output format: csv (default), sql, xlsx
+  filters:                                  # WHERE 条件导出（glob 键 → 字面 SQL 片段；精确点名 > glob，多命中报错）
+    "SCOTT.EMP": "deptno = 20 AND sal > 1000"
+  filters_check: count                      # 条件 COUNT 门禁: count(默认，执行前校验条件并产源侧 expected) | off
+  columns:                                  # 列投影/改名（include 列表顺序 = 输出顺序；PK 不可丢弃）
+    include: {"SCOTT.EMP": ["empno", "sal", "ename"]}
+    rename: {"SCOTT.EMP": {SAL: salary}}
   csv:
     delimiter: ","
     quote_char: "\""
