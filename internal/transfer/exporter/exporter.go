@@ -44,6 +44,10 @@ type Config struct {
 	Filters map[string]string
 	// FiltersCheck: "count" (default) runs the gate, "off" skips it.
 	FiltersCheck string
+	// ColumnRenames mirrors config export.columns.rename (pattern →
+	// {source column: output name}) so column alignment can map a renamed
+	// output name back to its live source column.
+	ColumnRenames map[string]map[string]string
 	Logger       *zap.Logger
 }
 
@@ -164,9 +168,16 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 	}
 
 	// Get column info from DB
-	columns, err := e.getColumns(ctx, tbl)
+	dbCols, err := e.getColumns(ctx, tbl)
 	if err != nil {
 		result.Error = fmt.Errorf("get columns: %w", err)
+		return result
+	}
+	// 列对齐：以表定义为准（applyColumnProjection 后 def 顺序=配置顺序、
+	// 名=改名后名；未投影时=源列序）。SQL 引用源名，输出头用 def 名。
+	columns, sqlNames, err := e.alignColumnsToDef(tbl, dbCols)
+	if err != nil {
+		result.Error = err
 		return result
 	}
 
@@ -219,7 +230,7 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 		if len(pkCols) == 0 {
 			offset = int(totalRows)
 		}
-		rows, newLast, err := e.fetchBatch(ctx, tbl, columns, pkCols, lastVals, offset)
+		rows, newLast, err := e.fetchBatch(ctx, tbl, columns, sqlNames, pkCols, lastVals, offset)
 		if err != nil {
 			result.Error = fmt.Errorf("fetch batch %d: %w", batches, err)
 			return result
@@ -407,6 +418,57 @@ func (e *Exporter) getColumns(ctx context.Context, tbl *md.TableDef) ([]ColumnIn
 	return columns, nil
 }
 
+// alignColumnsToDef maps the live database column list onto the table
+// definition: the def's column order and names (post projection/rename)
+// define the output, while SQL keeps the database-side names. When the def
+// carries no columns the DB list passes through unchanged.
+func (e *Exporter) alignColumnsToDef(tbl *md.TableDef, dbCols []ColumnInfo) ([]ColumnInfo, []string, error) {
+	// 反查表：输出名(改名后) → 源列名
+	outToSource := map[string]string{}
+	if ren, ok, err := ResolvePatternKey(e.cfg.ColumnRenames, tbl.TableSchema, tbl.TableName); err != nil {
+		return nil, nil, err
+	} else if ok {
+		for src, out := range ren {
+			outToSource[strings.ToLower(out)] = src
+		}
+	}
+	if len(tbl.Columns) == 0 {
+		names := make([]string, len(dbCols))
+		for i, c := range dbCols {
+			names[i] = c.Name
+		}
+		return dbCols, names, nil
+	}
+	byLower := make(map[string]ColumnInfo, len(dbCols))
+	for _, c := range dbCols {
+		byLower[strings.ToLower(c.Name)] = c
+	}
+	out := make([]ColumnInfo, 0, len(tbl.Columns))
+	sqlNames := make([]string, 0, len(tbl.Columns))
+	for _, dc := range tbl.Columns {
+		dbc, ok := byLower[strings.ToLower(dc.ColumnName)]
+		if !ok {
+			// 改名后的输出名：经 rename 反查源列名再试一次
+			if src, isRenamed := outToSource[strings.ToLower(dc.ColumnName)]; isRenamed {
+				if dbc2, ok2 := byLower[strings.ToLower(src)]; ok2 {
+					out = append(out, ColumnInfo{Name: dc.ColumnName, TypeName: dbc2.TypeName, Nullable: dbc2.Nullable})
+					sqlNames = append(sqlNames, dbc2.Name)
+					continue
+				}
+			}
+			avail := make([]string, 0, len(dbCols))
+			for _, c := range dbCols {
+				avail = append(avail, c.Name)
+			}
+			return nil, nil, fmt.Errorf("table %s.%s: metadata column %q not found in the live source (available: %s)",
+				tbl.TableSchema, tbl.TableName, dc.ColumnName, strings.Join(avail, ", "))
+		}
+		out = append(out, ColumnInfo{Name: dc.ColumnName, TypeName: dbc.TypeName, Nullable: dbc.Nullable})
+		sqlNames = append(sqlNames, dbc.Name)
+	}
+	return out, sqlNames, nil
+}
+
 func (e *Exporter) isMySQL() bool {
 	t := strings.ToLower(e.cfg.DBType)
 	if f := owljdbc.ProfileFamily(t); f != "" {
@@ -477,12 +539,12 @@ func (e *Exporter) placeholder(idx int) string {
 	return "?"
 }
 
-func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []ColumnInfo, pkCols []string, lastVals []any, offset int) ([][]any, []any, error) {
-	colNames := make([]string, len(columns))
-	colByName := make(map[string]string, len(columns))
-	for i, c := range columns {
-		colNames[i] = e.quoteIdent(c.Name)
-		colByName[strings.ToLower(c.Name)] = c.Name
+func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []ColumnInfo, sqlNames []string, pkCols []string, lastVals []any, offset int) ([][]any, []any, error) {
+	colNames := make([]string, len(sqlNames))
+	colByName := make(map[string]string, len(sqlNames))
+	for i, n := range sqlNames {
+		colNames[i] = e.quoteIdent(n)
+		colByName[strings.ToLower(n)] = n
 	}
 
 	// Resolve PK column names against actual column casing from DB

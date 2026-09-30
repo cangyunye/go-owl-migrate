@@ -62,25 +62,26 @@ func globMatch(pattern, name string) bool {
 	return ok
 }
 
-// resolveFilter picks the WHERE fragment for one table: an exact
-// "schema.table" key (case-insensitive) wins; otherwise glob keys match the
-// bare table name (no dot in key) or "schema.table" (dotted key) — matching
-// more than one glob is an error (ambiguous semantics; fail fast instead of
-// merging). No match returns "".
-func (e *Exporter) resolveFilter(schema, table string) (string, error) {
-	if len(e.cfg.Filters) == 0 {
-		return "", nil
+// ResolvePatternKey picks the value of one table pattern key: an exact
+// "schema.table" match (case-insensitive) wins; otherwise glob keys match the
+// bare table name (no dot in key) or "schema.table" (dotted key). Two globs
+// hitting one table is an error. ok=false when nothing matches. Shared by the
+// filter gate and the column projection/rename rules.
+func ResolvePatternKey[T any](m map[string]T, schema, table string) (T, bool, error) {
+	var zero T
+	if len(m) == 0 {
+		return zero, false, nil
 	}
-	lowerTable := strings.ToLower(table)
-	for k, f := range e.cfg.Filters {
-		if strings.EqualFold(k, schema+"."+table) {
-			return e.checkedFilter(f, schema+"."+table)
+	for k, v := range m {
+		if strings.EqualFold(strings.TrimSpace(k), schema+"."+table) {
+			return v, true, nil
 		}
 	}
 	var matched []string
-	var frag string
-	for k, f := range e.cfg.Filters {
-		k = strings.TrimSpace(k)
+	var val T
+	var found bool
+	for k, v := range m {
+		k = strings.ToLower(strings.TrimSpace(k))
 		if k == "" {
 			continue
 		}
@@ -88,19 +89,29 @@ func (e *Exporter) resolveFilter(schema, table string) (string, error) {
 		if strings.Contains(k, ".") {
 			hit = globMatch(k, strings.ToLower(schema+"."+table))
 		} else {
-			hit = globMatch(k, lowerTable)
+			hit = globMatch(k, strings.ToLower(table))
 		}
 		if hit {
 			matched = append(matched, k)
-			frag = f
+			val, found = v, true
 		}
 	}
-	if len(matched) == 0 {
-		return "", nil
-	}
 	if len(matched) > 1 {
-		return "", fmt.Errorf("table %s.%s matches multiple export.filters keys (%s); make the patterns disjoint",
+		return zero, false, fmt.Errorf("table %s.%s matches multiple pattern keys (%s); make the patterns disjoint",
 			schema, table, strings.Join(matched, ", "))
+	}
+	return val, found, nil
+}
+
+// resolveFilter picks the WHERE fragment for one table: an exact
+// "schema.table" key (case-insensitive) wins; otherwise glob keys match the
+// bare table name (no dot in key) or "schema.table" (dotted key) — matching
+// more than one glob is an error (ambiguous semantics; fail fast instead of
+// merging). No match returns "".
+func (e *Exporter) resolveFilter(schema, table string) (string, error) {
+	frag, ok, err := ResolvePatternKey(e.cfg.Filters, schema, table)
+	if err != nil || !ok {
+		return "", err
 	}
 	return e.checkedFilter(frag, schema+"."+table)
 }

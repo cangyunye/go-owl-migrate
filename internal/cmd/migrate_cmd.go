@@ -221,6 +221,12 @@ Use --tables to restrict the migration to specific tables.`,
 			fmt.Printf("Resume: skipping %d already-completed tables, processing %d tables\n", resumedCount, len(tablesToProcess))
 		}
 
+		// 列投影/改名（元数据层一次应用）：DDL、导出、导入所见一致。
+		tablesToProcess, err = applyColumnProjection(tablesToProcess, cfg)
+		if err != nil {
+			return err
+		}
+
 		// Step 4: Create target tables (only in direct-import mode)
 		if !sqlMode {
 			if !skipDDL {
@@ -261,6 +267,7 @@ Use --tables to restrict the migration to specific tables.`,
 			PlaceholderFamily: placeholderFamilyFor(cfg.Source),
 			Filters:           cfg.Export.Filters,
 			FiltersCheck:      cfg.Export.FiltersCheck,
+			ColumnRenames:     cfg.Export.Columns.Rename,
 			Logger:            expLogger,
 		})
 

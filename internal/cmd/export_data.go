@@ -208,6 +208,7 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 			PlaceholderFamily:    placeholderFamilyFor(cfg.Source),
 			Filters:              cfg.Export.Filters,
 			FiltersCheck:         cfg.Export.FiltersCheck,
+			ColumnRenames:        cfg.Export.Columns.Rename,
 			Logger:               logger,
 		})
 
@@ -218,6 +219,10 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 			defer cancel()
 		}
 		tables := filterTables(sm.GetTables(), cfg.Export.Tables.Include)
+		tables, err = applyColumnProjection(tables, cfg)
+		if err != nil {
+			return err
+		}
 		// 条件 COUNT 门禁：语法/列名/权限错误在这里暴露，不通过不导出。
 		if err := exp.ValidateFilters(ctx, tables); err != nil {
 			return err

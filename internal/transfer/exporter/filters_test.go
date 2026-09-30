@@ -174,3 +174,52 @@ var errORA00904 = errString("ORA-00904: \"BADCOL\": invalid identifier")
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+func TestAlignColumnsToDef(t *testing.T) {
+	e, _ := newFilterExporter(t, nil)
+	e.cfg.ColumnRenames = map[string]map[string]string{"OWL_SRC.EMP": {"SAL": "salary"}}
+	def := &md.TableDef{
+		TableSchema: "OWL_SRC", TableName: "EMP",
+		Columns: []*md.ColumnDef{
+			{ColumnName: "empno"},
+			{ColumnName: "salary"}, // 改名后的输出名（DB 里仍是 SAL）
+			{ColumnName: "ename"},
+		},
+	}
+	dbCols := []ColumnInfo{
+		{Name: "EMPNO", TypeName: "NUMBER"},
+		{Name: "ENAME", TypeName: "VARCHAR2"},
+		{Name: "SAL", TypeName: "NUMBER"},
+		{Name: "HIREDATE", TypeName: "DATE"},
+	}
+	cols, sqlNames, err := e.alignColumnsToDef(def, dbCols)
+	if err != nil {
+		t.Fatalf("alignColumnsToDef: %v", err)
+	}
+	// 输出头 = def 名（含改名），SQL 名 = DB 名（源名），顺序 = def 顺序
+	wantOut := []string{"empno", "salary", "ename"}
+	wantSQL := []string{"EMPNO", "SAL", "ENAME"}
+	for i := range wantOut {
+		if cols[i].Name != wantOut[i] {
+			t.Errorf("out[%d] = %s, want %s", i, cols[i].Name, wantOut[i])
+		}
+		if sqlNames[i] != wantSQL[i] {
+			t.Errorf("sql[%d] = %s, want %s", i, sqlNames[i], wantSQL[i])
+		}
+	}
+	if cols[1].TypeName != "NUMBER" {
+		t.Errorf("type not carried: %+v", cols[1])
+	}
+
+	// def 列在 DB 中不存在 → 明确报错
+	bad := &md.TableDef{TableSchema: "S", TableName: "T", Columns: []*md.ColumnDef{{ColumnName: "GHOST"}}}
+	if _, _, err := e.alignColumnsToDef(bad, dbCols); err == nil || !strings.Contains(err.Error(), "GHOST") {
+		t.Errorf("missing column must error with name: %v", err)
+	}
+
+	// def 无列 → 原样透传
+	pass, names, err := e.alignColumnsToDef(&md.TableDef{TableSchema: "S", TableName: "T"}, dbCols)
+	if err != nil || len(pass) != 4 || names[0] != "EMPNO" {
+		t.Errorf("passthrough broken: %v %v %v", pass, names, err)
+	}
+}

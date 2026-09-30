@@ -192,6 +192,10 @@ func ensureOneTable(ctx context.Context, db *sql.DB, tbl *md.TableDef, cfg *conf
 	exists, err := tableExists(ctx, db, cfg.Target.Type, schema, tbl.TableName,
 		dbconn.OceanBaseOracleUsesMySQLWire(cfg.Target))
 	if err == nil && exists {
+		// 已存在表 × 投影/改名配置 → 列集对齐预检（替代逐行 DB 错误）。
+		if verr := verifyProjectedColumns(ctx, db, cfg, tbl, schema); verr != nil {
+			return verr
+		}
 		return nil
 	}
 

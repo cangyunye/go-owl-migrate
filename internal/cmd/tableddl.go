@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"context"
 	"database/sql"
 	"strings"
@@ -79,4 +80,72 @@ func tableExists(ctx context.Context, db *sql.DB, dbType, schema, table string, 
 // （类型转换/限定逻辑已迁至 service，import/migrate 建表路径共用）。
 func buildCreateTableViaDialect(tbl *md.TableDef, cfg *config.Config) (string, error) {
 	return service.BuildCreateTableViaDialect(tbl, cfg)
+}
+
+// targetTableColumns introspects an existing target table's column names
+// (lowercased). Databases without a portable introspection path return
+// nil (the check is then skipped, never a hard failure on its own).
+func targetTableColumns(ctx context.Context, db *sql.DB, dbType, schema, table string, wireQmark bool) ([]string, error) {
+	var query string
+	var args []any
+	switch targetTypeFamily(dbType) {
+	case "mysql":
+		query = "SELECT column_name FROM information_schema.columns WHERE table_schema = ? AND table_name = ? ORDER BY ordinal_position"
+		args = []any{schema, table}
+	case "oracle":
+		if wireQmark {
+			query = "SELECT column_name FROM all_tab_columns WHERE owner = UPPER(?) AND table_name = UPPER(?) ORDER BY column_id"
+		} else {
+			query = "SELECT column_name FROM all_tab_columns WHERE owner = UPPER(:1) AND table_name = UPPER(:2) ORDER BY column_id"
+		}
+		args = []any{schema, table}
+	case "postgres":
+		query = "SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position"
+		args = []any{schema, table}
+	default:
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// verifyProjectedColumns fail-fasts when the projection/rename config doesn't
+// fit an existing target table: every projected column must exist on the
+// target (case-insensitive). Target may legitimately have extra columns.
+func verifyProjectedColumns(ctx context.Context, db *sql.DB, cfg *config.Config, tbl *md.TableDef, targetSchema string) error {
+	if len(cfg.Export.Columns.Include) == 0 && len(cfg.Export.Columns.Rename) == 0 {
+		return nil
+	}
+	targetCols, err := targetTableColumns(ctx, db, cfg.Target.Type, targetSchema, tbl.TableName,
+		dbconn.OceanBaseOracleUsesMySQLWire(cfg.Target))
+	if err != nil || len(targetCols) == 0 {
+		return nil // introspection unavailable → skip, don't block
+	}
+	have := make(map[string]bool, len(targetCols))
+	for _, c := range targetCols {
+		have[strings.ToLower(c)] = true
+	}
+	var missing []string
+	for _, c := range tbl.Columns {
+		if !have[strings.ToLower(c.ColumnName)] {
+			missing = append(missing, c.ColumnName)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("target table %s.%s already exists but lacks projected column(s) %s — align the target table or the export.columns config",
+			targetSchema, tbl.TableName, strings.Join(missing, ", "))
+	}
+	return nil
 }

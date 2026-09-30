@@ -224,6 +224,36 @@ func splitWhereList(s string) (map[string]string, error) {
 	return out, nil
 }
 
+// applyColumnProjection applies export.columns include/rename to the selected
+// table definitions (metadata-level, once): DDL, export and import all see
+// the projected model, so target tables and CSV headers stay consistent.
+// No-op when export.columns is empty.
+func applyColumnProjection(tables []*md.TableDef, cfg *config.Config) ([]*md.TableDef, error) {
+	if len(cfg.Export.Columns.Include) == 0 && len(cfg.Export.Columns.Rename) == 0 {
+		return tables, nil
+	}
+	out := make([]*md.TableDef, len(tables))
+	for i, tbl := range tables {
+		include, hasInc, err := exporter.ResolvePatternKey(cfg.Export.Columns.Include, tbl.TableSchema, tbl.TableName)
+		if err != nil {
+			return nil, err
+		}
+		rename, _, err := exporter.ResolvePatternKey(cfg.Export.Columns.Rename, tbl.TableSchema, tbl.TableName)
+		if err != nil {
+			return nil, err
+		}
+		if !hasInc {
+			include = nil
+		}
+		projected, err := md.ProjectTable(tbl, include, rename)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = projected
+	}
+	return out, nil
+}
+
 func splitTableList(s string) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil
