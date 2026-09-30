@@ -86,12 +86,15 @@ func ProjectTable(tbl *TableDef, include []string, rename map[string]string) (*T
 
 	newCols := make([]*ColumnDef, 0, len(selected))
 	renames := map[string]string{} // lower(old) → new
-	for _, c := range selected {
+	for i, c := range selected {
 		nc := *c
 		if newName := renameFor(c.ColumnName); newName != c.ColumnName {
 			renames[strings.ToLower(c.ColumnName)] = newName
 			nc.ColumnName = newName
 		}
+		// 序号重写为投影顺序：GetColumns() 恒按 OrdinalPosition 排序，
+		// 不重写则 include 的顺序语义会被源表序覆盖。
+		nc.OrdinalPosition = i + 1
 		newCols = append(newCols, &nc)
 	}
 
