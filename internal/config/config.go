@@ -115,7 +115,7 @@ func (p PoolConfig) isZero() bool {
 
 // IsZero returns true if the DDLConfig has no meaningful values set.
 func (d DDLConfig) isZero() bool {
-	return d.TargetDialect == "" && d.SourceDialect == "" && !d.IncludeComments && !d.IncludeIfNotExists && !d.NoQuoteIdentifiers && len(d.SchemaMapping) == 0
+	return d.TargetDialect == "" && d.SourceDialect == "" && !d.IncludeComments && !d.IncludeIfNotExists && !d.NoQuoteIdentifiers && len(d.SchemaMapping) == 0 && len(d.ColumnTypes) == 0
 }
 
 // IsZero returns true if the SelectGenConfig has no meaningful values set.

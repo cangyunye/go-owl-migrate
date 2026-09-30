@@ -850,9 +850,10 @@ func buildFullConfig(metaType, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtS
 				Header:             true,
 				NullRepresentation: "\\N",
 			},
-			Batch:    config.BatchConfig{PageSize: 5000},
-			Parallel: config.ParallelConfig{Enabled: true, MaxWorkers: 4},
-			Tables:   config.TableListConfig{Include: []string{"*"}},
+			Batch:        config.BatchConfig{PageSize: 5000},
+			Parallel:     config.ParallelConfig{Enabled: true, MaxWorkers: 4},
+			Tables:       config.TableListConfig{Include: []string{"*"}},
+			FiltersCheck: "count", // 条件导出门禁（export.filters 非空时生效）
 		},
 		Import: config.ImportConfig{
 			SourceDir: "./output/data/",
@@ -951,6 +952,9 @@ var fieldComments = map[string]string{
 	"export.parallel.max_workers":    "# 最大并发 worker 数",
 	"export.tables":                  "# 表过滤规则",
 	"export.tables.include":          "# 包含的表列表; ['*'] 表示全部",
+	"export.filters":                 "# WHERE 条件导出: 表模式 → 字面 SQL 片段（见文末高级选项）",
+	"export.filters_check":           "# 条件 COUNT 门禁: count(默认,执行前校验条件)/off",
+	"export.columns":                 "# 列投影/改名（见文末高级选项）",
 
 	// import
 	"import":                                 "# 数据导入配置（仅 import 命令使用）",
@@ -1031,6 +1035,32 @@ func annotateYAML(buf []byte) []byte {
 	return []byte(out)
 }
 
+// advancedOptionsTrailer documents opt-in features that have no default
+// value in the generated YAML (enabling them changes migration semantics, so
+// they stay commented out). Fragments carry the correct indent for the target
+// section and no top-level keys — pasting them under the matching section
+// keeps the file valid.
+const advancedOptionsTrailer = `
+# ── 高级选项（按需复制到上方对应段内，注意保持缩进）────────────────
+#
+# export:                        # ← 加到 export: 段内（缩进 2 格）
+#   filters:                     #   WHERE 条件导出；执行前对每张命中表跑
+#     "SCOTT.EMP": "deptno = 20" #   条件 COUNT 校验（列名/语法错会中止并指名 filter）
+#   filters_check: off           #   跳过门禁（默认 count）
+#   columns:                     #   列投影/改名：include 列表顺序 = 输出顺序
+#     include: {"SCOTT.EMP": ["empno", "sal", "ename"]}
+#     rename:  {"SCOTT.EMP": {SAL: salary}}
+#
+# ddl:                           # ← 加到 ddl: 段内
+#   column_types: {"SCOTT.EMP.SAL": "number(10,2)"}   # 按列类型覆盖（自动建表/export ddl）
+#
+# import:                        # ← 加到 import.data_transforms 段内
+#   data_transforms:
+#     column_datetime_formats: {"SCOTT.EMP.HIREDATE": "yyyyMMdd"}
+#
+# 详见 docs/filtered-export.md
+`
+
 func writeConfig(cfg *config.Config, outputPath string) error {
 	buf, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -1055,6 +1085,7 @@ func writeConfig(cfg *config.Config, outputPath string) error {
 	header += "\n"
 
 	content := append([]byte(header), annotated...)
+	content = append(content, []byte(advancedOptionsTrailer)...)
 
 	if err := os.WriteFile(outputPath, content, 0644); err != nil {
 		return fmt.Errorf("write config to %q: %w", outputPath, err)
