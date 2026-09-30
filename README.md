@@ -32,6 +32,7 @@ Database migration tool for cross-database schema & data migration: Oracle, Post
 - **OceanBase dual-driver**: Oracle tenants over go-ora/TNS or obconnector-go MySQL wire; compat mode auto-probed and enforced
 - **Embedded dialects**: SQLite3, DuckDB — in-process databases, no external server needed
 - **Data migration**: Export source data to CSV with cursor/offset pagination, import with batched transactions
+- **Filtered export & column mapping**: per-table WHERE fragments (`export.filters` + `--where`) with a pre-flight conditional-COUNT gate, column projection/rename (`export.columns`, config order = output order), per-column type overrides (`ddl.column_types`)
 - **PostgreSQL COPY fast path**: `import.batch.use_copy` enables `COPY` bulk loads (auto-fallback to batched INSERT)
 - **Automatic target table creation**: cross-dialect type conversion through the logical-type IR (`ddl.source_dialect` for CSV metadata)
 - **Checkpoint/Resume**: Per-table state persists to disk — interrupted migrations pick up where they left off

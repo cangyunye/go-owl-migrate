@@ -178,13 +178,16 @@ Usage:
 Flags:
   -o, --output string   Output directory for export files (default "./output/data/")
       --tables string        Comma-separated tables to export; overrides export.tables.include (supports schema.table)
+      --where string         Filtered export: "PATTERN: where-fragment" entries, comma-separated; overrides export.filters
+                             e.g. 'SCOTT.EMP: deptno=20'
       --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
 
 Key features:
 
 - **Multi-format output**: CSV (default), SQL (INSERT statements), XLSX (Excel workbook).
-- **Cursor-based pagination**: When primary keys are available, uses keyset pagination (WHERE pk > last_value) for efficient large-table export.
+- **Filtered export (WHERE)**: `export.filters` / `--where` narrows rows per table; a conditional-COUNT gate validates the predicate against the source (syntax/column/permission errors abort before any data moves) and records the source-side expected count. Deterministic predicates only (keyset pagination); no bind placeholders, `;` or comments in fragments. See docs/filtered-export.md.
+- **Column projection & rename**: `export.columns.include` (list order = output order) + `rename`; migrate auto-created tables match the CSV column set exactly; primary keys must survive projection.
 - **Fallback to LIMIT**: Tables without primary keys use LIMIT-only pagination (less efficient but works for any table).
 - **Parallel export**: Multiple tables exported concurrently (controlled by `export.parallel.max_workers`).
 - **Binary data handling**: BLOB/BYTEA/RAW columns are hex-encoded in CSV.
@@ -389,7 +392,8 @@ Flags:
       --continue-on-error      Continue processing remaining tables even if some fail
       --sql-out string         Output directory for INSERT SQL files (offline mode, skips target DB)
       --tables string             Comma-separated tables to migrate; overrides export.tables.include (supports schema.table)
-      --resume                    Resume from previous migration state (skips completed tables)
+      --where string              Filtered migration: "PATTERN: where-fragment" entries, comma-separated; overrides export.filters (report carries "filtered": true)
+      --resume                    Resume from previous migration state (skips completed tables; refuses if export.filters changed)
   -r, --report string             Migration report output path (default "./output/migration_report.json")
       --no-quote-identifiers       Output bare identifiers without quoting (compatibility)
 ```
