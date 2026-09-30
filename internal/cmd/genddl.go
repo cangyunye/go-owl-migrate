@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
 	"github.com/cangyunye/go-owl-migrate/internal/dialect"
 )
 
@@ -23,18 +24,6 @@ func genDDLCmd() *cobra.Command {
 // toBuildOptions remains here because it is used by both genddl.go and
 // other commands (e.g., import.go, migrate_cmd.go).
 func toBuildOptions(cfg *config.Config) dialect.BuildOptions {
-	return dialect.BuildOptions{
-		TargetDialect:      cfg.DDL.TargetDialect,
-		SchemaMapping:      cfg.DDL.SchemaMapping,
-		IncludeComments:    cfg.DDL.IncludeComments,
-		IncludeIfNotExists: cfg.DDL.IncludeIfNotExists,
-		IncludeDrop:        cfg.DDL.IncludeDrop,
-		TypeOverrides:      cfg.DDL.TypeOverrides,
-		BooleanMapping:     cfg.DDL.BooleanMapping,
-		EmptyStringToNull:  cfg.DDL.EmptyStringToNull,
-		AddRowIDColumn:     cfg.DDL.AddRowIDColumn,
-		IdentityToSerial:   cfg.DDL.IdentityToSerial,
-		SkipPartitions:     !cfg.DDL.Partition.Migrate,
-		NoQuoteIdentifiers: cfg.DDL.NoQuoteIdentifiers,
-	}
+	// 与 service.ToBuildOptions 同源（含 column_types 归一），避免两份漂移。
+	return service.ToBuildOptions(cfg)
 }

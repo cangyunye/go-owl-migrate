@@ -75,6 +75,19 @@ func convertColumnType(col *md.ColumnDef, src, tgt dialect.Dialect, opts dialect
 	return tgt.FromLogicalType(lt)
 }
 
+// normalizeColumnTypes uppercases ddl.column_types keys so lookups are
+// case-insensitive regardless of how the config spelled them.
+func normalizeColumnTypes(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[strings.ToUpper(strings.TrimSpace(k))] = v
+	}
+	return out
+}
+
 // QualifyTableTypes returns a copy of tbl with length/precision qualifiers
 // appended to bare column types (CSV-style metadata keeps them in separate
 // fields).
@@ -83,7 +96,12 @@ func QualifyTableTypes(tbl *md.TableDef, opts dialect.BuildOptions) *md.TableDef
 	newCols := make([]*md.ColumnDef, len(cols))
 	for i, col := range cols {
 		nc := *col
-		nc.DataType = qualifyColumnType(col, opts)
+		if v, ok := dialect.ApplyColumnTypeOverride(tbl.TableSchema, tbl.TableName, col.ColumnName,
+			col.DataLength, col.DataPrecision, col.DataScale, opts); ok {
+			nc.DataType = v // 列级覆盖优先于 type_overrides
+		} else {
+			nc.DataType = qualifyColumnType(col, opts)
+		}
 		newCols[i] = &nc
 	}
 	cp := *tbl

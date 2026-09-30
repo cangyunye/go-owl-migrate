@@ -47,7 +47,10 @@ type Config struct {
 	UseCopy                  bool
 	MaxWorkers               int
 	RespectForeignKeys       bool
-	DateTimeFormat           string // e.g. "yyyyMMddHHmmss"
+	DateTimeFormat           string
+	// ColumnDatetimeFormats overrides DateTimeFormat per column
+	// ("SCHEMA.TABLE.COLUMN", case-insensitive), same compact templates.
+	ColumnDatetimeFormats    map[string]string // e.g. "yyyyMMddHHmmss"
 	DateTimeFormatFallback   []string
 	DateTimeTruncateToTarget bool
 	TrimStrings              bool
@@ -406,7 +409,7 @@ func (imp *Importer) convertRow(tbl *md.TableDef, header []string, record []stri
 			vals[j] = nil
 			continue
 		}
-		val := imp.transformValue(v)
+		val := imp.transformValueWithFormat(v, imp.datetimeFormatFor(tbl, header, j))
 		if j < len(header) {
 			if imp.cfg.DateTimeTruncateToTarget {
 				if s, ok := val.(string); ok {
@@ -1235,6 +1238,27 @@ func truncateDatetimeToTarget(v string, col *md.ColumnDef) string {
 
 // transformValue applies data transformations to a CSV value before INSERT.
 func (imp *Importer) transformValue(v string) any {
+	return imp.transformValueWithFormat(v, imp.cfg.DateTimeFormat)
+}
+
+// datetimeFormatFor resolves the compact datetime template for one value:
+// the column override ("SCHEMA.TABLE.COLUMN") wins, then the global setting.
+func (imp *Importer) datetimeFormatFor(tbl *md.TableDef, header []string, j int) string {
+	if len(imp.cfg.ColumnDatetimeFormats) == 0 || j >= len(header) {
+		return imp.cfg.DateTimeFormat
+	}
+	if tbl != nil {
+		key := strings.ToUpper(strings.TrimSpace(tbl.TableSchema) + "." + strings.TrimSpace(tbl.TableName) + "." + strings.TrimSpace(header[j]))
+		if f, ok := imp.cfg.ColumnDatetimeFormats[key]; ok {
+			return f
+		}
+	}
+	return imp.cfg.DateTimeFormat
+}
+
+// transformValueWithFormat is transformValue with an explicit datetime
+// template (per-column override resolves before the global default).
+func (imp *Importer) transformValueWithFormat(v, datetimeFormat string) any {
 	s := v
 
 	// Decode from source encoding to UTF-8 if configured
@@ -1253,8 +1277,8 @@ func (imp *Importer) transformValue(v string) any {
 		s = strings.TrimSpace(s)
 	}
 
-	if imp.cfg.DateTimeFormat != "" {
-		if converted, ok := convertCompactDatetime(imp.cfg.DateTimeFormat, s); ok {
+	if datetimeFormat != "" {
+		if converted, ok := convertCompactDatetime(datetimeFormat, s); ok {
 			return converted
 		}
 	}

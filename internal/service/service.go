@@ -166,6 +166,7 @@ func ToBuildOptions(cfg *config.Config) dialect.BuildOptions {
 		IncludeIfNotExists: cfg.DDL.IncludeIfNotExists,
 		IncludeDrop:        cfg.DDL.IncludeDrop,
 		TypeOverrides:      cfg.DDL.TypeOverrides,
+		ColumnTypes:        normalizeColumnTypes(cfg.DDL.ColumnTypes),
 		BooleanMapping:     cfg.DDL.BooleanMapping,
 		EmptyStringToNull:  cfg.DDL.EmptyStringToNull,
 		AddRowIDColumn:     cfg.DDL.AddRowIDColumn,

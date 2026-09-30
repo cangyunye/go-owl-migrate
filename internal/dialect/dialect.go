@@ -105,6 +105,11 @@ type BuildOptions struct {
 	IncludeIfNotExists bool
 	IncludeDrop        bool
 	TypeOverrides      map[string]string
+	// ColumnTypes overrides a specific column's target type, keyed
+	// "SCHEMA.TABLE.COLUMN" (case-insensitive lookup). Wins over
+	// TypeOverrides; the value is the final target type template
+	// (%l/%p/%s placeholders supported).
+	ColumnTypes        map[string]string
 	BooleanMapping     map[string]bool
 	EmptyStringToNull  bool
 	AddRowIDColumn     bool
@@ -166,6 +171,25 @@ type Dialect struct {
 
 // ApplyTypeOverride returns the configured override for a raw column type, if
 // any, substituting %l/%p/%s with the column's length/precision/scale.
+// ApplyColumnTypeOverride resolves a per-column type override
+// (ddl.column_types); ok=false when no entry exists for the column.
+func ApplyColumnTypeOverride(schema, table, column string, length, precision, scale int, opts BuildOptions) (string, bool) {
+	if len(opts.ColumnTypes) == 0 {
+		return "", false
+	}
+	key := strings.ToUpper(strings.TrimSpace(schema) + "." + strings.TrimSpace(table) + "." + strings.TrimSpace(column))
+	tmpl, ok := opts.ColumnTypes[key]
+	if !ok {
+		return "", false
+	}
+	r := strings.NewReplacer(
+		"%l", strconv.Itoa(length),
+		"%p", strconv.Itoa(precision),
+		"%s", strconv.Itoa(scale),
+	)
+	return r.Replace(tmpl), true
+}
+
 func ApplyTypeOverride(rawType string, length, precision, scale int, opts BuildOptions) (string, bool) {
 	tmpl, ok := opts.TypeOverrides[strings.ToUpper(strings.TrimSpace(rawType))]
 	if !ok {

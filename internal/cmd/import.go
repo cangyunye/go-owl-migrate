@@ -105,6 +105,7 @@ func importCmd() *cobra.Command {
 			MaxWorkers:               cfg.Import.Parallel.MaxWorkers,
 			RespectForeignKeys:       cfg.Import.Parallel.RespectForeignKeys,
 			DateTimeFormat:           cfg.Import.DataTransforms.DatetimeFormat,
+			ColumnDatetimeFormats:    cfg.Import.DataTransforms.ColumnDatetimeFormats,
 			DateTimeFormatFallback:   cfg.Import.DataTransforms.DatetimeFormatFallback,
 			DateTimeTruncateToTarget: cfg.Import.DataTransforms.DatetimeTruncateToTarget,
 			TrimStrings:              cfg.Import.DataTransforms.TrimStrings,
