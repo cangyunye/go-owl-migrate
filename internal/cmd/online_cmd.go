@@ -84,6 +84,11 @@ func runOnlineInit(ctx context.Context, cfg *config.Config) error {
 
 	// The apply path needs a live source connection; metadata must be a
 	// database source so the tables actually exist.
+	// 条件导出与触发器 CDC 语义互斥：初始装载是子集，但 changelog 按行回放
+	// 该表所有变更（含条件外行），目标会逐渐"长全"，子集语义静默失效。
+	if len(cfg.Export.Filters) > 0 {
+		return fmt.Errorf("online init: export.filters is set — trigger-based CDC replays every change to a table (not just filtered rows), so a filtered initial load would silently converge back to the full table; drop export.filters for online migration, or do a one-shot filtered migrate/export instead")
+	}
 	if cfg.Online.CDC.Apply && cfg.Metadata.Type != "database" {
 		return fmt.Errorf("online init --apply requires metadata.type=database (tables must exist on the source)")
 	}

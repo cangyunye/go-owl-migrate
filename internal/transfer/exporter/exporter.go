@@ -39,7 +39,12 @@ type Config struct {
 	// "qmark" (?), "colon" (:N) or "dollar" ($N). Used for OceanBase Oracle
 	// tenants reached over the MySQL wire protocol.
 	PlaceholderFamily string
-	Logger            *zap.Logger
+	// Filters maps table patterns to literal WHERE fragments (see
+	// filters.go for resolution and the conditional-COUNT gate).
+	Filters map[string]string
+	// FiltersCheck: "count" (default) runs the gate, "off" skips it.
+	FiltersCheck string
+	Logger       *zap.Logger
 }
 
 // Exporter reads data from a database and writes to files.
@@ -47,6 +52,10 @@ type Exporter struct {
 	db     *sql.DB
 	cfg    Config
 	logger *zap.Logger
+
+	// filterCounts caches the conditional-COUNT gate results
+	// (lowercase "schema.table" → expected rows), keyed per run.
+	filterCounts map[string]int64
 
 	oracleDetectOnce sync.Once
 	oracleLegacy     bool
@@ -72,7 +81,7 @@ func New(db *sql.DB, cfg Config) *Exporter {
 	if cfg.CSVLineTerminator == "" {
 		cfg.CSVLineTerminator = "\n"
 	}
-	return &Exporter{db: db, cfg: cfg, logger: cfg.Logger}
+	return &Exporter{db: db, cfg: cfg, logger: cfg.Logger, filterCounts: map[string]int64{}}
 }
 
 // TableResult holds the result of exporting one table.
@@ -84,6 +93,10 @@ type TableResult struct {
 	Duration   time.Duration
 	OutputFile string
 	Error      error
+	// Expected is the conditional-COUNT gate's source-side row count for the
+	// applied filter (0 when no filter or the gate is off). Rows should equal
+	// it; a mismatch is logged as drift.
+	Expected int64
 }
 
 // ExportTables exports multiple tables, optionally in parallel.
@@ -240,6 +253,13 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 	result.Batches = batches
 	result.Duration = time.Since(start)
 	result.OutputFile = writer.OutputFile()
+	result.Expected = e.filterCountFor(tbl.TableSchema, tbl.TableName)
+	if result.Expected > 0 && result.Expected != result.Rows {
+		e.logger.Warn("exported row count differs from the filter-gate COUNT; the predicate may be non-deterministic or rows changed concurrently",
+			zap.String("table", key),
+			zap.Int64("gate_count", result.Expected),
+			zap.Int64("exported", result.Rows))
+	}
 
 	e.logger.Info("Export completed",
 		zap.String("table", key),
@@ -479,7 +499,11 @@ func (e *Exporter) fetchBatch(ctx context.Context, tbl *md.TableDef, columns []C
 		quotedPKs[i] = e.quoteIdent(resolvePK(pk))
 	}
 
-	query := e.buildBatchQuery(tbl, colNames, quotedPKs, pkCols, len(lastVals) > 0, offset)
+	where, err := e.whereFor(tbl)
+	if err != nil {
+		return nil, nil, err
+	}
+	query := e.buildBatchQuery(tbl, colNames, quotedPKs, pkCols, len(lastVals) > 0, offset, where)
 
 	rows, err := e.db.QueryContext(ctx, query, lastVals...)
 	if err != nil {
@@ -531,22 +555,37 @@ func (e *Exporter) detectOraclePagination(ctx context.Context) {
 	})
 }
 
-func (e *Exporter) buildBatchQuery(tbl *md.TableDef, colNames, quotedPKs, pkCols []string, useCursor bool, offset int) string {
+func (e *Exporter) buildBatchQuery(tbl *md.TableDef, colNames, quotedPKs, pkCols []string, useCursor bool, offset int, where string) string {
 	selectList := strings.Join(colNames, ", ")
 	from := fmt.Sprintf("%s.%s", e.quoteIdent(tbl.TableSchema), e.quoteIdent(tbl.TableName))
 	limit := e.limitClause()
 
 	if e.isOracle() && e.oracleLegacy {
-		return e.buildOracleLegacyQuery(selectList, from, colNames, quotedPKs, pkCols, useCursor, offset)
+		return e.buildOracleLegacyQuery(selectList, from, colNames, quotedPKs, pkCols, useCursor, offset, where)
+	}
+
+	// whereClause folds the user filter with the pagination predicate; the
+	// filter is sanitized (no ';', comments or binds) in resolveFilter.
+	whereClause := func(pred string) string {
+		switch {
+		case where == "" && pred == "":
+			return ""
+		case where == "":
+			return " WHERE " + pred
+		case pred == "":
+			return " WHERE " + where
+		default:
+			return " WHERE " + where + " AND " + pred
+		}
 	}
 
 	if len(pkCols) == 0 {
-		return fmt.Sprintf("SELECT %s FROM %s %s", selectList, from, e.pageLimitClause(offset))
+		return fmt.Sprintf("SELECT %s FROM %s%s %s", selectList, from, whereClause(""), e.pageLimitClause(offset))
 	}
 
 	orderBy := strings.Join(quotedPKs, ", ")
 	if !useCursor {
-		return fmt.Sprintf("SELECT %s FROM %s ORDER BY %s %s", selectList, from, orderBy, limit)
+		return fmt.Sprintf("SELECT %s FROM %s%s ORDER BY %s %s", selectList, from, whereClause(""), orderBy, limit)
 	}
 
 	var cursor string
@@ -559,16 +598,20 @@ func (e *Exporter) buildBatchQuery(tbl *md.TableDef, colNames, quotedPKs, pkCols
 		}
 		cursor = fmt.Sprintf("(%s) > (%s)", orderBy, strings.Join(placeholders, ", "))
 	}
-	return fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s %s", selectList, from, cursor, orderBy, limit)
+	return fmt.Sprintf("SELECT %s FROM %s%s ORDER BY %s %s", selectList, from, whereClause(cursor), orderBy, limit)
 }
 
 // buildOracleLegacyQuery renders Oracle 11g-compatible pagination using ROWNUM
 // wrappers instead of the 12c OFFSET/FETCH syntax.
-func (e *Exporter) buildOracleLegacyQuery(selectList, from string, colNames, quotedPKs, pkCols []string, useCursor bool, offset int) string {
+func (e *Exporter) buildOracleLegacyQuery(selectList, from string, colNames, quotedPKs, pkCols []string, useCursor bool, offset int, where string) string {
 	n := e.cfg.PageSize
+	wherePart := ""
+	if where != "" {
+		wherePart = " WHERE " + where
+	}
 
 	if len(pkCols) == 0 {
-		inner := fmt.Sprintf("SELECT %s FROM %s", selectList, from)
+		inner := fmt.Sprintf("SELECT %s FROM %s%s", selectList, from, wherePart)
 		if offset <= 0 {
 			return fmt.Sprintf("SELECT %s FROM (SELECT owl_pg__.*, ROWNUM AS owl_rn__ FROM (%s) owl_pg__ WHERE ROWNUM <= %d) WHERE owl_rn__ > 0",
 				selectList, inner, n)
@@ -578,7 +621,7 @@ func (e *Exporter) buildOracleLegacyQuery(selectList, from string, colNames, quo
 	}
 
 	orderBy := strings.Join(quotedPKs, ", ")
-	inner := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s", selectList, from, orderBy)
+	inner := fmt.Sprintf("SELECT %s FROM %s%s ORDER BY %s", selectList, from, wherePart, orderBy)
 	if useCursor {
 		var cursor string
 		if len(pkCols) == 1 {
@@ -590,7 +633,11 @@ func (e *Exporter) buildOracleLegacyQuery(selectList, from string, colNames, quo
 			}
 			cursor = fmt.Sprintf("(%s) > (%s)", orderBy, strings.Join(placeholders, ", "))
 		}
-		inner = fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s", selectList, from, cursor, orderBy)
+		cursorPart := cursor
+		if where != "" {
+			cursorPart = where + " AND " + cursor
+		}
+		inner = fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s", selectList, from, cursorPart, orderBy)
 	}
 	return fmt.Sprintf("SELECT %s FROM (%s) WHERE ROWNUM <= %d", selectList, inner, n)
 }

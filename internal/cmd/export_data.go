@@ -38,6 +38,7 @@ Supported output formats: csv (default), sql, xlsx`,
 		xlsxPath   string
 		format     string
 		tablesFlag string
+		whereFlag  string
 	)
 	cmd.Flags().StringVarP(&outputDir, "output", "o", "./output/data/", "output directory for export files")
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
@@ -45,6 +46,7 @@ Supported output formats: csv (default), sql, xlsx`,
 	cmd.Flags().StringVar(&xlsxPath, "xlsx", "", "path to xlsx file with @ data sheets (offline mode)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: csv (default), sql, xlsx")
 	cmd.Flags().StringVar(&tablesFlag, "tables", "", "comma-separated tables to export (overrides export.tables.include; supports schema.table)")
+	cmd.Flags().StringVar(&whereFlag, "where", "", `filtered export: "PATTERN: where-fragment" entries, comma-separated (overrides export.filters); e.g. 'SCOTT.EMP: deptno=20'`)
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) (retErr error) {
 		cfg, err := loadConfigFile(true)
@@ -53,6 +55,13 @@ Supported output formats: csv (default), sql, xlsx`,
 		}
 		if include := splitTableList(tablesFlag); len(include) > 0 {
 			cfg.Export.Tables.Include = include
+		}
+		if cmd.Flags().Changed("where") {
+			w, err := splitWhereList(whereFlag)
+			if err != nil {
+				return err
+			}
+			cfg.Export.Filters = w
 		}
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			cfg.DDL.NoQuoteIdentifiers = noQuote
@@ -197,6 +206,8 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 			CSVEmptyStringToNull: cfg.Export.CSV.EmptyStringToNull,
 			DBType:               cfg.Source.Type,
 			PlaceholderFamily:    placeholderFamilyFor(cfg.Source),
+			Filters:              cfg.Export.Filters,
+			FiltersCheck:         cfg.Export.FiltersCheck,
 			Logger:               logger,
 		})
 
@@ -207,6 +218,10 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 			defer cancel()
 		}
 		tables := filterTables(sm.GetTables(), cfg.Export.Tables.Include)
+		// 条件 COUNT 门禁：语法/列名/权限错误在这里暴露，不通过不导出。
+		if err := exp.ValidateFilters(ctx, tables); err != nil {
+			return err
+		}
 		results, err := exp.ExportTables(ctx, tables, pkMap)
 		if err != nil {
 			return err

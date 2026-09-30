@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	md "github.com/cangyunye/go-owl-migrate/internal/metadata"
 	csvpkg "github.com/cangyunye/go-owl-migrate/internal/metadata/csv"
@@ -196,6 +197,33 @@ func filterTables(tables []*md.TableDef, include []string) []*md.TableDef {
 
 // splitTableList parses a comma-separated --tables flag value, dropping blanks.
 // A nil result means "no override" — the config include list stays in effect.
+// splitWhereList parses a CLI --where value: comma-separated
+// "PATTERN: fragment" entries. The first colon separates pattern from the
+// fragment (fragments may contain further colons, e.g. dates).
+func splitWhereList(s string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		i := strings.Index(part, ":")
+		if i <= 0 {
+			return nil, fmt.Errorf("--where entry %q must look like PATTERN: sql-where-fragment", part)
+		}
+		pat := strings.TrimSpace(part[:i])
+		frag := strings.TrimSpace(part[i+1:])
+		if pat == "" || frag == "" {
+			return nil, fmt.Errorf("--where entry %q must look like PATTERN: sql-where-fragment", part)
+		}
+		if err := exporter.ValidateFilterFragment(frag); err != nil {
+			return nil, fmt.Errorf("--where %s: %w", pat, err)
+		}
+		out[pat] = frag
+	}
+	return out, nil
+}
+
 func splitTableList(s string) []string {
 	if strings.TrimSpace(s) == "" {
 		return nil

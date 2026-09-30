@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"sort"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -53,6 +54,7 @@ Use --tables to restrict the migration to specific tables.`,
 		reportFile      string
 		noQuote         bool
 		tablesFlag      string
+		whereFlag       string
 	)
 
 	cmd.Flags().StringVar(&tempDir, "temp-dir", "./output/temp/", "temporary directory for CSV files")
@@ -63,6 +65,7 @@ Use --tables to restrict the migration to specific tables.`,
 	cmd.Flags().StringVarP(&reportFile, "report", "r", "./output/migration_report.json", "migration report output path")
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 	cmd.Flags().StringVar(&tablesFlag, "tables", "", "comma-separated tables to migrate (overrides export.tables.include; supports schema.table)")
+	cmd.Flags().StringVar(&whereFlag, "where", "", `filtered migration: "PATTERN: where-fragment" entries, comma-separated (overrides export.filters); e.g. 'SCOTT.EMP: deptno=20'`)
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) (retErr error) {
 		cfg, err := loadConfigFile(false)
@@ -71,6 +74,13 @@ Use --tables to restrict the migration to specific tables.`,
 		}
 		if include := splitTableList(tablesFlag); len(include) > 0 {
 			cfg.Export.Tables.Include = include
+		}
+		if cmd.Flags().Changed("where") {
+			w, err := splitWhereList(whereFlag)
+			if err != nil {
+				return err
+			}
+			cfg.Export.Filters = w
 		}
 		if cmd.Flags().Changed("no-quote-identifiers") {
 			cfg.DDL.NoQuoteIdentifiers = noQuote
@@ -115,6 +125,10 @@ Use --tables to restrict the migration to specific tables.`,
 		}
 
 		report := NewMigrationReport(cfg.Source.Type, cfg.Target.Type)
+		if len(cfg.Export.Filters) > 0 {
+			report.Filtered = true
+			report.Filters = cfg.Export.Filters
+		}
 		startTime := time.Now()
 
 		// Step 1: Load metadata from CSV or database
@@ -185,6 +199,9 @@ Use --tables to restrict the migration to specific tables.`,
 		}
 		if ms == nil {
 			ms = newMigrateState(cfg.Source.Type, cfg.Target.Type)
+			ms.FiltersFingerprint = filtersFingerprint(cfg)
+		} else if ms.FiltersFingerprint != filtersFingerprint(cfg) {
+			return fmt.Errorf("--resume: export.filters changed since the previous run (state describes a different row subset); start a fresh migration instead of resuming")
 		}
 
 		// Filter tables based on resume state
@@ -242,6 +259,8 @@ Use --tables to restrict the migration to specific tables.`,
 			CSVLineTerminator: cfg.Export.CSV.LineTerminator,
 			DBType:            cfg.Source.Type,
 			PlaceholderFamily: placeholderFamilyFor(cfg.Source),
+			Filters:           cfg.Export.Filters,
+			FiltersCheck:      cfg.Export.FiltersCheck,
 			Logger:            expLogger,
 		})
 
@@ -263,6 +282,10 @@ Use --tables to restrict the migration to specific tables.`,
 			tablesToExport = append(tablesToExport, tbl)
 		}
 
+		// 条件 COUNT 门禁：语法/列名/权限错误在这里暴露，不通过不迁移。
+		if err := exp.ValidateFilters(ctx, tablesToExport); err != nil {
+			return err
+		}
 		exportResults, err := exp.ExportTables(ctx, tablesToExport, pkMap)
 		if err != nil {
 			return fmt.Errorf("export: %w", err)
@@ -549,6 +572,27 @@ type migrateState struct {
 	Target    string                     `json:"target"`
 	Tables    map[string]tableCheckpoint `json:"tables"`
 	StartedAt string                     `json:"started_at"`
+	// FiltersFingerprint captures export.filters at run start; --resume
+	// refuses when it changed (old checkpoints describe a different subset).
+	FiltersFingerprint string `json:"filters_fingerprint,omitempty"`
+}
+
+// filtersFingerprint is a stable textual form of export.filters for the
+// resume staleness check.
+func filtersFingerprint(cfg *config.Config) string {
+	if len(cfg.Export.Filters) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(cfg.Export.Filters))
+	for k := range cfg.Export.Filters {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, "%s=%s;", k, cfg.Export.Filters[k])
+	}
+	return b.String()
 }
 
 func tableKey(tbl *md.TableDef) string {
@@ -628,6 +672,11 @@ type MigrationReport struct {
 	TotalSkipped  int64         `json:"total_skipped"`
 	TotalErrors   int64         `json:"total_errors"`
 	Status        string        `json:"status"`
+	// Filtered is true when export.filters narrowed the load; Expected is
+	// then the filtered subset, not the full table.
+	Filtered bool `json:"filtered,omitempty"`
+	// Filters echoes the applied WHERE fragments for auditability.
+	Filters map[string]string `json:"filters,omitempty"`
 }
 
 // TableReport holds per-table migration results.

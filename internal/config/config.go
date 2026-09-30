@@ -125,12 +125,17 @@ func (s SelectGenConfig) isZero() bool {
 
 // IsZero returns true if the ExportConfig has no meaningful values set.
 func (e ExportConfig) isZero() bool {
-	return e.OutputDir == "" && e.Format == "" && e.CSV.isZero() && e.Batch.isZero() && e.Parallel.isZero() && e.Tables.isZero()
+	return e.OutputDir == "" && e.Format == "" && e.CSV.isZero() && e.Batch.isZero() && e.Parallel.isZero() && e.Tables.isZero() &&
+		len(e.Filters) == 0 && e.FiltersCheck == "" && e.Columns.isZero()
 }
 
 // IsZero returns true if the ImportConfig has no meaningful values set.
 func (i ImportConfig) isZero() bool {
 	return i.SourceDir == "" && i.Format == "" && i.CSV.isZero() && i.Target.isZero() && i.Batch.isZero() && i.Parallel.isZero() && i.DataTransforms.isZero()
+}
+
+func (c ExportColumnsConfig) isZero() bool {
+	return len(c.Include) == 0 && len(c.Rename) == 0
 }
 
 // IsZero helpers for nested config structs.
@@ -149,7 +154,7 @@ func (b ImportBatchConfig) isZero() bool {
 	return b.CommitInterval == 0 && b.ErrorPolicy == "" && !b.UseCopy
 }
 func (d DataTransforms) isZero() bool {
-	return d.DatetimeFormat == "" && !d.TrimStrings && len(d.NullIf) == 0
+	return d.DatetimeFormat == "" && !d.TrimStrings && len(d.NullIf) == 0 && len(d.ColumnDatetimeFormats) == 0
 }
 func (t TableListConfig) isZero() bool { return len(t.Include) == 0 }
 
@@ -493,6 +498,11 @@ type DDLConfig struct {
 	SchemaMapping      map[string]string `yaml:"schema_mapping,omitempty"`
 	TableFilter        TableFilterConfig `yaml:"table_filter,omitempty"`
 	TypeOverrides      map[string]string `yaml:"type_overrides,omitempty"`
+	// ColumnTypes overrides a specific column's target type, keyed
+	// "SCHEMA.TABLE.COLUMN" (case-insensitive on lookup). Wins over
+	// TypeOverrides; value is a target-dialect type template supporting
+	// the same %l/%p/%s placeholders.
+	ColumnTypes        map[string]string `yaml:"column_types,omitempty"`
 	IdentityToSerial   bool              `yaml:"identity_to_serial,omitempty"`
 	AddRowIDColumn     bool              `yaml:"add_rowid_column,omitempty"`
 	EmptyStringToNull  bool              `yaml:"empty_string_to_null,omitempty"`
@@ -536,6 +546,37 @@ type ExportConfig struct {
 	Batch     BatchConfig     `yaml:"batch,omitempty"`
 	Parallel  ParallelConfig  `yaml:"parallel,omitempty"`
 	Tables    TableListConfig `yaml:"tables,omitempty"`
+
+	// Filters maps a table-selection pattern (same glob semantics as
+	// tables.include: "S.T" / "S.*" / "*.T" / "T_*"; exact name wins over
+	// glob) to a literal WHERE fragment applied on the source when exporting
+	// that table. The fragment is never parsed by the tool: syntax and column
+	// errors are surfaced by the database during the conditional-COUNT gate
+	// (see FiltersCheck). It must be deterministic (keyset pagination) and
+	// must not contain bind placeholders, ';' or SQL comments — validate
+	// rejects those. agent channel composes the same way (SQL-level).
+	Filters map[string]string `yaml:"filters,omitempty"`
+	// FiltersCheck controls the pre-export conditional-COUNT gate:
+	// "count" (default; SELECT COUNT(*) WHERE <filter> — validates syntax and
+	// columns and yields the source-side expected row count) or "off" (skip;
+	// large-table escape hatch, report loses the source-side baseline).
+	FiltersCheck string `yaml:"filters_check,omitempty"`
+
+	// Columns prunes and renames the exported column set per table:
+	// include's list order defines the CSV column order (source order is
+	// ignored); rename maps source column → output name in place. Primary
+	// key columns must survive (keyset pagination depends on them).
+	Columns ExportColumnsConfig `yaml:"columns,omitempty"`
+}
+
+// ExportColumnsConfig holds per-table column projection/rename rules.
+type ExportColumnsConfig struct {
+	// Include maps table pattern → ordered column list. Output order = list
+	// order. Empty/absent = all source columns in source order.
+	Include map[string][]string `yaml:"include,omitempty"`
+	// Rename maps table pattern → {source column: output name}. Applied after
+	// include pruning, in place.
+	Rename map[string]map[string]string `yaml:"rename,omitempty"`
 }
 
 // ExportCSVConfig holds export-specific CSV settings.
@@ -606,6 +647,10 @@ type ImportBatchConfig struct {
 // DataTransforms holds data transformation rules.
 type DataTransforms struct {
 	DatetimeFormat           string   `yaml:"datetime_format,omitempty"`
+	// ColumnDatetimeFormats overrides DatetimeFormat per column. Keys are
+	// "SCHEMA.TABLE.COLUMN" (case-insensitive on lookup); values use the same
+	// compact-template grammar (yyyyMMddHHmmss / yyyyMMdd).
+	ColumnDatetimeFormats    map[string]string `yaml:"column_datetime_formats,omitempty"`
 	DatetimeFormatFallback   []string `yaml:"datetime_format_fallback,omitempty"`
 	DatetimeTruncateToTarget bool     `yaml:"datetime_truncate_to_target,omitempty"`
 	TrimStrings              bool     `yaml:"trim_strings"`
@@ -822,6 +867,11 @@ func (c *Config) ApplyDefaults() {
 }
 
 func (c *Config) validate() error {
+	switch strings.ToLower(strings.TrimSpace(c.Export.FiltersCheck)) {
+	case "", "count", "off":
+	default:
+		return fmt.Errorf("invalid export.filters_check %q: must be count or off", c.Export.FiltersCheck)
+	}
 	if c.Metadata.Type == "" {
 		return fmt.Errorf("metadata.type is required")
 	}
@@ -865,6 +915,11 @@ func (c *Config) validate() error {
 	case "", "skip", "stop", "retry":
 	default:
 		return fmt.Errorf("invalid online.sync.on_error %q: must be skip/stop/retry", c.Online.Sync.OnError)
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Export.FiltersCheck)) {
+	case "", "count", "off":
+	default:
+		return fmt.Errorf("invalid export.filters_check %q: must be count or off", c.Export.FiltersCheck)
 	}
 	if c.AI != (AIConfig{}) {
 		a := c.AI

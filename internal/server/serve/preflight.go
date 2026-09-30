@@ -2,8 +2,11 @@ package serve
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/metadata"
@@ -58,6 +61,50 @@ func (s *Server) handleMigratePreflight(w http.ResponseWriter, r *http.Request) 
 	}
 	add("源库/元数据", true, fmt.Sprintf("可读取，表清单命中 %d 张（源里共 %d 张）", len(matched), len(allTables)))
 
+	// 条件导出预检：filters 非空时对每张命中表跑条件 COUNT——把语法/列名/
+	// 权限错误在预检阶段暴露（与 worker 侧门禁同一判定），并给出源侧预期行数。
+	if len(cfg.Export.Filters) > 0 {
+		if r.URL.Query().Get("mode") != "sql-out" {
+			srcDB, err := s.openSourceDB(cfg.Source)
+			if err != nil {
+				add("条件导出预检", false, "connect source: "+err.Error())
+				finish(false, warnings)
+				return
+			}
+			defer srcDB.Close()
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+			defer cancel()
+			okAll := true
+			var details []string
+			for _, tbl := range matched {
+				frag, rerr := resolveFilterForTable(cfg.Export.Filters, tbl.TableSchema, tbl.TableName)
+				if rerr != nil {
+					details = append(details, rerr.Error())
+					okAll = false
+					continue
+				}
+				if frag == "" {
+					continue
+				}
+				qualified := quoteSourceIdent(cfg.Source.Type, tbl.TableSchema) + "." + quoteSourceIdent(cfg.Source.Type, tbl.TableName)
+				n, cerr := countTableRowsWithFilter(ctx, srcDB, qualified, frag, 2*time.Minute)
+				if cerr != nil {
+					details = append(details, fmt.Sprintf("%s.%s filter %q: %v", tbl.TableSchema, tbl.TableName, frag, cerr))
+					okAll = false
+					continue
+				}
+				details = append(details, fmt.Sprintf("%s.%s: %d 行（filter %q）", tbl.TableSchema, tbl.TableName, n, frag))
+			}
+			add("条件导出预检", okAll, strings.Join(details, "；"))
+			if !okAll {
+				finish(false, warnings)
+				return
+			}
+		} else {
+			warnings = append(warnings, "SQL 输出模式跳过条件 COUNT 预检")
+		}
+	}
+
 	// Target reachable — sql-out mode never connects to a target, so skip it.
 	if r.URL.Query().Get("mode") == "sql-out" {
 		add("目标库", true, "SQL 输出模式不连接目标库，已跳过")
@@ -91,4 +138,55 @@ func (s *Server) handleMigratePreflight(w http.ResponseWriter, r *http.Request) 
 	add("目标库", true, fmt.Sprintf("%s 连接正常（%d ms）", cfg.Target.Type, time.Since(start).Milliseconds()))
 
 	finish(true, warnings)
+}
+
+// resolveFilterForTable picks the WHERE fragment for one table using the same
+// semantics as the worker-side exporter gate (exact key wins over glob; two
+// globs hitting one table is an error). Exported rules live in the exporter;
+// this copy keeps serve preflight dependency-light.
+func resolveFilterForTable(filters map[string]string, schema, table string) (string, error) {
+	if len(filters) == 0 {
+		return "", nil
+	}
+	for k, f := range filters {
+		if strings.EqualFold(strings.TrimSpace(k), schema+"."+table) {
+			return f, nil
+		}
+	}
+	var matched []string
+	var frag string
+	for k, f := range filters {
+		k = strings.ToLower(strings.TrimSpace(k))
+		if k == "" {
+			continue
+		}
+		if strings.Contains(k, ".") {
+			if ok, _ := filepath.Match(k, strings.ToLower(schema+"."+table)); ok {
+				matched = append(matched, k)
+				frag = f
+			}
+			continue
+		}
+		if ok, _ := filepath.Match(k, strings.ToLower(table)); ok {
+			matched = append(matched, k)
+			frag = f
+		}
+	}
+	if len(matched) == 0 {
+		return "", nil
+	}
+	if len(matched) > 1 {
+		return "", fmt.Errorf("%s.%s 命中多个 export.filters 键（%s），请让模式互斥", schema, table, strings.Join(matched, ", "))
+	}
+	return frag, nil
+}
+
+// countTableRowsWithFilter runs SELECT COUNT(*) … WHERE <filter> with a
+// per-table timeout, mirroring the worker-side filter gate.
+func countTableRowsWithFilter(ctx context.Context, db *sql.DB, qualified, filter string, timeout time.Duration) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var n int64
+	err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+qualified+" WHERE "+filter).Scan(&n)
+	return n, err
 }
