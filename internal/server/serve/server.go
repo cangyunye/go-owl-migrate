@@ -153,6 +153,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/ai/status", s.handleAIStatus)
 	mux.HandleFunc("POST /api/v1/ai/route", s.handleAIRoute)
 	mux.HandleFunc("POST /api/v1/ai/plan", s.handleAIPlan)
+	mux.HandleFunc("POST /api/v1/ai/plan/confirm", s.handleAIPlanConfirm)
 	mux.HandleFunc("POST /api/v1/conn/test", s.handleTestConn)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("GET /api/v1/config/current", s.handleGetCurrentConfig)

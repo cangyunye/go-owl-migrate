@@ -43,6 +43,10 @@ func seqVendor(t *testing.T, replies []string) (*httptest.Server, *int, *[]strin
 	return srv, &calls, &bodies
 }
 
+var testSlotsJSON = `{"scenario":"export","metadata":"database","source":{"type":"mysql","host":"127.0.0.1","port":"3306","user":"root","password":"__PWD_mysql__","database":"owl_demo","schema":"owl_demo"},"export":{"format":"csv"}}`
+
+var testSlotsYAMLJSON = strings.Replace(testSlotsJSON, `"format":"csv"`, `"format":"xlsx"`, 1)
+
 const goodPlanYAML = `metadata:
   type: database
 ddl:
@@ -71,7 +75,9 @@ func TestAIPlanDisabled503(t *testing.T) {
 func TestAIPlanHappyPath(t *testing.T) {
 	vendor, calls, bodies := seqVendor(t, []string{
 		`{"route":"export-data","sub":"","confidence":"high","missing_slots":[],"out_of_scope":false,"needs_clarify":false,"reason":"导出意图"}`,
-		goodPlanYAML,
+		testSlotsJSON,
+		`{"route":"export-data","sub":"","reason":"再导"}`,
+		testSlotsJSON,
 	})
 	srv := newTestServer(t)
 	t.Setenv("OWL_AI_API_KEY", "test-key")
@@ -95,6 +101,7 @@ func TestAIPlanHappyPath(t *testing.T) {
 		OK          bool   `json:"ok"`
 		SessionID   string `json:"session_id"`
 		PlanID      string `json:"plan_id"`
+		Engine      string `json:"engine"`
 		YAML        string `json:"yaml"`
 		RepairRounds int   `json:"repair_rounds"`
 		Continuity  map[string]any `json:"continuity"`
@@ -109,6 +116,9 @@ func TestAIPlanHappyPath(t *testing.T) {
 	}
 	if !resp.OK || resp.SessionID == "" || resp.PlanID == "" {
 		t.Errorf("resp = %+v", resp)
+	}
+	if resp.Engine != "builder" {
+		t.Errorf("engine = %q, want builder", resp.Engine)
 	}
 	if resp.Session.Stage != "confirming" {
 		t.Errorf("stage = %s", resp.Session.Stage)
@@ -137,6 +147,7 @@ func TestAIPlanRepairLoop(t *testing.T) {
 	badYAML := strings.Replace(goodPlanYAML, "  type: database\n", "", 1) // 丢 metadata.type
 	vendor, calls, _ := seqVendor(t, []string{
 		`{"route":"export-data","sub":"","reason":"导出"}`,
+		`{"scenario":"export","nonsense":true}`, // 槽位缺 source → builder 失败 → 回退
 		badYAML,
 		goodPlanYAML, // 修复轮
 	})
@@ -149,15 +160,19 @@ func TestAIPlanRepairLoop(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
 	}
-	if *calls != 3 {
-		t.Fatalf("vendor calls = %d, want 3 (route + bad draft + repair)", *calls)
+	if *calls != 4 {
+		t.Fatalf("vendor calls = %d, want 4 (route + slots + fallback bad + repair)", *calls)
 	}
 	var resp struct {
-		RepairRounds int `json:"repair_rounds"`
+		RepairRounds int    `json:"repair_rounds"`
+		Engine       string `json:"engine"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp.RepairRounds != 1 {
 		t.Errorf("repair_rounds = %d, want 1", resp.RepairRounds)
+	}
+	if resp.Engine != "llm-fallback" {
+		t.Errorf("engine = %q, want llm-fallback", resp.Engine)
 	}
 }
 
@@ -166,9 +181,9 @@ func TestAIPlanRepairLoop(t *testing.T) {
 func TestAIPlanSessionContinuation(t *testing.T) {
 	vendor, calls, bodies := seqVendor(t, []string{
 		`{"route":"export-data","sub":"","reason":"导出"}`,
-		goodPlanYAML,
+		testSlotsJSON,
 		`{"route":"export-data","sub":"format:xlsx","reason":"续轮换格式"}`,
-		strings.Replace(goodPlanYAML, "format: csv", "format: xlsx", 1),
+		testSlotsYAMLJSON,
 	})
 	srv := newTestServer(t)
 	t.Setenv("OWL_AI_API_KEY", "test-key")
@@ -222,9 +237,9 @@ func TestAIPlanIntentSwitchStartsNewRound(t *testing.T) {
 	_ = routeReply
 	vendor, calls, _ := seqVendor(t, []string{
 		`{"route":"export-data","sub":"","reason":"导出"}`,
-		goodPlanYAML,
+		testSlotsJSON,
 		`{"route":"migrate","sub":"","reason":"迁移"}`,
-		goodPlanYAML,
+		`{"scenario":"migrate","source":{"type":"mysql","host":"127.0.0.1","port":"3306","user":"root","database":"owl_demo","schema":"owl_demo"},"target":{"type":"postgres","host":"127.0.0.1","port":"5432","user":"postgres","database":"app"},"ddl":{"schema_mapping":{"owl_demo":"public"}}}`,
 	})
 	srv := newTestServer(t)
 	t.Setenv("OWL_AI_API_KEY", "test-key")
@@ -286,5 +301,107 @@ func TestAIPlanClarifyNoPlan(t *testing.T) {
 	}
 	if !resp.Result.NeedsClarify {
 		t.Errorf("result = %+v", resp.Result)
+	}
+}
+
+// TestAIPlanConfirmActivateAndExecute: plan → confirm (activate only) →
+// confirm with execute (launchJob; master unavailable in unit tests → the
+// activation must have happened and the failure must be a clean 503).
+func TestAIPlanConfirmActivateAndExecute(t *testing.T) {
+	vendor, _, _ := seqVendor(t, []string{
+		`{"route":"export-data","sub":"","reason":"导出"}`,
+		testSlotsJSON,
+	})
+	srv := newTestServer(t)
+	t.Setenv("OWL_AI_API_KEY", "test-key")
+	srv.cfg.AI.BaseURL = vendor.URL
+	srv.cfg.AI.ApplyDefaults()
+
+	w := doJSON(t, srv, "POST", "/api/v1/ai/plan",
+		`{"utterance":"导出 mysql owl_demo users csv","credentials":{"__PWD_mysql__":"root123456"}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("plan status = %d, body=%s", w.Code, w.Body.String())
+	}
+	var pr struct {
+		SessionID string `json:"session_id"`
+		PlanID    string `json:"plan_id"`
+		Engine    string `json:"engine"`
+		YAML      string `json:"yaml"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &pr)
+	if pr.Engine != "builder" {
+		t.Fatalf("engine = %q", pr.Engine)
+	}
+
+	// confirm：只激活
+	w2 := doJSON(t, srv, "POST", "/api/v1/ai/plan/confirm",
+		`{"session_id":"`+pr.SessionID+`","plan_id":"`+pr.PlanID+`","execute":false}`)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("confirm status = %d, body=%s", w2.Code, w2.Body.String())
+	}
+	var cr struct {
+		Activated bool   `json:"activated"`
+		JobType   string `json:"job_type"`
+		Next      string `json:"next"`
+	}
+	json.Unmarshal(w2.Body.Bytes(), &cr)
+	if !cr.Activated || cr.JobType != "export" {
+		t.Errorf("confirm resp = %+v", cr)
+	}
+	// 激活后服务端活动配置已被替换
+	srv.mu.RLock()
+	got := srv.cfg.Export.Format
+	srv.mu.RUnlock()
+	if got != "csv" {
+		t.Errorf("active config format = %q", got)
+	}
+	// 已激活会话再次 confirm 同一 plan → 阶段不再是 confirming → 409
+	w3 := doJSON(t, srv, "POST", "/api/v1/ai/plan/confirm",
+		`{"session_id":"`+pr.SessionID+`","plan_id":"`+pr.PlanID+`","execute":false}`)
+	if w3.Code != http.StatusConflict {
+		t.Errorf("re-confirm status = %d, want 409", w3.Code)
+	}
+
+	// execute=true（单测无 master IPC → 503，但验证路径走到启动）
+	var sess2 struct {
+		SessionID string `json:"session_id"`
+		PlanID    string `json:"plan_id"`
+		Route     string `json:"route"`
+		Session   struct {
+			Intent string `json:"intent"`
+		} `json:"session"`
+	}
+	// 重新生成一个 plan 用于 execute 分支（激活后指向全新 vendor，排除
+	// keep-alive 连接被上一段流程破坏的测试基建干扰）
+	vendor2, _, _ := seqVendor(t, []string{
+		`{"route":"export-data","sub":"","reason":"再导"}`,
+		testSlotsJSON,
+	})
+	srv.mu.Lock()
+	srv.cfg.AI.BaseURL = vendor2.URL
+	srv.mu.Unlock()
+	w4 := doJSON(t, srv, "POST", "/api/v1/ai/plan", `{"utterance":"再导一份"}`)
+	if w4.Code != http.StatusOK {
+		t.Fatalf("plan2 status = %d, body=%s", w4.Code, w4.Body.String())
+	}
+	json.Unmarshal(w4.Body.Bytes(), &sess2)
+	w5 := doJSON(t, srv, "POST", "/api/v1/ai/plan/confirm",
+		`{"session_id":"`+sess2.SessionID+`","plan_id":"`+sess2.PlanID+`","execute":true}`)
+	if w5.Code != http.StatusServiceUnavailable {
+		t.Fatalf("execute status = %d, want 503 (no master IPC in tests), body=%s", w5.Code, w5.Body.String())
+	}
+	if !strings.Contains(w5.Body.String(), "master IPC") {
+		t.Errorf("body = %s", w5.Body.String())
+	}
+}
+
+// TestAIPlanConfirmUnknownPlan: nonexistent plan id → 404.
+func TestAIPlanConfirmUnknownPlan(t *testing.T) {
+	srv := newTestServer(t)
+	t.Setenv("OWL_AI_API_KEY", "test-key")
+	w := doJSON(t, srv, "POST", "/api/v1/ai/plan/confirm",
+		`{"session_id":"s-none","plan_id":"p-none","execute":false}`)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
 	}
 }

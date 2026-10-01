@@ -94,6 +94,25 @@ export async function render(root /*Element*/, params) {
         +   '</table>'
         + '</div>'
 
+        + '<div class="panel reveal" style="--i:1" id="ai-plan-panel">'
+        +   '<div class="panel-head"><span class="panel-title">AI 助手 · 自然语言生成计划</span></div>'
+        +   '<div class="upload-row">'
+        +     '<input type="text" id="ai-utterance" class="mono" style="flex:1" spellcheck="false" '
+        +       'placeholder="例如：导出 mysql owl_demo 库 users 表为 csv，host 127.0.0.1 端口 3306 用户 root">'
+        +     '<button type="button" class="btn-primary" id="ai-plan-btn">生成计划</button>'
+        +   '</div>'
+        +   '<div id="ai-plan-result" style="display:none;margin-top:12px">'
+        +     '<p class="field-help" id="ai-plan-meta"></p>'
+        +     '<pre class="yaml-preview" id="ai-plan-yaml" style="max-height:280px;overflow:auto"></pre>'
+        +     '<p class="field-help" id="ai-plan-warn"></p>'
+        +     '<div class="upload-row" style="margin-top:8px">'
+        +       '<button type="button" class="btn-primary" id="ai-plan-execute">确认并执行</button>'
+        +       '<button type="button" class="btn-ghost" id="ai-plan-activate">仅激活配置</button>'
+        +       '<span id="ai-plan-status" class="status-msg"></span>'
+        +     '</div>'
+        +   '</div>'
+        + '</div>'
+
         + '<nav class="pills reveal" style="--i:2" id="scenario-pills"></nav>'
 
         + '<div class="cfg-layout">'
@@ -142,6 +161,75 @@ export async function render(root /*Element*/, params) {
     const btnUpload = root.querySelector('#btn-upload');
     const uploadStatus = root.querySelector('#upload-status');
     const libBody = root.querySelector('#config-lib-body');
+    const aiUtterance = root.querySelector('#ai-utterance');
+    const aiPlanBtn = root.querySelector('#ai-plan-btn');
+    const aiResult = root.querySelector('#ai-plan-result');
+    const aiMeta = root.querySelector('#ai-plan-meta');
+    const aiYaml = root.querySelector('#ai-plan-yaml');
+    const aiWarn = root.querySelector('#ai-plan-warn');
+    const aiStatus = root.querySelector('#ai-plan-status');
+    const aiExecute = root.querySelector('#ai-plan-execute');
+    const aiActivate = root.querySelector('#ai-plan-activate');
+
+    /* ── AI 助手（plan → confirm） ───────────────────────────── */
+    let aiPlan = null; // {session_id, plan_id, engine}
+    function aiSetStatus(msg, cls) {
+        aiStatus.textContent = msg;
+        aiStatus.className = 'status-msg' + (cls ? ' ' + cls : '');
+    }
+    aiPlanBtn.addEventListener('click', async () => {
+        const utterance = aiUtterance.value.trim();
+        if (!utterance) { aiSetStatus('请先描述你要做什么', 'fail'); return; }
+        aiPlanBtn.disabled = true;
+        aiSetStatus('生成中…', 'pending');
+        try {
+            const resp = await window.api.post('/api/v1/ai/plan', { utterance });
+            if (resp.error) { aiSetStatus('✗ ' + resp.error, 'fail'); return; }
+            if (resp.needs_clarify) {
+                aiResult.style.display = 'none';
+                aiSetStatus('需要澄清：' + (resp.clarify_reason || '信息不足'), 'fail');
+                return;
+            }
+            aiPlan = { session_id: resp.session_id, plan_id: resp.plan_id };
+            aiMeta.textContent = 'route=' + resp.route + (resp.sub ? ' / ' + resp.sub : '')
+                + ' · engine=' + resp.engine + ' · session=' + resp.session_id;
+            aiYaml.textContent = resp.yaml || '';
+            const warns = resp.warnings || [];
+            aiWarn.textContent = warns.length ? '⚠ ' + warns.join('；') : '';
+            aiResult.style.display = '';
+            aiSetStatus('草案已生成（' + resp.engine + '），确认前不会执行');
+        } catch (e) {
+            aiSetStatus('✗ ' + (e && e.message || e), 'fail');
+        } finally {
+            aiPlanBtn.disabled = false;
+        }
+    });
+    async function aiConfirm(execute) {
+        if (!aiPlan) { aiSetStatus('先生成计划', 'fail'); return; }
+        aiExecute.disabled = aiActivate.disabled = true;
+        aiSetStatus(execute ? '激活并启动任务…' : '激活配置…', 'pending');
+        try {
+            const resp = await window.api.post('/api/v1/ai/plan/confirm', { ...aiPlan, execute });
+            if (resp.error) { aiSetStatus('✗ ' + resp.error, 'fail'); return; }
+            if (resp.needs_clarify) {
+                aiSetStatus('需要澄清：' + (resp.clarify_reason || ''), 'fail');
+                return;
+            }
+            if (resp.job_id) {
+                aiSetStatus('✓ 已启动任务 ' + resp.job_id + '，进度见「任务」页', 'ok');
+                setTimeout(() => { window.location.hash = '#/jobs'; }, 1200);
+            } else {
+                aiSetStatus('✓ 配置已激活（未执行）', 'ok');
+            }
+            aiPlan = null;
+        } catch (e) {
+            aiSetStatus('✗ ' + (e && e.message || e), 'fail');
+        } finally {
+            aiExecute.disabled = aiActivate.disabled = false;
+        }
+    }
+    aiExecute.addEventListener('click', () => aiConfirm(true));
+    aiActivate.addEventListener('click', () => aiConfirm(false));
 
     /* ── scenario pills ─────────────────────────────────────── */
     function renderPills() {

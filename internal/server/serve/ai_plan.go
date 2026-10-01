@@ -15,6 +15,9 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/ai"
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/configbuild"
+	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
+	"github.com/cangyunye/go-owl-migrate/internal/owlagent"
+	"github.com/cangyunye/owljdbc"
 	"gopkg.in/yaml.v3"
 )
 
@@ -144,6 +147,10 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		engine = "llm-fallback"
 	}
 
+	// 能力前置告警：agent 通道（显式 agent 或 auto 落 agent）的 Java/sidecar/
+	// 驱动 jar 就绪检查——计划阶段给指引，不让用户到连接阶段才兜圈子。
+	warnings := s.agentPrerequisiteWarningsForYAML(yamlText)
+
 	planID := ai.NewSessionID()
 	masked := maskYAML(yamlText, req.Credentials)
 	store.MergeSlots(sess, yamlSlots(yamlText))
@@ -164,7 +171,7 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		"plan_id":       planID,
 		"yaml":          masked, // 脱敏预览；含真实凭据的版本只在服务端内存/会话产物里
 		"repair_rounds": repairs,
-		"warnings":      remainingPlaceholders(yamlText, req.Credentials),
+		"warnings":      append(remainingPlaceholders(yamlText, req.Credentials), warnings...),
 		"next":          "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
 	})
 }
@@ -229,6 +236,57 @@ func buildViaSlots(ctx context.Context, client *ai.Client, a config.AIConfig, se
 	}
 	os.Remove(tmp.Name())
 	return string(raw2), "builder", 0, nil
+}
+
+// agentPrerequisiteWarnings checks the agent-channel prerequisites for each
+// configured endpoint (explicit agent channel, or a type with no linked native
+// driver where auto would fall back to agent): Java, sidecar jar, driver jar.
+// Advisory only — the launch preflight in launchJob is the hard gate.
+func (s *Server) agentPrerequisiteWarningsForYAML(yamlText string) []string {
+	tmp, err := os.CreateTemp("", "owl-agentchk-*.yaml")
+	if err != nil {
+		return nil
+	}
+	tmp.WriteString(yamlText)
+	tmp.Close()
+	cfg, err := config.Load(tmp.Name())
+	os.Remove(tmp.Name())
+	if err != nil {
+		return nil
+	}
+	return s.agentPrerequisiteWarnings(cfg)
+}
+
+func (s *Server) agentPrerequisiteWarnings(cfg *config.Config) []string {
+	var out []string
+	sides := []struct {
+		name string
+		db   config.DBConfig
+	}{{"源", cfg.Source}, {"目标", cfg.Target}}
+	for _, side := range sides {
+		if side.db.Type == "" {
+			continue
+		}
+		ch, err := dbconn.ResolveChannel(side.db)
+		if err != nil || ch != dbconn.ChannelAgent {
+			continue
+		}
+		label := side.name + "(" + side.db.Type + ")"
+		agentCfg := side.db.Agent
+		if js := javaStatus(agentCfg.JavaHome); js["found"] != true {
+			out = append(out, label+" 走 agent 通道但未找到 java：安装 JRE 或配置 agent.java_home")
+		}
+		dirs := owljdbc.JarSearchDirs(agentCfg.JarsDir)
+		if js := agentJarStatus(dirs, agentCfg.AgentJar); js["found"] != true {
+			out = append(out, label+" 的 owl-agent.jar 缺失：首次连接会自动下载；离线环境用 "+
+				owlagent.AgentJarURLEnv+" 指向内网镜像或手动放置")
+		}
+		if _, ok := owljdbc.FindProfileJars(dbconn.AgentProfileType(strings.ToLower(strings.TrimSpace(side.db.Type))), dirs); !ok {
+			out = append(out, label+" 缺少 JDBC 驱动 jar：放入 "+agentCfg.JarsDir+"（或工作目录），"+
+				"或 bash owljdbc/scripts/fetch-jars.sh 下载常用驱动")
+		}
+	}
+	return out
 }
 
 // injectSlotCredentials replaces credential sentinels in endpoint slots with
