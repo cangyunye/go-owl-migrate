@@ -42,6 +42,7 @@
 - "导出"一词歧义（数据 or 结构）→ `clarify`（最高频误判点，宁可澄清）。
 - 用户给了连接串但没说干什么 → `clarify`。
 - 多轮对话：用户的话可指代 context 中的既有槽位（库/表/数据源/格式），成功复用不算缺失；用户显式改值才覆盖。
+- **同实例惯例**：用户只给一份连接信息（host/port/user）且未说明目标是另一台/另一类型时，目标视为同实例——host/port/user 同源，仅目标库名/schema 不同，不应为此澄清。
 - DSN 语法：oracle 家族 url 式（密码含 `@ : / # ? !` 等特殊字符需百分号转义）；mysql 是 `user:pass@tcp(host:port)/db`；pg 系 libpq 键值；dm/kingbase/timesten 走 agent 通道（source.channel: agent，需 Java+驱动 jar）。
 - 语气：判定理由（reason）用一句话中文，面向运维人员，直说结论。
 
