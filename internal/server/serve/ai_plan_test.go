@@ -126,15 +126,15 @@ func TestAIPlanHappyPath(t *testing.T) {
 	if resp.Session.Slots["source_type"] != "mysql" || resp.Session.Slots["format"] != "csv" {
 		t.Errorf("slots = %+v", resp.Session.Slots)
 	}
-	// 凭据已注入且被脱敏：真实密码绝不出现在响应里
-	if strings.Contains(resp.YAML, "root123456") || strings.Contains(resp.YAML, "__PWD_") {
+	// 哨兵协议：真实密码绝不出现在响应；哨兵保留在草案中（确认时注入）
+	if strings.Contains(resp.YAML, "root123456") {
 		t.Errorf("yaml leaks credential: %s", resp.YAML)
 	}
-	if !strings.Contains(resp.YAML, "******") {
-		t.Errorf("yaml should be masked: %s", resp.YAML)
+	if !strings.Contains(resp.YAML, "__PWD_mysql__") {
+		t.Errorf("yaml should keep the credential sentinel: %s", resp.YAML)
 	}
-	if len(resp.Warnings) != 0 {
-		t.Errorf("warnings = %v", resp.Warnings)
+	if len(resp.Warnings) == 0 || !strings.Contains(resp.Warnings[0], "__PWD_mysql__") {
+		t.Errorf("warnings should name the sentinel: %v", resp.Warnings)
 	}
 	if resp.Continuity["mode"] != "new" {
 		t.Errorf("continuity = %v", resp.Continuity)
@@ -335,7 +335,7 @@ func TestAIPlanConfirmActivateAndExecute(t *testing.T) {
 
 	// confirm：只激活
 	w2 := doJSON(t, srv, "POST", "/api/v1/ai/plan/confirm",
-		`{"session_id":"`+pr.SessionID+`","plan_id":"`+pr.PlanID+`","execute":false}`)
+		`{"session_id":"`+pr.SessionID+`","plan_id":"`+pr.PlanID+`","execute":false,"credentials":{"__PWD_mysql__":"root123456"}}`)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("confirm status = %d, body=%s", w2.Code, w2.Body.String())
 	}
@@ -348,12 +348,16 @@ func TestAIPlanConfirmActivateAndExecute(t *testing.T) {
 	if !cr.Activated || cr.JobType != "export" {
 		t.Errorf("confirm resp = %+v", cr)
 	}
-	// 激活后服务端活动配置已被替换
+	// 激活后服务端活动配置已被替换，且凭据在激活时注入（真实密码进配置）
 	srv.mu.RLock()
-	got := srv.cfg.Export.Format
+	gotFormat := srv.cfg.Export.Format
+	gotDSN := srv.cfg.Source.DSN
 	srv.mu.RUnlock()
-	if got != "csv" {
-		t.Errorf("active config format = %q", got)
+	if gotFormat != "csv" {
+		t.Errorf("active config format = %q", gotFormat)
+	}
+	if !strings.Contains(gotDSN, "root123456") || strings.Contains(gotDSN, "__PWD_") {
+		t.Errorf("active dsn should carry the injected credential: %q", gotDSN)
 	}
 	// 已激活会话再次 confirm 同一 plan → 阶段不再是 confirming → 409
 	w3 := doJSON(t, srv, "POST", "/api/v1/ai/plan/confirm",

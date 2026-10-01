@@ -9,6 +9,7 @@ Offline-first database migration tool for Oracle, PostgreSQL, MySQL, and derivat
 | [Getting Started](getting-started.md) | Installation, quick start, first migration |
 | [CLI Commands](cli-commands.md) | Full command reference (export ddl, export data, export insert, gen-select, import, migrate) |
 | [Configuration](config.md) | All configuration options with examples |
+| [Filtered Export & Column Mapping](filtered-export.md) | WHERE 条件导出（条件 COUNT 门禁）、列投影/改名、按列类型转换 |
 | [CSV Metadata Format](csv-format.md) | CSV file format for offline schema definition |
 | [Migration Pipeline](migration-pipeline.md) | End-to-end export/import pipeline, checkpoint/resume, error handling, encoding |
 | [Dialect & Type Mapping](dialect-mapping.md) | Supported dialects, type mapping system, database-specific behavior |

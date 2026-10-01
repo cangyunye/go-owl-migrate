@@ -97,6 +97,39 @@ type DDLSlots struct {
 // response instead of falling back to LLM invention.
 var ErrIncompleteSlots = errors.New("incomplete slots")
 
+// PasswordSentinelFor returns the credential placeholder a slot should carry
+// for the given database type ("__PWD_mysql__" / "__PWD_pg__" /
+// "__PWD_oracle__"), or "" for types without a family mapping. Plan flows use
+// it so the LLM never handles real passwords: slots carry the sentinel, the
+// caller substitutes the actual secret at confirm time.
+func PasswordSentinelFor(dbType string) string {
+	t := strings.ToLower(strings.TrimSpace(dbType))
+	switch {
+	case t == "mysql" || strings.HasSuffix(t, "-mysql") || t == "goldendb" || t == "oceanbase":
+		return "__PWD_mysql__"
+	case strings.Contains(t, "postgres") || strings.HasSuffix(t, "-pg") || t == "kingbase" || strings.HasPrefix(t, "opengauss") || strings.HasPrefix(t, "panwei"):
+		return "__PWD_pg__"
+	case t == "oracle" || strings.HasSuffix(t, "-oracle") || t == "dm" || t == "timesten":
+		return "__PWD_oracle__"
+	default:
+		return ""
+	}
+}
+
+// FillPasswordSentinels sets empty endpoint passwords to their family
+// sentinel so confirm-time credential injection has a slot to land in.
+func FillPasswordSentinels(req *SlotRequest) {
+	fill := func(ep *EndpointSlots) {
+		if ep.Password == "" {
+			ep.Password = PasswordSentinelFor(ep.Type)
+		}
+	}
+	fill(&req.Source)
+	if req.Target != nil {
+		fill(req.Target)
+	}
+}
+
 // ValidScenarios lists the scenarios BuildFromSlots accepts.
 func ValidScenarios() []string {
 	return []string{"migrate", "export", "import", "export-ddl", "gen-select", "export-insert", "validate", "full"}
@@ -117,12 +150,27 @@ func BuildFromSlots(req SlotRequest) (*config.Config, error) {
 	if needsTarget(scenario) && req.Target == nil {
 		return nil, fmt.Errorf("%w: target: scenario %q requires a target endpoint", ErrIncompleteSlots, scenario)
 	}
+	// 同实例迁移是头号场景：target 未给 host/port/user 时继承 source
+	// （database/schema 仍各自独立——同实例不同库/用户正是用途所在）。
+	// 必须在 target 校验之前执行，否则空 host 会先触发 ErrIncompleteSlots。
+	if req.Target != nil && req.Target.DSN == "" {
+		if req.Target.Host == "" {
+			req.Target.Host = req.Source.Host
+		}
+		if req.Target.Port == "" {
+			req.Target.Port = req.Source.Port
+		}
+		if req.Target.User == "" && !isEmbedded(req.Target.Type) {
+			req.Target.User = req.Source.User
+		}
+	}
 	if req.Target != nil {
 		if err := validateEndpoint("target", *req.Target, true); err != nil {
 			return nil, err
 		}
 	}
 
+	defaultSchemaForFamily(&req.Source)
 	srcDSN, err := endpointDSN(req.Source)
 	if err != nil {
 		return nil, fmt.Errorf("source: %w", err)
@@ -130,6 +178,7 @@ func BuildFromSlots(req SlotRequest) (*config.Config, error) {
 	tgtDSN := ""
 	var tgtType, tgtSchema string
 	if req.Target != nil {
+		defaultSchemaForFamily(req.Target)
 		tgtDSN, err = endpointDSN(*req.Target)
 		if err != nil {
 			return nil, fmt.Errorf("target: %w", err)
@@ -183,6 +232,19 @@ func BuildFromSlots(req SlotRequest) (*config.Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// defaultSchemaForFamily fills the schema with the database name for the
+// MySQL family, where "库" is both database and schema (matching the CLI
+// guidance "MySQL: db 名").
+func defaultSchemaForFamily(ep *EndpointSlots) {
+	if ep.Schema != "" || ep.Database == "" {
+		return
+	}
+	switch strings.ToLower(ep.Type) {
+	case "mysql", "goldendb", "goldendb-mysql", "oceanbase", "oceanbase-mysql":
+		ep.Schema = ep.Database
+	}
 }
 
 func needsTarget(scenario string) bool {

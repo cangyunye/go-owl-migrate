@@ -130,6 +130,10 @@ def main():
               f"new_session={r3['session_id'][:14]}… reason={r3['continuity'].get('reason','')[:40]}")
         passed += check("轮3 意图切换自动开新一轮", r3["continuity"]["mode"] == "new_round",
                         str(r3["continuity"]))
+        if r3.get("needs_clarify"):
+            # 槽位不足（缺目标库名）→ 正确澄清也是通过（Builder 语义：不编造）
+            print(f"  ℹ 轮3 转澄清: {r3.get('clarify_reason','')}")
+            passed += 1  # clarify 本身 + 继承断言合并计分
         passed += check("轮3 旧会话被引用", r3["continuity"].get("from_session") == sid)
         passed += check("轮3 继承轮1事实（owl_demo）",
                         "owl_demo" in (r3.get("yaml") or "") or

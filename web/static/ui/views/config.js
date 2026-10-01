@@ -99,6 +99,8 @@ export async function render(root /*Element*/, params) {
         +   '<div class="upload-row">'
         +     '<input type="text" id="ai-utterance" class="mono" style="flex:1" spellcheck="false" '
         +       'placeholder="例如：导出 mysql owl_demo 库 users 表为 csv，host 127.0.0.1 端口 3306 用户 root">'
+        +     '<input type="text" id="ai-creds" class="mono" style="width:260px" spellcheck="false" '
+        +       'placeholder=' + JSON.stringify('凭据（可选）：{"__PWD_mysql__":"密码"}') + '>'
         +     '<button type="button" class="btn-primary" id="ai-plan-btn">生成计划</button>'
         +   '</div>'
         +   '<div id="ai-plan-result" style="display:none;margin-top:12px">'
@@ -172,18 +174,33 @@ export async function render(root /*Element*/, params) {
     const aiActivate = root.querySelector('#ai-plan-activate');
 
     /* ── AI 助手（plan → confirm） ───────────────────────────── */
-    let aiPlan = null; // {session_id, plan_id, engine}
+    let aiPlan = null;   // {session_id, plan_id, engine}
+    let aiCreds = null;  // 凭据占位符映射：plan 与 confirm 都要带（服务端即时注入，不落存储）
     function aiSetStatus(msg, cls) {
         aiStatus.textContent = msg;
         aiStatus.className = 'status-msg' + (cls ? ' ' + cls : '');
     }
+    function parseCreds() {
+        const raw = (root.querySelector('#ai-creds') || {}).value || '';
+        const trimmed = raw.trim();
+        if (!trimmed) return null;
+        try {
+            const obj = JSON.parse(trimmed);
+            return (obj && typeof obj === 'object') ? obj : null;
+        } catch (e) {
+            aiSetStatus('✗ 凭据需为 JSON 对象，如 {"__PWD_mysql__":"密码"}', 'fail');
+            return undefined; // 解析失败：中止
+        }
+    }
     aiPlanBtn.addEventListener('click', async () => {
         const utterance = aiUtterance.value.trim();
         if (!utterance) { aiSetStatus('请先描述你要做什么', 'fail'); return; }
+        aiCreds = parseCreds();
+        if (aiCreds === undefined) return;
         aiPlanBtn.disabled = true;
         aiSetStatus('生成中…', 'pending');
         try {
-            const resp = await window.api.post('/api/v1/ai/plan', { utterance });
+            const resp = await window.api.post('/api/v1/ai/plan', { utterance, credentials: aiCreds });
             if (resp.error) { aiSetStatus('✗ ' + resp.error, 'fail'); return; }
             if (resp.needs_clarify) {
                 aiResult.style.display = 'none';
@@ -206,10 +223,12 @@ export async function render(root /*Element*/, params) {
     });
     async function aiConfirm(execute) {
         if (!aiPlan) { aiSetStatus('先生成计划', 'fail'); return; }
+        aiCreds = parseCreds();
+        if (aiCreds === undefined) return;
         aiExecute.disabled = aiActivate.disabled = true;
         aiSetStatus(execute ? '激活并启动任务…' : '激活配置…', 'pending');
         try {
-            const resp = await window.api.post('/api/v1/ai/plan/confirm', { ...aiPlan, execute });
+            const resp = await window.api.post('/api/v1/ai/plan/confirm', { ...aiPlan, execute, credentials: aiCreds });
             if (resp.error) { aiSetStatus('✗ ' + resp.error, 'fail'); return; }
             if (resp.needs_clarify) {
                 aiSetStatus('需要澄清：' + (resp.clarify_reason || ''), 'fail');

@@ -3,6 +3,8 @@ package cmd
 import (
 	"reflect"
 	"testing"
+
+	"github.com/cangyunye/go-owl-migrate/internal/configbuild"
 )
 
 // recommendSchemaMapping：确定源/目标后默认推荐用户映射的 golden 用例。
@@ -27,9 +29,9 @@ func TestRecommendSchemaMapping(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := recommendSchemaMapping(tt.srcSchema, tt.tgtSchema, tt.tgtType)
+			got := configbuild.RecommendSchemaMapping(tt.srcSchema, tt.tgtSchema, tt.tgtType)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("recommendSchemaMapping(%q,%q,%q) = %v, want %v",
+				t.Errorf("configbuild.RecommendSchemaMapping(%q,%q,%q) = %v, want %v",
 					tt.srcSchema, tt.tgtSchema, tt.tgtType, got, tt.want)
 			}
 		})
@@ -38,7 +40,7 @@ func TestRecommendSchemaMapping(t *testing.T) {
 
 // buildMigrateConfig：生成的 migrate 配置必须携带推荐映射 + 目标 schema。
 func TestBuildMigrateConfigRecommendedMapping(t *testing.T) {
-	cfg := buildMigrateConfig("postgres", "dsn-x", "src_hr", "oceanbase-oracle", "dsn-y", "")
+	cfg := configbuild.BuildMigrateConfig("postgres", "dsn-x", "src_hr", "oceanbase-oracle", "dsn-y", "")
 	if cfg.Target.Schema != "src_hr" {
 		t.Errorf("Target.Schema = %q, want src_hr (缺省推荐同名)", cfg.Target.Schema)
 	}

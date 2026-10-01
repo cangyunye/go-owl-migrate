@@ -129,7 +129,6 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 	if fbErr != nil {
 		// 槽位不足（如缺目标库名）→ 澄清，而不是让 LLM 编造缺失事实。
 		if errors.Is(fbErr, configbuild.ErrIncompleteSlots) {
-			store.AddTurn(sess, "user", req.Utterance)
 			store.AddTurn(sess, "assistant", fbErr.Error())
 			writeJSON(w, http.StatusOK, map[string]any{
 				"ok": true, "session_id": sess.ID, "session": sess, "continuity": continuity,
@@ -171,7 +170,7 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		"plan_id":       planID,
 		"yaml":          masked, // 脱敏预览；含真实凭据的版本只在服务端内存/会话产物里
 		"repair_rounds": repairs,
-		"warnings":      append(remainingPlaceholders(yamlText, req.Credentials), warnings...),
+		"warnings":      append(remainingPlaceholders(yamlText, nil), warnings...),
 		"next":          "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
 	})
 }
@@ -205,8 +204,11 @@ func buildViaSlots(ctx context.Context, client *ai.Client, a config.AIConfig, se
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return "", "", 0, fmt.Errorf("slots JSON 结构不符: %w", err)
 	}
-	// 凭据注入：槽位里的哨兵占位符替换为调用方提供的真实值。
-	injectSlotCredentials(&req, creds)
+	// 哨兵协议：槽位密码一律填类型族哨兵（模型无需也不得接触真实密码），
+	// 产物 YAML 保留哨兵（非密文、可存储）；真实凭据由调用方在 confirm 时
+	// 再次提供并即时注入——会话存储与日志永不接触明文。
+	configbuild.FillPasswordSentinels(&req)
+	_ = creds
 	cfg, err := configbuild.BuildFromSlots(req)
 	if err != nil {
 		return "", "", 0, fmt.Errorf("builder: %w", err)
@@ -314,12 +316,10 @@ func injectSlotCredentials(req *configbuild.SlotRequest, creds map[string]string
 func (s *Server) resolveSession(store *ai.SessionStore, sessionID string, route aiRouteResult, utterance string) (*ai.Session, map[string]any) {
 	if sess, ok := s.sessionFrom(sessionID, store); ok {
 		if sess.Intent == route.Route {
-			store.AddTurn(sess, "user", utterance)
 			return sess, map[string]any{"mode": "continued", "from_session": sess.ID, "reason": "同意图，沿用会话与槽位"}
 		}
 		next, err := store.CloneForRound(sess, route.Route, route.Sub)
 		if err == nil {
-			store.AddTurn(next, "user", utterance)
 			return next, map[string]any{
 				"mode": "new_round", "from_session": sess.ID, "session_id": next.ID,
 				"reason": "意图从 " + sess.Intent + " 变为 " + route.Route + "：已自动开新一轮（继承库/表等事实槽位，不回放旧对话）；原会话 " + sess.ID + " 保留可引用",
@@ -331,7 +331,6 @@ func (s *Server) resolveSession(store *ai.SessionStore, sessionID string, route 
 		return &ai.Session{ID: "", Intent: route.Route, Sub: route.Sub, Slots: map[string]string{}},
 			map[string]any{"mode": "stateless", "reason": "会话存储不可用，本轮无记忆"}
 	}
-	store.AddTurn(sess, "user", utterance)
 	return sess, map[string]any{"mode": "new", "reason": "新会话"}
 }
 

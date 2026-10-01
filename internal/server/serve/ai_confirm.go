@@ -40,9 +40,10 @@ func intentJobType(intent string) (string, bool) {
 //     endpoints, not jobs.
 func (s *Server) handleAIPlanConfirm(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		SessionID string `json:"session_id"`
-		PlanID    string `json:"plan_id"`
-		Execute   bool   `json:"execute"`
+		SessionID   string            `json:"session_id"`
+		PlanID      string            `json:"plan_id"`
+		Execute     bool              `json:"execute"`
+		Credentials map[string]string `json:"credentials,omitempty"`
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
@@ -86,7 +87,9 @@ func (s *Server) handleAIPlanConfirm(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	tmp.WriteString(plan.YAML)
+	// 凭据注入：计划草案携带哨兵占位符，确认时由调用方再次提供真实值，
+	// 注入后立即使用（激活的配置/worker 拿到真实 DSN；会话与日志仍存哨兵版）。
+	tmp.WriteString(ai.InjectCredentials(plan.YAML, req.Credentials))
 	tmp.Close()
 	cfg, loadErr := config.Load(tmp.Name())
 	os.Remove(tmp.Name())
@@ -124,19 +127,27 @@ func (s *Server) handleAIPlanConfirm(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var jobResp struct {
-			ID string `json:"id"`
+			JobID  string `json:"job_id"`
+			Status string `json:"status"`
 		}
-		json.Unmarshal(body, &jobResp)
+		if uerr := json.Unmarshal(body, &jobResp); uerr != nil {
+			writeError(w, http.StatusBadGateway, "master 响应解析失败: "+uerr.Error()+" body="+string(body))
+			return
+		}
+		if jobResp.JobID == "" {
+			writeError(w, http.StatusBadGateway, "master 响应缺 job_id: "+string(body))
+			return
+		}
 		store.SetStage(sess, ai.StageExecuting)
-		store.AddArtifact(sess, ai.Artifact{Kind: "job", ID: jobResp.ID})
+		store.AddArtifact(sess, ai.Artifact{Kind: "job", ID: jobResp.JobID})
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":         true,
 			"session_id": sess.ID,
 			"plan_id":    plan.ID,
 			"activated":  true,
-			"job_id":     jobResp.ID,
+			"job_id":     jobResp.JobID,
 			"job_type":   jobType,
-			"next":       "进度：GET /api/v1/jobs/" + jobResp.ID + "（或任务页 #/jobs）",
+			"next":       "进度：GET /api/v1/jobs/" + jobResp.JobID + "（或任务页 #/jobs）",
 		})
 		return
 	}
