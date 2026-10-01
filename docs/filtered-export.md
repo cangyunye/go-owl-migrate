@@ -126,7 +126,7 @@ owl-migrate migrate -c oracle2oracle.yaml -r report.json
 
 ## AI 对话用法
 
-`POST /api/v1/ai/plan` 生成含 filters/columns 的配置草案（凭据走占位符注入）。多轮会话下"继续导出 Where 条件 2 的数据"会沿用上一轮的库/表/格式槽位、仅覆盖条件槽位（`continuity.mode=continued`）；条件字段由 `config.Load` 校验兜底幻觉。注意 AI 不改变门禁语义——生成后仍要过条件 COUNT 才执行。
+`POST /api/v1/ai/plan` 生成含 filters/columns 的配置草案。引擎分层：LLM 只提取 **SlotRequest 槽位**（`scenario/source/target/export.filters/columns`），配置由 `configbuild.BuildFromSlots` 确定性组装（builder 引擎，凭据带外注入、LLM 输出不接触密码）；槽位不足转澄清（如缺目标库名），builder 不支持的组合回退 LLM-YAML（响应带 `engine: llm-fallback`）。多轮会话下"继续导出 Where 条件 2 的数据"沿用上一轮的库/表/格式槽位、仅覆盖条件槽位（`continuity.mode=continued`）。AI 不改变门禁语义——builder 产物同样要过条件 COUNT 才执行。
 
 ## 排查
 

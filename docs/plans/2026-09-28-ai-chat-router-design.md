@@ -148,7 +148,7 @@
 - 修复回路：CLI 校验失败 → 报错回喂 → 最多 3 轮，只许改配置不许改意图。
 - 推理模型注意：思考 token 计入 `max_tokens`（默认 4096 会截断答案），路由用 `effort=low` + `max_tokens=32768`。
 
-**落地状态（2026-09-29）**：`POST /api/v1/ai/route` 与 `GET /api/v1/ai/status` 已实现（`internal/server/serve/ai.go` + `internal/ai` 包，提示词 go:embed 与 `evals/ai-router/router_system.md` 有 parity 测试锁定）；`ai:` 配置段见 `docs/config.md`。语料 e2e 回归：serve 端点实连 DeepSeek 62 条 route 命中 60/62（`evals/ai-router/run_serve_route_eval.py`）。`POST /api/v1/ai/plan`（配置生成 + 凭据占位符协议 + config.Load 修复回路）与会话对象存储（`internal/ai.SessionStore`，SQLite，TTL 24h，轮次窗口 K=8）已实现；两轮会话 e2e（新会话→续轮改格式→意图切换自动开新一轮）13/13 通过（`evals/ai-router/run_serve_plan_eval.py`）。下一步：确认后执行（plan → job 端点串联）与 Web UI 接入。
+**落地状态（2026-09-29）**：`POST /api/v1/ai/route` 与 `GET /api/v1/ai/status` 已实现（`internal/server/serve/ai.go` + `internal/ai` 包，提示词 go:embed 与 `evals/ai-router/router_system.md` 有 parity 测试锁定）；`ai:` 配置段见 `docs/config.md`。语料 e2e 回归：serve 端点实连 DeepSeek 62 条 route 命中 60/62（`evals/ai-router/run_serve_route_eval.py`）。`POST /api/v1/ai/plan`（配置生成 + 凭据占位符协议 + config.Load 修复回路）与会话对象存储（`internal/ai.SessionStore`，SQLite，TTL 24h，轮次窗口 K=8）已实现；两轮会话 e2e（新会话→续轮改格式→意图切换自动开新一轮）13/13 通过（`evals/ai-router/run_serve_plan_eval.py`）。§9 决策已落地为 **builder 引擎**（2026-10-01）：`/ai/plan` 第②段首选确定性组装——LLM 只产出 SlotRequest JSON（`internal/ai/prompt_slots.md`），`configbuild.BuildFromSlots` 拼 DSN/应用 filters/columns（凭据带外注入，LLM 输出不接触密码）；槽位不足（`ErrIncompleteSlots`）转澄清而非回退编造，其余 builder 失败回退 LLM-YAML 并带 `engine: llm-fallback` 标注。`owl-migrate init --slots` 让人类脚本与 AI 走同一 builder。plan e2e 13/13（轮 1/2 builder、轮 3 正确澄清）。下一步：确认后执行（plan → job 串联）与 Web UI 接入。
 
 ### 供应商接入 schema（配置段草案）
 

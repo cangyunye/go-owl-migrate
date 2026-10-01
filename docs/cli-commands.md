@@ -31,7 +31,17 @@ Flags:
       --target-schema string  Target database schema (defaults to source-schema if empty)
   -m, --metadata-type string  Metadata source: csv or database (default "database")
   -o, --output string         Output configuration file path (default "./migrate.yaml")
+      --slots string          Build from a JSON SlotRequest (deterministic assembly; "-" = stdin)
+      --print                 Write the generated config to stdout instead of a file
 ```
+
+Slot mode (AI-tool / scripting interface) — the JSON schema lives in `internal/configbuild/slots.go`:
+
+```bash
+cat slots.json | owl-migrate init --slots - --print > migrate.yaml
+```
+
+The builder assembles DSNs from parts (host/port/user/password/database), validates WHERE fragments, and applies filters/columns/column_types as first-class inputs — the same builders back the `/api/v1/ai/plan` endpoint, where the LLM only fills slots and never touches credentials or YAML structure.
 
 Example:
 

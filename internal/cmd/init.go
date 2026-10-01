@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"encoding/json"
+	"io"
 	"bufio"
 	"fmt"
 	"os"
@@ -11,6 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/configbuild"
+	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
 
@@ -25,6 +29,8 @@ func initCmd() *cobra.Command {
 		outputFile   string
 		metadataType string
 		scenario     string
+		slotsFile    string
+		printOut     bool
 	)
 
 	cmd := &cobra.Command{
@@ -49,6 +55,13 @@ Use --scenario to control which sections appear in the generated config:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hasTarget := cmd.Flags().Changed("target-type")
 			hasScenario := cmd.Flags().Changed("scenario")
+
+			// ── 槽位 JSON 模式（AI 工具/脚本的一等入口） ──
+			// 结构化 SlotRequest → configbuild.BuildFromSlots 确定性组装，
+			// 输出与交互式 init 完全同构（含注释与高级选项块）。
+			if slotsFile != "" {
+				return runSlotsInit(slotsFile, outputFile, printOut)
+			}
 
 			if !hasTarget && !hasScenario {
 				return runInteractive(outputFile)
@@ -105,11 +118,13 @@ Use --scenario to control which sections appear in the generated config:
 			warnUncompiledDialect(sourceType)
 			warnUncompiledDialect(targetType)
 
-			cfg := buildScenarioConfig(sc, sourceType, sourceDSN, sourceSchema, targetType, targetDSN, targetSchema, mt)
+			cfg := configbuild.BuildScenarioConfig(sc, sourceType, sourceDSN, sourceSchema, targetType, targetDSN, targetSchema, mt)
 			return writeConfig(cfg, outputFile)
 		},
 	}
 
+	cmd.Flags().StringVar(&slotsFile, "slots", "", "build from a JSON SlotRequest (deterministic assembly; '-' = stdin). Schema: internal/configbuild/slots.go")
+	cmd.Flags().BoolVar(&printOut, "print", false, "write the generated config to stdout instead of a file")
 	cmd.Flags().StringVarP(&sourceType, "source-type", "s", "", "source database type (only for --metadata-type database)")
 	cmd.Flags().StringVar(&sourceDSN, "source-dsn", "", "source database DSN")
 	cmd.Flags().StringVar(&sourceSchema, "source-schema", "", "source database schema/database name")
@@ -368,7 +383,7 @@ func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
 	}
 	tgtType := askChoice(r, "Target database dialect", sortedDialectKeys(), tgtDefault)
 
-	cfg := buildDDLConfig(mt, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
+	cfg := configbuild.BuildDDLConfig(mt, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
 	return writeConfig(cfg, outputPath)
 }
 
@@ -457,7 +472,7 @@ func interactiveMigrate(r *bufio.Reader, outputPath string) error {
 		tgtSchema = srcSchema
 	}
 
-	cfg := buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema)
+	cfg := configbuild.BuildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema)
 	cfg.Export.Tables = config.TableListConfig{Include: tables}
 	return writeConfig(cfg, outputPath)
 }
@@ -578,319 +593,12 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 	tgtSchema = askSchema(r, "Target schema name (leave blank to use source schema)", tgtType, "")
 
 	// Build FULL template with ALL 8 sections
-	cfg := buildFullConfig(mt, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, csvPath, xlsxPath)
+	cfg := configbuild.BuildFullConfig(mt, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, csvPath, xlsxPath)
+	askAdvancedOptions(r, cfg, srcSchema, tgtSchema)
 	return writeConfig(cfg, outputPath)
 }
 
 // ── Scenario-aware config builders ──
-
-func buildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, metaType string) *config.Config {
-	switch scenario {
-	case "export-ddl", "gen-ddl", "validate":
-		csvPath := ""
-		xlsxPath := ""
-		if metaType == "csv" {
-			csvPath = "./testdata/csv/"
-		}
-		if metaType == "xlsx" {
-			xlsxPath = "./metadata/schema.xlsx"
-		}
-		return buildDDLConfig(metaType, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
-	case "gen-select":
-		return buildSelectGenConfig(metaType, srcType, srcDSN, srcSchema, tgtType)
-	case "export-insert", "gen-insert":
-		cfg := &config.Config{
-			General: config.GeneralConfig{LogLevel: "info"},
-			DDL:     config.DDLConfig{TargetDialect: tgtType},
-		}
-		switch metaType {
-		case "xlsx":
-			cfg.Metadata = config.MetadataConfig{
-				Type: "xlsx",
-				XLSX: config.XLSXConfig{
-					Path:          "./metadata/schema.xlsx",
-					DataOutputDir: "./output/data/",
-				},
-			}
-		default:
-			// csv: export insert reads data dir from CLI -d/--data flag.
-			cfg.Metadata = config.MetadataConfig{Type: "csv"}
-		}
-		return cfg
-	case "export":
-		return &config.Config{
-			General:  config.GeneralConfig{LogLevel: "info"},
-			Metadata: config.MetadataConfig{Type: "database"},
-			Source:   config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema},
-			Export: config.ExportConfig{
-				OutputDir: "./output/data/",
-				Format:    "csv",
-				CSV: config.ExportCSVConfig{
-					Delimiter:          ",",
-					QuoteChar:          "\"",
-					Header:             true,
-					NullRepresentation: "\\N",
-				},
-				Batch: config.BatchConfig{PageSize: 5000},
-				Parallel: config.ParallelConfig{
-					Enabled:    true,
-					MaxWorkers: 4,
-				},
-				Tables: config.TableListConfig{Include: []string{"*"}},
-			},
-		}
-	case "import":
-		return &config.Config{
-			General:  config.GeneralConfig{LogLevel: "info"},
-			Metadata: config.MetadataConfig{Type: "csv"},
-			Target:   config.DBConfig{Type: tgtType, DSN: tgtDSN, Schema: tgtSchema},
-			DDL: config.DDLConfig{
-				TargetDialect:      tgtType,
-				IncludeIfNotExists: true,
-				SchemaMapping:      map[string]string{tgtSchema: tgtSchema},
-			},
-			Import: config.ImportConfig{
-				SourceDir: "./output/data/",
-				Format:    "csv",
-				CSV:       config.ImportCSVConfig{NullMarker: "\\N"},
-				Target:    config.ImportTargetConfig{TruncateBefore: true},
-				Batch: config.ImportBatchConfig{
-					CommitInterval: 1000,
-					ErrorPolicy:    "skip_row",
-				},
-				Parallel: config.ParallelConfig{
-					Enabled:    true,
-					MaxWorkers: 4,
-				},
-				DataTransforms: config.DataTransforms{
-					DatetimeFormat: "yyyyMMddHHmmss",
-					TrimStrings:    true,
-					NullIf:         []string{"NULL", "null", "\\N"},
-				},
-			},
-		}
-	case "export-metadata":
-		return &config.Config{
-			General:  config.GeneralConfig{LogLevel: "info"},
-			Metadata: config.MetadataConfig{Type: "database"},
-			Source:   config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema},
-		}
-	default:
-		return buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema)
-	}
-}
-
-func buildSelectGenConfig(metaType, srcType, srcDSN, srcSchema, tgtType string) *config.Config {
-	cfg := &config.Config{
-		General: config.GeneralConfig{LogLevel: "info"},
-		SelectGen: config.SelectGenConfig{
-			OutputDir: "./output/select/",
-			Batch: config.BatchConfig{
-				Method:   "cursor",
-				PageSize: 5000,
-			},
-		},
-	}
-	switch metaType {
-	case "csv":
-		cfg.Metadata = config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{Path: "./testdata/csv/"}}
-	case "xlsx":
-		cfg.Metadata = config.MetadataConfig{
-			Type: "xlsx",
-			XLSX: config.XLSXConfig{Path: "./metadata/schema.xlsx", DataOutputDir: "./output/data/"},
-		}
-	case "database":
-		cfg.Metadata = config.MetadataConfig{Type: "database"}
-		cfg.Source = config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema}
-	}
-	cfg.DDL = config.DDLConfig{TargetDialect: tgtType}
-	return cfg
-}
-
-func buildDDLConfig(metaType, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath string) *config.Config {
-	cfg := &config.Config{
-		General: config.GeneralConfig{LogLevel: "info"},
-		DDL: config.DDLConfig{
-			TargetDialect:      tgtType,
-			IncludeComments:    true,
-			IncludeIfNotExists: true,
-		},
-	}
-
-	switch metaType {
-	case "csv":
-		cfg.Metadata = config.MetadataConfig{Type: "csv", CSV: config.CSVConfig{Path: csvPath}}
-	case "xlsx":
-		cfg.Metadata = config.MetadataConfig{Type: "xlsx", XLSX: config.XLSXConfig{Path: xlsxPath}}
-	case "database":
-		cfg.Metadata = config.MetadataConfig{Type: "database"}
-		cfg.Source = config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema}
-	}
-
-	if srcSchema != "" {
-		cfg.DDL.SchemaMapping = map[string]string{srcSchema: srcSchema}
-	}
-
-	return cfg
-}
-
-// recommendSchemaMapping 生成默认推荐的 schema→目标用户映射：
-//   - 未指定目标 schema → 推荐同名（迁移/DDL 通用默认，OB 目标即"默认推荐用户
-//     = 源 schema 名"，需在目标侧预建该用户）；
-//   - 显式 --target-schema → 直接使用（PG 多用户场景：源 schema 可映射到任意
-//     目标用户，如 src_hr → MIG_PG_HR）；
-//   - 嵌入式目标无 schema 概念 → 空映射。
-func recommendSchemaMapping(srcSchema, tgtSchema, tgtType string) map[string]string {
-	if srcSchema == "" {
-		return nil
-	}
-	if isEmbedded(tgtType) {
-		return nil
-	}
-	effective := tgtSchema
-	if effective == "" {
-		effective = srcSchema
-	}
-	return map[string]string{srcSchema: effective}
-}
-
-func buildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema string) *config.Config {
-	if tgtSchema == "" {
-		tgtSchema = srcSchema
-	}
-	schemaMapping := recommendSchemaMapping(srcSchema, tgtSchema, tgtType)
-
-	return &config.Config{
-		General:  config.GeneralConfig{LogLevel: "info"},
-		Metadata: config.MetadataConfig{Type: "database"},
-		Source:   config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema},
-		Target:   config.DBConfig{Type: tgtType, DSN: tgtDSN, Schema: tgtSchema},
-		DDL: config.DDLConfig{
-			TargetDialect:      tgtType,
-			IncludeIfNotExists: true,
-			SchemaMapping:      schemaMapping,
-		},
-		Export: config.ExportConfig{
-			CSV: config.ExportCSVConfig{
-				Delimiter:          ",",
-				Header:             true,
-				NullRepresentation: "\\N",
-			},
-			Batch: config.BatchConfig{PageSize: 5000},
-			Parallel: config.ParallelConfig{
-				Enabled:    true,
-				MaxWorkers: 4,
-			},
-		},
-		Import: config.ImportConfig{
-			CSV:    config.ImportCSVConfig{NullMarker: "\\N"},
-			Target: config.ImportTargetConfig{TruncateBefore: true},
-			Batch: config.ImportBatchConfig{
-				CommitInterval: 1000,
-				ErrorPolicy:    "skip_row",
-			},
-			// FK-aware order: parents before children, sequential. Slower than
-			// parallel but avoids silent skip_row data loss on FK-linked schemas.
-			Parallel: config.ParallelConfig{
-				Enabled:            true,
-				MaxWorkers:         4,
-				RespectForeignKeys: true,
-			},
-			DataTransforms: config.DataTransforms{
-				DatetimeFormat: "yyyyMMddHHmmss",
-				TrimStrings:    true,
-				NullIf:         []string{"NULL", "null", "\\N"},
-			},
-		},
-	}
-}
-
-// buildFullConfig builds a complete config with ALL sections for the "full" scenario.
-// Unlike scenario-specific builders, full mode always includes all 8 sections
-// (general, metadata, source/target, ddl, select_gen, export, import) with comments
-// explaining which commands actually use each section.
-func buildFullConfig(metaType, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, csvPath, xlsxPath string) *config.Config {
-	schemaMapping := recommendSchemaMapping(srcSchema, tgtSchema, tgtType)
-
-	cfg := &config.Config{
-		ForceAllSections: true,
-		General:          config.GeneralConfig{LogLevel: "info"},
-		Metadata:         config.MetadataConfig{Type: metaType},
-		// Source always appears in full template; comment explains it's database-only.
-		Source: config.DBConfig{
-			Type:   srcType,
-			DSN:    srcDSN,
-			Schema: srcSchema,
-		},
-		Target: config.DBConfig{
-			Type:   tgtType,
-			DSN:    tgtDSN,
-			Schema: tgtSchema,
-		},
-		DDL: config.DDLConfig{
-			TargetDialect:      tgtType,
-			IncludeComments:    true,
-			IncludeIfNotExists: true,
-			SchemaMapping:      schemaMapping,
-		},
-		// select_gen always appears; comment explains gen-select only.
-		SelectGen: config.SelectGenConfig{
-			OutputDir: "./output/select/",
-			Batch: config.BatchConfig{
-				Method:   "cursor",
-				PageSize: 5000,
-			},
-		},
-		Export: config.ExportConfig{
-			OutputDir: "./output/data/",
-			Format:    "csv",
-			CSV: config.ExportCSVConfig{
-				Delimiter:          ",",
-				QuoteChar:          "\"",
-				Header:             true,
-				NullRepresentation: "\\N",
-			},
-			Batch:        config.BatchConfig{PageSize: 5000},
-			Parallel:     config.ParallelConfig{Enabled: true, MaxWorkers: 4},
-			Tables:       config.TableListConfig{Include: []string{"*"}},
-			FiltersCheck: "count", // 条件导出门禁（export.filters 非空时生效）
-		},
-		Import: config.ImportConfig{
-			SourceDir: "./output/data/",
-			Format:    "csv",
-			CSV:       config.ImportCSVConfig{NullMarker: "\\N"},
-			Target:    config.ImportTargetConfig{TruncateBefore: true},
-			Batch: config.ImportBatchConfig{
-				CommitInterval: 1000,
-				ErrorPolicy:    "skip_row",
-			},
-			// FK-aware order — see buildMigrateConfig.
-			Parallel: config.ParallelConfig{Enabled: true, MaxWorkers: 4, RespectForeignKeys: true},
-			DataTransforms: config.DataTransforms{
-				DatetimeFormat: "yyyyMMddHHmmss",
-				TrimStrings:    true,
-				NullIf:         []string{"NULL", "null", "\\N"},
-			},
-		},
-	}
-
-	// Populate the active metadata source
-	switch metaType {
-	case "csv":
-		if csvPath == "" {
-			csvPath = "./testdata/csv/"
-		}
-		cfg.Metadata.CSV.Path = csvPath
-	case "xlsx":
-		if xlsxPath == "" {
-			xlsxPath = "./metadata/schema.xlsx"
-		}
-		cfg.Metadata.XLSX.Path = xlsxPath
-		cfg.Metadata.XLSX.DataOutputDir = "./output/data/"
-	}
-
-	return cfg
-}
 
 // ── Config writing ──
 
@@ -1035,6 +743,89 @@ func annotateYAML(buf []byte) []byte {
 	return []byte(out)
 }
 
+// askAdvancedOptions offers the optional power features in interactive mode:
+// WHERE 条件导出、列投影/改名。回车跳过（默认全量全列）。输入即时校验，
+// 非法片段要求重输——与执行前的条件 COUNT 门禁同一套规则。
+func askAdvancedOptions(r *bufio.Reader, cfg *config.Config, srcSchema, tgtSchema string) {
+	fmt.Println()
+	if !askYesNo(r, "配置高级选项（WHERE 条件导出 / 列投影与改名）?", false) {
+		return
+	}
+	fmt.Println("  提示: 表模式支持精确名与 glob（SCOTT.EMP / SCOTT.* / *.T / T_*），片段为字面 SQL WHERE（禁 ; 注释与绑定占位符）。")
+	for {
+		pat := strings.TrimSpace(ask(r, "条件导出——表模式（回车结束）", ""))
+		if pat == "" {
+			break
+		}
+		frag := strings.TrimSpace(ask(r, "  WHERE 片段", ""))
+		if err := exporter.ValidateFilterFragment(frag); err != nil {
+			fmt.Printf("  ✗ %v，请重输\n", err)
+			continue
+		}
+		if cfg.Export.Filters == nil {
+			cfg.Export.Filters = map[string]string{}
+		}
+		cfg.Export.Filters[pat] = frag
+	}
+	pat := strings.TrimSpace(ask(r, "列投影——表模式（回车跳过整节）", ""))
+	if pat != "" {
+		cols := strings.Split(ask(r, "  输出列（逗号分隔，顺序=输出顺序）", ""), ",")
+		var include []string
+		for _, c := range cols {
+			if c = strings.TrimSpace(c); c != "" {
+				include = append(include, c)
+			}
+		}
+		if len(include) > 0 {
+			if cfg.Export.Columns.Include == nil {
+				cfg.Export.Columns.Include = map[string][]string{}
+			}
+			cfg.Export.Columns.Include[pat] = include
+			ren := strings.TrimSpace(ask(r, "  改名（源列:新名，逗号分隔，可空）", ""))
+			if ren != "" {
+				m := map[string]string{}
+				for _, pair := range strings.Split(ren, ",") {
+					if k, v, ok := strings.Cut(strings.TrimSpace(pair), ":"); ok {
+						m[strings.TrimSpace(k)] = strings.TrimSpace(v)
+					}
+				}
+				if len(m) > 0 {
+					if cfg.Export.Columns.Rename == nil {
+						cfg.Export.Columns.Rename = map[string]map[string]string{}
+					}
+					cfg.Export.Columns.Rename[pat] = m
+				}
+			}
+		}
+	}
+}
+
+func askYesNo(r *bufio.Reader, prompt string, def bool) bool {
+	suffix := " (y/N) "
+	if def {
+		suffix = " (Y/n) "
+	}
+	fmt.Print(prompt + suffix)
+	line, _ := r.ReadString('\n')
+	line = strings.ToLower(strings.TrimSpace(line))
+	if line == "" {
+		return def
+	}
+	return line == "y" || line == "yes"
+}
+
+// yamlAnnotated renders a config to annotated YAML bytes (comments via
+// fieldComments + the advanced-options trailer).
+func yamlAnnotated(cfg *config.Config) ([]byte, error) {
+	buf, err := yaml.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal config: %w", err)
+	}
+	annotated := annotateYAML(buf)
+	annotated = append(annotated, []byte(advancedOptionsTrailer)...)
+	return annotated, nil
+}
+
 // advancedOptionsTrailer documents opt-in features that have no default
 // value in the generated YAML (enabling them changes migration semantics, so
 // they stay commented out). Fragments carry the correct indent for the target
@@ -1061,13 +852,43 @@ const advancedOptionsTrailer = `
 # 详见 docs/filtered-export.md
 `
 
-func writeConfig(cfg *config.Config, outputPath string) error {
-	buf, err := yaml.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
+// runSlotsInit --slots JSON 模式：确定性组装 + 与交互式 init 相同的注释化输出。
+// '-' 从 stdin 读（工具管道友好）；--print 时写到 stdout。
+func runSlotsInit(slotsFile, outputFile string, printOut bool) error {
+	var data []byte
+	var err error
+	if slotsFile == "-" {
+		data, err = io.ReadAll(os.Stdin)
+	} else {
+		data, err = os.ReadFile(slotsFile)
 	}
+	if err != nil {
+		return fmt.Errorf("read slots: %w", err)
+	}
+	var req configbuild.SlotRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return fmt.Errorf("parse slots JSON: %w", err)
+	}
+	cfg, err := configbuild.BuildFromSlots(req)
+	if err != nil {
+		return err
+	}
+	if printOut {
+		buf, err := yamlAnnotated(cfg)
+		if err != nil {
+			return err
+		}
+		os.Stdout.Write(buf)
+		return nil
+	}
+	return writeConfig(cfg, outputFile)
+}
 
-	annotated := annotateYAML(buf)
+func writeConfig(cfg *config.Config, outputPath string) error {
+	buf, err := yamlAnnotated(cfg)
+	if err != nil {
+		return err
+	}
 
 	header := "# Auto-generated by owl-migrate init\n" +
 		"# Edit this file to fine-tune migration settings, then run:\n" +
@@ -1084,9 +905,7 @@ func writeConfig(cfg *config.Config, outputPath string) error {
 	}
 	header += "\n"
 
-	content := append([]byte(header), annotated...)
-	content = append(content, []byte(advancedOptionsTrailer)...)
-
+	content := append([]byte(nil), buf...)
 	if err := os.WriteFile(outputPath, content, 0644); err != nil {
 		return fmt.Errorf("write config to %q: %w", outputPath, err)
 	}

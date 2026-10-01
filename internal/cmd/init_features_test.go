@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/configbuild"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,7 +16,7 @@ import (
 //  2. 文尾高级选项块覆盖 filters/columns/column_types/column_datetime_formats；
 //  3. 生成文件能被 config.Load 完整载入（模板改动不得破坏解析）。
 func TestInitFullTemplateAdvancedOptions(t *testing.T) {
-	cfg := buildFullConfig("database", "oracle", "oracle://u:p@h:1521/SVC", "SCOTT",
+	cfg := configbuild.BuildFullConfig("database", "oracle", "oracle://u:p@h:1521/SVC", "SCOTT",
 		"postgres", "host=h port=5432 user=u dbname=d", "public", "", "")
 	out := filepath.Join(t.TempDir(), "migrate.yaml")
 	if err := writeConfig(cfg, out); err != nil {

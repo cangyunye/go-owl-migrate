@@ -83,6 +83,7 @@ owl-migrate 是本仓库的数据库迁移 CLI（+Web API）。核心模型：**
 - 生成配置：见 SOP-A 第 1 步；纯元数据场景 `--scenario export-metadata`（target 可省）。
 - 配置搜索顺序：`-c` > `./migrate.yaml` > `$OWL_MIGRATE_CONFIG` > `~/.owl/migrate/migrate.yaml`；`~/migrate.yaml` 不在搜索路径。
 - 校验元数据（CSV 或活库均可）：`owl-migrate validate -c migrate.yaml`。
+- **槽位化 init（AI 工具/脚本入口）**：`owl-migrate init --slots slots.json`（或 `--slots -` + `--print`）——JSON SlotRequest（scenario/source/target/export.filters/columns/ddl.column_types）确定性组装配置，DSN 由部件拼装；同一 builder 服务 `/ai/plan`（LLM 只填槽）。
 - **连接通道**：`--channel native|agent|auto`（全局 flag，优先于配置 `source/target.channel`）。`native`=Go 驱动（默认）；`auto`=有原生驱动走 native，否则自动 agent；`agent`=强制走 owljdbc JVM sidecar（需 Java + 驱动 jar，`owl-agent.jar` 缺失自动下载）。新数据库类型用配置 `owljdbc.profiles` 注册免改代码接入（详见 references/dsn-and-config.md）。
 - **数据源增删改查/连接测试仅 Web API，CLI 无此命令**：serve 启动后 `POST/GET/PUT/DELETE /api/v1/datasources[/{name}]`、`POST /api/v1/conn/test`（可带 `channel`）；DSN 加密落盘。配置里可用 `source.dsn: "datasource:<名字>"` 引用。请求体见 references/web-api.md。
 - 能力探测：serve 端 `GET /api/v1/capabilities`（逐类型 native/agent 可用性、owl-agent.jar 与驱动 jar 探测，含注册类型）。

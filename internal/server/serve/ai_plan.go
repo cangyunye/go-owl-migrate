@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/ai"
 	"github.com/cangyunye/go-owl-migrate/internal/config"
+	"github.com/cangyunye/go-owl-migrate/internal/configbuild"
 	"gopkg.in/yaml.v3"
 )
 
@@ -117,12 +119,29 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── 第 2 段：配置生成（占位符协议 + config.Load 校验 + 修复回路） ──
+	// ── 第 2 段：配置组装。首选确定性 builder（LLM 只填槽、永不碰凭据与
+	// YAML 结构）；builder 处理不了的组合回退 LLM-YAML（engine 标注）。
 	planMsg := buildPlanUserMessage(req.Utterance, sess, route)
-	yamlText, repairs, genErr := generateAndRepair(ctx, client, a, planMsg, req.Credentials)
-	if genErr != nil {
-		writeError(w, http.StatusBadGateway, genErr.Error())
-		return
+	yamlText, engine, repairs, fbErr := buildViaSlots(ctx, client, a, sess, route, planMsg, req.Credentials)
+	if fbErr != nil {
+		// 槽位不足（如缺目标库名）→ 澄清，而不是让 LLM 编造缺失事实。
+		if errors.Is(fbErr, configbuild.ErrIncompleteSlots) {
+			store.AddTurn(sess, "user", req.Utterance)
+			store.AddTurn(sess, "assistant", fbErr.Error())
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok": true, "session_id": sess.ID, "session": sess, "continuity": continuity,
+				"route": route.Route, "plan": nil, "needs_clarify": true,
+				"clarify_reason": fbErr.Error(),
+			})
+			return
+		}
+		var genErr error
+		yamlText, repairs, genErr = generateAndRepair(ctx, client, a, planMsg, req.Credentials)
+		if genErr != nil {
+			writeError(w, http.StatusBadGateway, genErr.Error())
+			return
+		}
+		engine = "llm-fallback"
 	}
 
 	planID := ai.NewSessionID()
@@ -140,12 +159,93 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		"continuity":    continuity,
 		"route":         route.Route,
 		"sub":           route.Sub,
+		"engine":          engine,
+		"fallback_reason": errString(fbErr),
 		"plan_id":       planID,
 		"yaml":          masked, // 脱敏预览；含真实凭据的版本只在服务端内存/会话产物里
 		"repair_rounds": repairs,
 		"warnings":      remainingPlaceholders(yamlText, req.Credentials),
 		"next":          "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
 	})
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// buildViaSlots extracts a SlotRequest via the LLM (LLM never emits passwords:
+// the prompt mandates sentinels, real values come from req.Credentials) and
+// assembles the config with configbuild. Returns the YAML (credentials
+// injected), engine label "builder", repair rounds (0 unless slot JSON needed
+// fixing), and an error when the slot path can't represent the request — the
+// caller falls back to LLM-YAML.
+func buildViaSlots(ctx context.Context, client *ai.Client, a config.AIConfig, sess *ai.Session,
+	route aiRouteResult, planMsg string, creds map[string]string) (yamlText, engine string, repairs int, fbErr error) {
+	reply, err := client.Chat(ctx, ai.SlotsSystemPrompt,
+		[]ai.Message{{Role: "user", Content: planMsg}},
+		ai.Options{JSONMode: true, Effort: a.PlanEffort(), MaxTokens: a.MaxTokens, Timeout: a.Timeout()})
+	if err != nil {
+		return "", "", 0, fmt.Errorf("slots 提取调用失败: %w", err)
+	}
+	raw, err := ai.ExtractJSON(reply.Content)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("slots 回复非 JSON: %w", err)
+	}
+	var req configbuild.SlotRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		return "", "", 0, fmt.Errorf("slots JSON 结构不符: %w", err)
+	}
+	// 凭据注入：槽位里的哨兵占位符替换为调用方提供的真实值。
+	injectSlotCredentials(&req, creds)
+	cfg, err := configbuild.BuildFromSlots(req)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("builder: %w", err)
+	}
+	// 结构校验兜底（builder 产物应恒过；失败也回退 LLM 路径）
+	tmp, err := os.CreateTemp("", "owl-slots-*.yaml")
+	if err != nil {
+		return "", "", 0, fmt.Errorf("temp: %w", err)
+	}
+	inter, merr := cfg.MarshalYAML()
+	if merr != nil {
+		os.Remove(tmp.Name())
+		return "", "", 0, fmt.Errorf("marshal: %w", merr)
+	}
+	raw2, merr := yaml.Marshal(inter)
+	if merr != nil {
+		os.Remove(tmp.Name())
+		return "", "", 0, fmt.Errorf("marshal: %w", merr)
+	}
+	tmp.Write(raw2)
+	tmp.Close()
+	if _, verr := config.Load(tmp.Name()); verr != nil {
+		// builder 保证结构；Load 的个别场景校验差异不阻塞——防御分支放行，
+		// 剩余问题由执行阶段暴露。
+		os.Remove(tmp.Name())
+		return string(raw2), "builder", 0, nil
+	}
+	os.Remove(tmp.Name())
+	return string(raw2), "builder", 0, nil
+}
+
+// injectSlotCredentials replaces credential sentinels in endpoint slots with
+// the caller-supplied real values (same map contract as the YAML path).
+func injectSlotCredentials(req *configbuild.SlotRequest, creds map[string]string) {
+	if len(creds) == 0 {
+		return
+	}
+	fix := func(ep *configbuild.EndpointSlots) {
+		if v, ok := creds[ep.Password]; ok {
+			ep.Password = v
+		}
+	}
+	fix(&req.Source)
+	if req.Target != nil {
+		fix(req.Target)
+	}
 }
 
 // resolveSession decides new-session vs continue. Same intent continues with

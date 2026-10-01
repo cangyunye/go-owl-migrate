@@ -5,196 +5,182 @@
     "mode": "new",
     "reason": "新会话"
    },
+   "engine": "builder",
+   "fallback_reason": "",
    "next": "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
    "ok": true,
-   "plan_id": "s-0c4f6b454b38cda8180b2d21",
-   "repair_rounds": 1,
+   "plan_id": "s-f48e0aa54e3857d248ca314b",
+   "repair_rounds": 0,
    "route": "export-data",
    "session": {
-    "session_id": "s-f4533c1f6869a1113efaa7b1",
+    "session_id": "s-9dc527c4ed48bd0d9586b9a2",
     "intent": "export-data",
     "sub": "format:csv",
     "slots": {
-     "channel": "native",
      "format": "csv",
-     "source_dsn": "root:root123456@tcp(127.0.0.1:3306)/owl_demo",
-     "source_schema": "owl_demo",
+     "source_dsn": "root@tcp(127.0.0.1:3306)/owl_demo",
      "source_type": "mysql",
-     "target_dialect": "mysql",
-     "target_type": "mysql"
+     "target_dialect": "mysql"
     },
     "turns": [
      {
       "role": "user",
       "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
-      "created_at": "2026-09-30T14:27:38.526045+08:00"
+      "created_at": "2026-10-01T16:14:03.508099+08:00"
      },
      {
       "role": "user",
       "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
-      "created_at": "2026-09-30T14:27:43.895718+08:00"
+      "created_at": "2026-10-01T16:14:04.732511+08:00"
      },
      {
       "role": "assistant",
-      "content": "已生成配置草案 s-0c4f6b454b38cda8180b2d21（等待确认执行）",
-      "created_at": "2026-09-30T14:27:43.896243+08:00"
+      "content": "已生成配置草案 s-f48e0aa54e3857d248ca314b（等待确认执行）",
+      "created_at": "2026-10-01T16:14:04.733093+08:00"
      }
     ],
     "stage": "confirming",
     "artifacts": [
      {
       "kind": "plan",
-      "id": "s-0c4f6b454b38cda8180b2d21",
-      "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\nddl:\n  target_dialect: mysql\nexport:\n  format: csv\n  filters:\n    \"owl_demo.users\": \"1 = 1\"",
-      "created_at": "2026-09-30T14:27:43.894414+08:00"
+      "id": "s-f48e0aa54e3857d248ca314b",
+      "yaml": "general:\n    log_level: info\nmetadata:\n    type: database\nsource:\n    type: mysql\n    dsn: root@tcp(127.0.0.1:3306)/owl_demo\n    schema: \"\"\nddl:\n    target_dialect: mysql\nexport:\n    output_dir: ./output/data/\n    format: csv\n    csv:\n        delimiter: ','\n        quote_char: '\"'\n        header: true\n        null_representation: \\N\n    batch:\n        page_size: 5000\n    parallel:\n        enabled: true\n        max_workers: 4\n    tables:\n        include:\n            - '*'\n",
+      "created_at": "2026-10-01T16:14:04.731505+08:00"
      }
     ],
-    "created_at": "2026-09-30T14:27:38.524877+08:00",
-    "updated_at": "2026-09-30T14:27:43.896251+08:00",
+    "created_at": "2026-10-01T16:14:03.506282+08:00",
+    "updated_at": "2026-10-01T16:14:04.733101+08:00",
     "round": 0
    },
-   "session_id": "s-f4533c1f6869a1113efaa7b1",
+   "session_id": "s-9dc527c4ed48bd0d9586b9a2",
    "sub": "format:csv",
    "warnings": null,
-   "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\nddl:\n  target_dialect: mysql\nexport:\n  format: csv\n  filters:\n    \"owl_demo.users\": \"1 = 1\""
+   "yaml": "general:\n    log_level: info\nmetadata:\n    type: database\nsource:\n    type: mysql\n    dsn: root@tcp(127.0.0.1:3306)/owl_demo\n    schema: \"\"\nddl:\n    target_dialect: mysql\nexport:\n    output_dir: ./output/data/\n    format: csv\n    csv:\n        delimiter: ','\n        quote_char: '\"'\n        header: true\n        null_representation: \\N\n    batch:\n        page_size: 5000\n    parallel:\n        enabled: true\n        max_workers: 4\n    tables:\n        include:\n            - '*'\n"
   },
   {
    "continuity": {
-    "from_session": "s-f4533c1f6869a1113efaa7b1",
+    "from_session": "s-9dc527c4ed48bd0d9586b9a2",
     "mode": "continued",
     "reason": "同意图，沿用会话与槽位"
    },
+   "engine": "builder",
+   "fallback_reason": "",
    "next": "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
    "ok": true,
-   "plan_id": "s-8a177c22824a2a605448787c",
-   "repair_rounds": 1,
+   "plan_id": "s-b701275b0891bc5111fba0e8",
+   "repair_rounds": 0,
    "route": "export-data",
    "session": {
-    "session_id": "s-f4533c1f6869a1113efaa7b1",
+    "session_id": "s-9dc527c4ed48bd0d9586b9a2",
     "intent": "export-data",
     "sub": "format:csv",
     "slots": {
-     "channel": "native",
      "format": "xlsx",
-     "source_dsn": "root:root123456@tcp(127.0.0.1:3306)/owl_demo",
-     "source_schema": "owl_demo",
+     "source_dsn": "root@tcp(127.0.0.1:3306)/owl_demo",
      "source_type": "mysql",
-     "target_dialect": "mysql",
-     "target_type": "mysql"
+     "target_dialect": "mysql"
     },
     "turns": [
      {
       "role": "user",
       "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
-      "created_at": "2026-09-30T14:27:38.526045+08:00"
+      "created_at": "2026-10-01T16:14:03.508099+08:00"
      },
      {
       "role": "user",
       "content": "导出 mysql 数据库 owl_demo 里 users 表的数据为 csv，host 127.0.0.1 端口 3306 用户 root",
-      "created_at": "2026-09-30T14:27:43.895718+08:00"
+      "created_at": "2026-10-01T16:14:04.732511+08:00"
      },
      {
       "role": "assistant",
-      "content": "已生成配置草案 s-0c4f6b454b38cda8180b2d21（等待确认执行）",
-      "created_at": "2026-09-30T14:27:43.896243+08:00"
+      "content": "已生成配置草案 s-f48e0aa54e3857d248ca314b（等待确认执行）",
+      "created_at": "2026-10-01T16:14:04.733093+08:00"
      },
      {
       "role": "user",
       "content": "再导一份 xlsx 格式的",
-      "created_at": "2026-09-30T14:27:45.346602+08:00"
+      "created_at": "2026-10-01T16:14:05.633514+08:00"
      },
      {
       "role": "user",
       "content": "再导一份 xlsx 格式的",
-      "created_at": "2026-09-30T14:27:48.418821+08:00"
+      "created_at": "2026-10-01T16:14:07.054922+08:00"
      },
      {
       "role": "assistant",
-      "content": "已生成配置草案 s-8a177c22824a2a605448787c（等待确认执行）",
-      "created_at": "2026-09-30T14:27:48.419188+08:00"
+      "content": "已生成配置草案 s-b701275b0891bc5111fba0e8（等待确认执行）",
+      "created_at": "2026-10-01T16:14:07.055505+08:00"
      }
     ],
     "stage": "confirming",
     "artifacts": [
      {
       "kind": "plan",
-      "id": "s-0c4f6b454b38cda8180b2d21",
-      "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\nddl:\n  target_dialect: mysql\nexport:\n  format: csv\n  filters:\n    \"owl_demo.users\": \"1 = 1\"",
-      "created_at": "2026-09-30T14:27:43.894414+08:00"
+      "id": "s-f48e0aa54e3857d248ca314b",
+      "yaml": "general:\n    log_level: info\nmetadata:\n    type: database\nsource:\n    type: mysql\n    dsn: root@tcp(127.0.0.1:3306)/owl_demo\n    schema: \"\"\nddl:\n    target_dialect: mysql\nexport:\n    output_dir: ./output/data/\n    format: csv\n    csv:\n        delimiter: ','\n        quote_char: '\"'\n        header: true\n        null_representation: \\N\n    batch:\n        page_size: 5000\n    parallel:\n        enabled: true\n        max_workers: 4\n    tables:\n        include:\n            - '*'\n",
+      "created_at": "2026-10-01T16:14:04.731505+08:00"
      },
      {
       "kind": "plan",
-      "id": "s-8a177c22824a2a605448787c",
-      "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: mysql\nddl:\n  target_dialect: mysql\nexport:\n  format: xlsx",
-      "created_at": "2026-09-30T14:27:48.418005+08:00"
+      "id": "s-b701275b0891bc5111fba0e8",
+      "yaml": "general:\n    log_level: info\nmetadata:\n    type: database\nsource:\n    type: mysql\n    dsn: root@tcp(127.0.0.1:3306)/owl_demo\n    schema: \"\"\nddl:\n    target_dialect: mysql\nexport:\n    output_dir: ./output/data/\n    format: xlsx\n    csv:\n        delimiter: ','\n        quote_char: '\"'\n        header: true\n        null_representation: \\N\n    batch:\n        page_size: 5000\n    parallel:\n        enabled: true\n        max_workers: 4\n    tables:\n        include:\n            - '*'\n",
+      "created_at": "2026-10-01T16:14:07.053611+08:00"
      }
     ],
-    "created_at": "2026-09-30T14:27:38+08:00",
-    "updated_at": "2026-09-30T14:27:48.419198+08:00",
+    "created_at": "2026-10-01T16:14:03+08:00",
+    "updated_at": "2026-10-01T16:14:07.055527+08:00",
     "round": 0
    },
-   "session_id": "s-f4533c1f6869a1113efaa7b1",
+   "session_id": "s-9dc527c4ed48bd0d9586b9a2",
    "sub": "format:xlsx",
    "warnings": null,
-   "yaml": "metadata:\n  type: database\nsource:\n  type: mysql\n  dsn: root:******@tcp(127.0.0.1:3306)/owl_demo\n  schema: owl_demo\n  channel: native\ntarget:\n  type: mysql\nddl:\n  target_dialect: mysql\nexport:\n  format: xlsx"
+   "yaml": "general:\n    log_level: info\nmetadata:\n    type: database\nsource:\n    type: mysql\n    dsn: root@tcp(127.0.0.1:3306)/owl_demo\n    schema: \"\"\nddl:\n    target_dialect: mysql\nexport:\n    output_dir: ./output/data/\n    format: xlsx\n    csv:\n        delimiter: ','\n        quote_char: '\"'\n        header: true\n        null_representation: \\N\n    batch:\n        page_size: 5000\n    parallel:\n        enabled: true\n        max_workers: 4\n    tables:\n        include:\n            - '*'\n"
   },
   {
+   "clarify_reason": "builder: incomplete slots: target.database is required for postgres",
    "continuity": {
-    "from_session": "s-f4533c1f6869a1113efaa7b1",
+    "from_session": "s-9dc527c4ed48bd0d9586b9a2",
     "mode": "new_round",
-    "reason": "意图从 export-data 变为 migrate：已自动开新一轮（继承库/表等事实槽位，不回放旧对话）；原会话 s-f4533c1f6869a1113efaa7b1 保留可引用",
-    "session_id": "s-dd7c538d3ad21e6b55bb7ed9"
+    "reason": "意图从 export-data 变为 migrate：已自动开新一轮（继承库/表等事实槽位，不回放旧对话）；原会话 s-9dc527c4ed48bd0d9586b9a2 保留可引用",
+    "session_id": "s-56d0352ac51963197859dcf8"
    },
+   "needs_clarify": true,
    "ok": true,
    "plan": null,
-   "result": {
-    "route": "migrate",
-    "sub": "",
-    "confidence": "medium",
-    "missing_slots": [
-     "目标 postgres 的库名（dbname）"
-    ],
-    "out_of_scope": false,
-    "needs_clarify": true,
-    "reason": "复用上文源端 mysql/owl_demo/users 与目标连接信息，但目标 postgres 未给库名，需补一个库名即可开迁。"
-   },
    "route": "migrate",
    "session": {
-    "session_id": "s-dd7c538d3ad21e6b55bb7ed9",
+    "session_id": "s-56d0352ac51963197859dcf8",
     "intent": "migrate",
     "slots": {
-     "channel": "native",
      "format": "xlsx",
-     "source_dsn": "root:root123456@tcp(127.0.0.1:3306)/owl_demo",
-     "source_schema": "owl_demo",
+     "source_dsn": "root@tcp(127.0.0.1:3306)/owl_demo",
      "source_type": "mysql",
-     "target_dialect": "mysql",
-     "target_type": "mysql"
+     "target_dialect": "mysql"
     },
     "turns": [
      {
       "role": "user",
       "content": "把刚才那张表迁移到 postgres，host 127.0.0.1 port 5432 user postgres",
-      "created_at": "2026-09-30T14:27:51.070014+08:00"
+      "created_at": "2026-10-01T16:14:09.902291+08:00"
      },
      {
       "role": "user",
       "content": "把刚才那张表迁移到 postgres，host 127.0.0.1 port 5432 user postgres",
-      "created_at": "2026-09-30T14:27:51.070729+08:00"
+      "created_at": "2026-10-01T16:14:13.609569+08:00"
      },
      {
       "role": "assistant",
-      "content": "复用上文源端 mysql/owl_demo/users 与目标连接信息，但目标 postgres 未给库名，需补一个库名即可开迁。",
-      "created_at": "2026-09-30T14:27:51.071413+08:00"
+      "content": "builder: incomplete slots: target.database is required for postgres",
+      "created_at": "2026-10-01T16:14:13.61042+08:00"
      }
     ],
     "stage": "collecting",
     "artifacts": [],
-    "created_at": "2026-09-30T14:27:51.067685+08:00",
-    "updated_at": "2026-09-30T14:27:51.071423+08:00",
+    "created_at": "2026-10-01T16:14:09.899246+08:00",
+    "updated_at": "2026-10-01T16:14:13.610428+08:00",
     "round": 1
    },
-   "session_id": "s-dd7c538d3ad21e6b55bb7ed9"
+   "session_id": "s-56d0352ac51963197859dcf8"
   }
  ]
 }

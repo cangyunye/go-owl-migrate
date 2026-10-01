@@ -16,3 +16,9 @@ var RouterSystemPrompt string
 //
 //go:embed prompt_plan.md
 var PlanSystemPrompt string
+
+// SlotsSystemPrompt drives the slot-extraction stage of /ai/plan v2: the LLM
+// emits a SlotRequest JSON which configbuild assembles deterministically.
+//
+//go:embed prompt_slots.md
+var SlotsSystemPrompt string
