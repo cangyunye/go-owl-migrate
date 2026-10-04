@@ -1,0 +1,853 @@
+[
+ {
+  "id": "s1-01",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate init -s oracle --source-dsn oracle://scott:tiger@10.1.1.5:1521/XEPDB1 --source-schema SCOTT -t postgres --target-dsn 'host=10.1.1.6 port=5432 user=postgres password=pg123 dbname=app' -o migrate.yaml",
+   "owl-migrate migrate -c migrate.yaml --tables SCOTT.EMP,SCOTT.DEPT"
+  ],
+  "expected_notes": "两步：先 init 生成配置（自动 schema 映射），再 migrate 指定表；目标表名跟随源表名",
+  "model_intent": "把 Oracle SCOTT 的 emp、dept 表迁移到 PostgreSQL",
+  "model_steps": [
+   "owl-migrate init -s oracle --source-dsn \"oracle://scott:tiger@10.1.1.5:1521/XEPDB1\" --source-schema SCOTT -t postgres --target-dsn \"host=10.1.1.6 port=5432 user=postgres password=pg123 dbname=app\" -o migrate.yaml",
+   "owl-migrate migrate -c migrate.yaml --tables SCOTT.EMP,SCOTT.DEPT"
+  ],
+  "model_notes": "DSN 齐备，按 SOP-A 只迁两表；整库则省略 --tables。报告见 ./output/migration_report.json。"
+ },
+ {
+  "id": "s1-02",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "make build/ob（或 build/full，基础二进制不含 oceanbase）",
+   "owl-migrate-ob init -s mysql --source-dsn 'srcuser:srcpwd@tcp(10.1.1.2:3306)/shop' -t oceanbase-mysql --target-dsn 'test@tenant:pwd@tcp(10.2.1.9:2881)/shop' -o migrate.yaml",
+   "owl-migrate-ob migrate -c migrate.yaml"
+  ],
+  "expected_notes": "整库迁移不加 --tables；OceanBase 需 ob 构建口味二进制（构建是前置准备）",
+  "model_intent": "MySQL shop 整库迁到 OceanBase MySQL 租户",
+  "model_steps": [
+   "构建 OceanBase 口味二进制（产物 owl-migrate-ob）",
+   "owl-migrate-ob init -s mysql --source-dsn \"srcuser:srcpwd@tcp(10.1.1.2:3306)/shop\" --source-schema shop -t oceanbase --target-dsn \"test@tenant:pwd@tcp(10.2.1.9:2881)/shop\" -o migrate.yaml",
+   "owl-migrate-ob migrate -c migrate.yaml"
+  ],
+  "model_notes": "基础版二进制对 OceanBase 报 unsupported，必须换 -ob 口味。目标方言名请按 dsn-and-config.md 确认。"
+ },
+ {
+  "id": "s1-03",
+  "verdict": "PARTIAL",
+  "expected_steps": [
+   "owl-migrate serve（未启动时）",
+   "POST /api/v1/migrate/preflight 只读检查",
+   "owl-migrate migrate -c migrate.yaml --tables SCOTT.EMP"
+  ],
+  "expected_notes": "preflight 仅 Web API（/api/v1/migrate/preflight），返回 checks/warnings，不写数据",
+  "model_intent": "迁移 SCOTT.EMP 前先做预检，通过后继续迁移",
+  "model_steps": [
+   "启动 serve",
+   "POST /api/v1/migrate/preflight（请求体引用现有 migrate.yaml）",
+   "owl-migrate migrate -c migrate.yaml --tables SCOTT.EMP"
+  ],
+  "model_notes": "预检通过不是终点，需继续执行 migrate。请求体字段见 references/web-api.md。"
+ },
+ {
+  "id": "s1-04",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【限制】不支持表级重命名：只有 ddl.schema_mapping 的 schema 级映射，目标表名=源表名。替代：导入后 RENAME，或提前在目标库建好 t2 再用 import 导数据",
+  "model_intent": "迁移时把源表 t1 改名为目标表 t2",
+  "model_steps": [],
+  "model_notes": "不支持表级重命名，仅 schema 级 ddl.schema_mapping，目标表名=源表名。替代：导入后 RENAME，或预建 t2 再 import。"
+ },
+ {
+  "id": "s1-05",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate migrate -c migrate.yaml --resume"
+  ],
+  "expected_notes": "断点状态在 <temp-dir>/migrate_progress.json（默认 ./output/temp/）",
+  "model_intent": "上次中断的迁移继续跑（断点续传）",
+  "model_steps": [
+   "owl-migrate migrate -c migrate.yaml --resume"
+  ],
+  "model_notes": "默认读 ./migrate.yaml，配置路径不同请用 -c 指定；--resume 按已完成进度续传。"
+ },
+ {
+  "id": "s1-06",
+  "verdict": "MISMATCH",
+  "expected_steps": [
+   "owl-migrate migrate -c migrate.yaml --sql-out ./output/insert/"
+  ],
+  "expected_notes": "完整走源库导出+DDL，但只落 INSERT SQL 不连目标库",
+  "model_intent": "目标库不可连，先产出可执行的 INSERT 脚本",
+  "model_steps": [
+   "owl-migrate export data -c migrate.yaml --tables <源schema>.<表> --format sql -o ./output/data/"
+  ],
+  "model_notes": "仅读源库即可产出 INSERT SQL（文件头含 INSERT，需自行确认目标方言）。也可用 migrate --sql-out 只出脚本不连目标。"
+ },
+ {
+  "id": "s1-07",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate online init --apply（可加 --require-key 强制有主键的表）",
+   "owl-migrate online sync"
+  ],
+  "expected_notes": "init 装 changelog 表+触发器（--apply 直接落库，否则只出脚本文件），sync 持续轮询回放；前提表有主键",
+  "model_intent": "不停机，全量之后的增量数据如何跟上",
+  "model_steps": [
+   "owl-migrate migrate -c migrate.yaml（全量先行）",
+   "owl-migrate online init --apply --require-key",
+   "owl-migrate online sync",
+   "owl-migrate online status"
+  ],
+  "model_notes": "CDC 需表有主键；不加 --apply 只出脚本待审核。回放容错 online.sync.on_error。"
+ },
+ {
+  "id": "s1-08",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate migrate -c migrate.yaml --continue-on-error"
+  ],
+  "expected_notes": "单表失败记录进报告，其余表继续",
+  "model_intent": "某张脏表失败不要中断整个迁移任务",
+  "model_steps": [
+   "owl-migrate migrate -c migrate.yaml --continue-on-error"
+  ],
+  "model_notes": "单表失败不停止；如需规避脏表只能用白名单收敛表范围，无排除语法。"
+ },
+ {
+  "id": "s1-09",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 online.sync.on_error: skip（或 retry），可配 error_table 收集错误行"
+  ],
+  "expected_notes": "on_error 取值 skip|stop|retry",
+  "model_intent": "增量同步出错不停止，跳过继续",
+  "model_steps": [
+   "修改 migrate.yaml：online.sync.on_error: skip",
+   "owl-migrate online sync"
+  ],
+  "model_notes": "可选值 skip|stop|retry；默认 stop 会中断。改后可用 online status 观察积压与跳过数。"
+ },
+ {
+  "id": "s2-01",
+  "verdict": "PARTIAL",
+  "expected_steps": [
+   "owl-migrate serve（未启动时，默认 127.0.0.1:8080）",
+   "POST /api/v1/datasources body {name:生产库, type:oracle, dsn:oracle://scott:tiger@10.1.1.5:1521/ORCL}"
+  ],
+  "expected_notes": "【仅 Web API，CLI 无数据源命令】DSN 以 AES-256 加密落盘 ~/.owl/migrate/datasources/生产库.yaml",
+  "model_intent": "把给定 Oracle 连接串保存为名为“生产库”的数据源",
+  "model_steps": [
+   "启动 serve",
+   "POST /api/v1/datasources，请求体 {\"name\":\"生产库\",\"dsn\":\"oracle://scott:tiger@10.1.1.5:1521/ORCL\"}"
+  ],
+  "model_notes": "数据源 CRUD 仅 Web API，CLI 无该命令；DSN 加密落盘，配置可用 datasource:生产库 引用。"
+ },
+ {
+  "id": "s2-02",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "GET /api/v1/datasources"
+  ],
+  "expected_notes": "需 serve 已启动",
+  "model_intent": "查看已配置的数据源列表",
+  "model_steps": [
+   "启动服务：owl-migrate serve（若未启动）",
+   "GET /api/v1/datasources"
+  ],
+  "model_notes": "数据源增删改查仅提供 Web API，CLI 无 datasource 子命令；需先启动 serve。"
+ },
+ {
+  "id": "s2-03",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "PUT /api/v1/datasources/生产库 body {schema:HR}"
+  ],
+  "expected_notes": "部分更新，未传字段保留",
+  "model_intent": "修改数据源“生产库”的 schema 为 HR",
+  "model_steps": [
+   "启动服务：owl-migrate serve（若未启动）",
+   "GET /api/v1/datasources/生产库 获取当前配置",
+   "PUT /api/v1/datasources/生产库，请求体中将 schema 字段改为 HR"
+  ],
+  "model_notes": "仅 Web API 支持数据源更新；请求体字段见 references/web-api.md。"
+ },
+ {
+  "id": "s2-04",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "DELETE /api/v1/datasources/ob-test"
+  ],
+  "expected_notes": "",
+  "model_intent": "删除名为 ob-test 的数据源",
+  "model_steps": [
+   "启动服务：owl-migrate serve（若未启动）",
+   "DELETE /api/v1/datasources/ob-test"
+  ],
+  "model_notes": "数据源删除仅 Web API 支持，CLI 无此命令；删除前建议确认无迁移任务引用。"
+ },
+ {
+  "id": "s2-05",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "POST /api/v1/conn/test body {type:mysql, dsn:user:pwd@tcp(10.3.1.4:3306)/sales}"
+  ],
+  "expected_notes": "连接测试仅 Web API",
+  "model_intent": "测试给定 MySQL DSN 的连接可用性",
+  "model_steps": [
+   "启动服务：owl-migrate serve（若未启动）",
+   "POST /api/v1/conn/test，请求体填入 DSN：user:pwd@tcp(10.3.1.4:3306)/sales"
+  ],
+  "model_notes": "连接测试仅 Web API；请求体字段（dialect/dsn）见 references/web-api.md。"
+ },
+ {
+  "id": "s2-06",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 source.dsn: 'datasource:生产库'"
+  ],
+  "expected_notes": "serve 端解析引用并替换真实 DSN",
+  "model_intent": "确认配置中能否用数据源名引用并避免明文密码",
+  "model_steps": [
+   "在 migrate.yaml 中将连接写为：source.dsn: \"datasource:<数据源名>\"",
+   "通过 serve 的 POST /api/v1/datasources 创建该数据源（DSN 加密落盘）"
+  ],
+  "model_notes": "支持。配置可用 datasource:<名字> 引用；数据源创建仅 Web API，DSN 加密存储。"
+ },
+ {
+  "id": "s3-01",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export-metadata -c migrate.yaml -o ./output/metadata/ --format csv --scope all"
+  ],
+  "expected_notes": "CSV 模式输出 13 张规范表（tables/columns/primary_keys/indexes/foreign_keys/views/mviews/sequences/synonyms/triggers/functions/packages/package_bodies）",
+  "model_intent": "提取 scott 源库整库表结构元数据",
+  "model_steps": [
+   "确认 migrate.yaml 的 source 指向 Oracle scott 库",
+   "owl-migrate export-metadata -c migrate.yaml --scope all --format csv"
+  ],
+  "model_notes": "all 表示配置的 schema；未指定格式默认 CSV，产出 13 张规范表到 ./output/metadata/。"
+ },
+ {
+  "id": "s3-02",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export-metadata -c migrate.yaml --scope schema:USERA"
+  ],
+  "expected_notes": "用户=schema/owner",
+  "model_intent": "导出 userA 用户下所有表的结构信息",
+  "model_steps": [
+   "owl-migrate export-metadata -c migrate.yaml --scope schema:USERA --format csv"
+  ],
+  "model_notes": "scope 用 schema:USERA 表示该用户全部对象；产出至 ./output/metadata/。"
+ },
+ {
+  "id": "s3-03",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export-metadata -c migrate.yaml --scope table:EMP,DEPT"
+  ],
+  "expected_notes": "也可 --scope schema:SCOTT:table:EMP,DEPT 显式带 schema",
+  "model_intent": "仅导出 emp 与 dept 两张表的元数据",
+  "model_steps": [
+   "owl-migrate export-metadata -c migrate.yaml --scope table:EMP,DEPT --format csv"
+  ],
+  "model_notes": "指定表用 table:T1,T2（大写表名）；如需带 schema 可写 schema:SCOTT:table:EMP,DEPT。"
+ },
+ {
+  "id": "s3-04",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export-metadata -c migrate.yaml -o ./schema.xlsx --format xlsx"
+  ],
+  "expected_notes": "单工作簿，含 tables/columns/primary_keys 三个 sheet",
+  "model_intent": "将元数据导出为 Excel",
+  "model_steps": [
+   "owl-migrate export-metadata -c migrate.yaml --scope all --format xlsx"
+  ],
+  "model_notes": "xlsx 产出单工作簿；若只需部分表可另加 --scope table:...。"
+ },
+ {
+  "id": "s3-05",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export-metadata -c migrate.yaml --objects tables,views"
+  ],
+  "expected_notes": "对象类型按方言能力校验，不支持会报错并列出支持清单",
+  "model_intent": "仅抽取表和视图的元数据",
+  "model_steps": [
+   "owl-migrate export-metadata -c migrate.yaml --scope all --objects tables,views --format csv"
+  ],
+  "model_notes": "--objects 按方言能力校验；序列/触发器/函数等不在列表中即不会导出。"
+ },
+ {
+  "id": "s3-06",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate show-query oracle tables"
+  ],
+  "expected_notes": "只读展示，不执行",
+  "model_intent": "查看 Oracle 抽表清单的抽取 SQL",
+  "model_steps": [
+   "owl-migrate show-query -c migrate.yaml"
+  ],
+  "model_notes": "show-query 用于查看元数据抽取 SQL；Oracle 表清单 SQL 取决于 source.type/dialect 配置。"
+ },
+ {
+  "id": "s3-07",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "编写最小配置：metadata.type: csv、csv.path: ./meta_csv/、ddl.target_dialect: postgres",
+   "owl-migrate export ddl -c cfg.yaml"
+  ],
+  "expected_notes": "metadata.type csv 离线工作流，不连库",
+  "model_intent": "用 CSV 元数据为 PostgreSQL 生成建表 DDL",
+  "model_steps": [
+   "在 migrate.yaml 中设置 metadata.type: csv，并按模板将元数据目录指向 ./meta_csv/，设置 target.type: postgres",
+   "owl-migrate export ddl -c migrate.yaml -o ./output/ddl/"
+  ],
+  "model_notes": "CSV 离线元数据可用于 export ddl；目录字段名按 dsn-and-config 模板确认。"
+ },
+ {
+  "id": "s4-01",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export ddl -c migrate.yaml -o ./output/ddl/"
+  ],
+  "expected_notes": "ddl.target_dialect 默认继承 target.type",
+  "model_intent": "根据已配置源库生成 PostgreSQL 建表 DDL",
+  "model_steps": [
+   "owl-migrate export ddl -c migrate.yaml -o ./output/ddl/"
+  ],
+  "model_notes": "目标方言由 target.type: postgres 决定；生成 CREATE TABLE/INDEX/VIEW。"
+ },
+ {
+  "id": "s4-02",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 ddl.include_drop: true 后执行 export ddl"
+  ],
+  "expected_notes": "",
+  "model_intent": "让生成的 DDL 包含 DROP TABLE",
+  "model_steps": [
+   "在 migrate.yaml 的 ddl 段配置 ddl.include_drop: true",
+   "owl-migrate export ddl -c migrate.yaml -o ./output/ddl/"
+  ],
+  "model_notes": "开启 include_drop 后，DDL 中会带上 DROP TABLE。"
+ },
+ {
+  "id": "s4-03",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export ddl --no-quote-identifiers"
+  ],
+  "expected_notes": "多数生成命令都有此 flag，配置项为 ddl.no_quote_identifiers",
+  "model_intent": "生成 DDL 时标识符不加引号",
+  "model_steps": [
+   "owl-migrate export ddl -c migrate.yaml -o ./output/ddl/ --no-quote-identifiers"
+  ],
+  "model_notes": "使用 --no-quote-identifiers 关闭标识符引号包裹。"
+ },
+ {
+  "id": "s4-04",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 ddl.schema_mapping: {SCOTT: public} 后执行 export ddl"
+  ],
+  "expected_notes": "仅支持 schema 级映射，无表级映射",
+  "model_intent": "把 SCOTT 表映射到目标 public schema",
+  "model_steps": [
+   "在 migrate.yaml 中配置 ddl.schema_mapping: {SCOTT: public}",
+   "owl-migrate export ddl -c migrate.yaml -o ./output/ddl/"
+  ],
+  "model_notes": "仅支持 schema 级映射，不支持表级重命名；目标表名仍为源表名。"
+ },
+ {
+  "id": "s5-01",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export data -c migrate.yaml --tables USERA.TABLEA -o ./output/data/"
+  ],
+  "expected_notes": "默认 CSV，文件名 {schema}.{table}.csv",
+  "model_intent": "导出 USERA.TABLEA 的全部数据",
+  "model_steps": [
+   "owl-migrate export data -c migrate.yaml --tables USERA.TABLEA --format csv -o ./output/data/"
+  ],
+  "model_notes": "默认按 CSV 导出全部数据；如需 INSERT/Excel 改用 --format sql/xlsx。"
+ },
+ {
+  "id": "s5-02",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export data -c migrate.yaml --format sql"
+  ],
+  "expected_notes": "产出 {schema}.{table}.insert.sql",
+  "model_intent": "导出数据为 INSERT 语句而非 CSV",
+  "model_steps": [
+   "owl-migrate export data -c migrate.yaml --tables USERA.TABLEA --format sql -o ./output/data/"
+  ],
+  "model_notes": "从源库直接导出 INSERT 语句；若已有 CSV 转 INSERT，用 export insert -d。"
+ },
+ {
+  "id": "s5-03",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export data -c migrate.yaml --format xlsx"
+  ],
+  "expected_notes": "",
+  "model_intent": "把数据导出成 Excel 文件",
+  "model_steps": [
+   "owl-migrate export data -c migrate.yaml --tables USERA.TABLEA --format xlsx -o ./output/data/"
+  ],
+  "model_notes": "导出为 Excel；表范围沿用 USERA.TABLEA。"
+ },
+ {
+  "id": "s5-04",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate gen-select -c migrate.yaml --batch-method cursor -n 10000"
+  ],
+  "expected_notes": "batch-method 支持 cursor|offset，输出到 ./output/select/",
+  "model_intent": "为 EMP 大表生成每批 1 万条的分页拉取脚本",
+  "model_steps": [
+   "在 migrate.yaml 的表范围配置中限定表为 EMP",
+   "owl-migrate gen-select -c migrate.yaml --batch-method cursor -n 10000"
+  ],
+  "model_notes": "生成 cursor 模式分页拉取脚本，每批 1 万条，避免大表一次性拉取。"
+ },
+ {
+  "id": "s5-05",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export insert -d ./data/ --dialect postgres -o ./output/insert/"
+  ],
+  "expected_notes": "不依赖配置文件，按文件名解析 schema/table",
+  "model_intent": "将目录下 CSV 零配置生成 PostgreSQL INSERT 脚本",
+  "model_steps": [
+   "owl-migrate export insert -d <CSV目录> --dialect postgres"
+  ],
+  "model_notes": "目录内文件名需为 {schema}.{table}.csv；无需 migrate.yaml。"
+ },
+ {
+  "id": "s5-06",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export insert -d ./data/ --dialect postgres -n 500 --truncate"
+  ],
+  "expected_notes": "",
+  "model_intent": "生成每500行一批且开头 TRUNCATE 的 INSERT 脚本",
+  "model_steps": [
+   "owl-migrate export insert -d <CSV目录> --dialect postgres -n 500 --truncate"
+  ],
+  "model_notes": "-n 500 控制批量行数，--truncate 在脚本开头加入 TRUNCATE。"
+ },
+ {
+  "id": "s5-07",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 export.parallel: {enabled: true, max_workers: 4} 后执行 export data"
+  ],
+  "expected_notes": "",
+  "model_intent": "开启数据导出并行以提速",
+  "model_steps": [
+   "修改 migrate.yaml：export.parallel.enabled: true，export.parallel.max_workers: <N>",
+   "重新执行 owl-migrate export data -c migrate.yaml ..."
+  ],
+  "model_notes": "max_workers 按库/网络资源调整；参考仅提供 export.parallel 配置。"
+ },
+ {
+  "id": "s6-01",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "expected_notes": "数据目录取 import.source_dir；缺失目标表自动补建",
+  "model_intent": "将 ./output/data 下 CSV 导入目标库",
+  "model_steps": [
+   "修改 migrate.yaml：import.source_dir: ./output/data",
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "model_notes": "缺少的目标表会自动补建。"
+ },
+ {
+  "id": "s6-02",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 import.target.truncate_before: true 后执行 import"
+  ],
+  "expected_notes": "",
+  "model_intent": "导入前清空目标表",
+  "model_steps": [
+   "修改 migrate.yaml：import.target.truncate_before: true",
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "model_notes": "TRUNCATE 在导入每张目标表前执行。"
+ },
+ {
+  "id": "s6-03",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 import.data_transforms.source_encoding: GBK 后执行 import"
+  ],
+  "expected_notes": "",
+  "model_intent": "指定源 CSV 为 GBK 编码避免乱码",
+  "model_steps": [
+   "修改 migrate.yaml：import.data_transforms.source_encoding: GBK",
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "model_notes": "按 GBK 读取源 CSV，避免中文乱码。"
+ },
+ {
+  "id": "s6-04",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 import.batch.error_policy: skip_row 后执行 import"
+  ],
+  "expected_notes": "error_policy 取值 skip_row|stop|log_only",
+  "model_intent": "导入遇脏数据行跳过继续",
+  "model_steps": [
+   "修改 migrate.yaml：import.batch.error_policy: skip_row",
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "model_notes": "错误行跳过，不中断整批导入。"
+ },
+ {
+  "id": "s6-05",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "配置 import.batch.use_copy: true 后执行 import"
+  ],
+  "expected_notes": "PG 协议方言的 COPY 快速通道",
+  "model_intent": "确认 PG 导入支持 COPY 并启用提速",
+  "model_steps": [
+   "修改 migrate.yaml：import.batch.use_copy: true",
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "model_notes": "支持；PG 目标开启 COPY 可提速。"
+ },
+ {
+  "id": "s7-01",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate serve（未启动时）",
+   "POST /api/v1/migrate/preflight"
+  ],
+  "expected_notes": "只读检查：配置存在→元数据可读/源库可达→表清单命中→目标库可达",
+  "model_intent": "迁移前整体预检",
+  "model_steps": [
+   "若 serve 未启动：owl-migrate serve",
+   "POST /api/v1/migrate/preflight（携带迁移配置/任务信息）"
+  ],
+  "model_notes": "预检通过后不是终点；确认迁移需继续 migrate -c migrate.yaml。"
+ },
+ {
+  "id": "s7-02",
+  "verdict": "MISMATCH",
+  "expected_steps": [
+   "owl-migrate validate -c migrate.yaml"
+  ],
+  "expected_notes": "CSV 或活库元数据均可校验",
+  "model_intent": "校验元数据 CSV 格式",
+  "model_steps": [],
+  "model_notes": "参考未提供校验元数据 CSV 格式的命令/API；validate 仅列为配置校验，需澄清校验对象或改人工核对规范表。"
+ },
+ {
+  "id": "s7-03",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "查看 ./output/migration_report.json"
+  ],
+  "expected_notes": "路径可由 migrate -r/--report 指定",
+  "model_intent": "查看上次迁移的结果报告位置",
+  "model_steps": [
+   "cat ./output/migration_report.json"
+  ],
+  "model_notes": "迁移报告默认在 ./output/migration_report.json；失败诊断也可看终端输出与失败表名。"
+ },
+ {
+  "id": "s7-04",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate serve --port 9090"
+  ],
+  "expected_notes": "默认绑定 127.0.0.1",
+  "model_intent": "启动 9090 端口的 Web 控制台",
+  "model_steps": [
+   "owl-migrate serve --port 9090"
+  ],
+  "model_notes": "启动后可用 Web API；serve 具体参数见 references/web-api.md。"
+ },
+ {
+  "id": "s7-05",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate serve --host 0.0.0.0 --token <强随机token>"
+  ],
+  "expected_notes": "绑定非环回地址时必须提供 --token",
+  "model_intent": "让同事从其他机器访问 Web 控制台",
+  "model_steps": [
+   "owl-migrate serve --host 0.0.0.0 --port <端口>",
+   "放行防火墙/安全组对应端口",
+   "同事用 http://<你的主机IP>:<端口> 访问"
+  ],
+  "model_notes": "需监听 0.0.0.0 而非仅 127.0.0.1；具体 serve 参数以 references/web-api.md 为准。"
+ },
+ {
+  "id": "s8-01",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【澄清】两个连接串只有占位符：必须问清源/目标的类型、DSN、schema 再生成配置；不能编造连接信息",
+  "model_intent": "根据两个连接串生成迁移配置文件",
+  "model_steps": [],
+  "model_notes": "未提供两个连接串、源/目标方言与 schema/范围；补齐后再用 owl-migrate init 生成。"
+ },
+ {
+  "id": "s8-02",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate init -s oracle --source-dsn oracle://scott:tiger@10.1.1.5:1521/ORCL --source-schema SCOTT --scenario export-metadata -o meta.yaml"
+  ],
+  "expected_notes": "--scenario 下 target 可省略；source 输入齐全即可非交互",
+  "model_intent": "生成只抽 scott 元数据的配置文件",
+  "model_steps": [
+   "owl-migrate init -s oracle --source-dsn oracle://scott:tiger@10.1.1.5:1521/ORCL --source-schema scott --scenario export-metadata -o migrate.yaml"
+  ],
+  "model_notes": "纯元数据场景用 export-metadata，target 可省；后续可 export-metadata --scope schema:scott。"
+ },
+ {
+  "id": "s8-03",
+  "verdict": "MANUAL",
+  "expected_steps": [],
+  "expected_notes": "顺序：-c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml；~/migrate.yaml 不在搜索路径，需 -c 显式指定",
+  "model_intent": "确认配置搜索顺序及 ~/migrate.yaml 是否自动读取",
+  "model_steps": [
+   "搜索顺序：-c > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml",
+   "~/migrate.yaml 不在搜索路径；如需使用请用 -c ~/migrate.yaml 或移到 ~/.owl/migrate/migrate.yaml"
+  ],
+  "model_notes": "~/migrate.yaml 不会自动读到。"
+ },
+ {
+  "id": "s8-04",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate migrate -c migrate.yaml --tables 'SCOTT.T1,SCOTT.T2'（或配置 export.tables.include，支持 SCOTT.TABLE、SCOTT.*、*.T、T_* 等 glob）"
+  ],
+  "expected_notes": "排除没有反向语法，用白名单收敛（列出要迁的）；真实机制是 --tables/export.tables.include；ddl.table_filter 当前未接线不要用",
+  "model_intent": "迁移 scott 白名单表 t1/t2 并排除 log_ 开头表",
+  "model_steps": [
+   "owl-migrate migrate -c migrate.yaml --tables SCOTT.T1,SCOTT.T2"
+  ],
+  "model_notes": "表范围无排除语法；白名单已限定 t1/t2，log_* 不会被选中。ddl.table_filter 未接线。"
+ },
+ {
+  "id": "s9-01",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "make build/sqlite3（基础二进制不含 sqlite3）",
+   "owl-migrate-sqlite3 init -s sqlite3 --source-dsn /data/app.db -t mysql --target-dsn 'user:pass@tcp(10.1.1.8:3306)/appdb' -o migrate.yaml",
+   "owl-migrate-sqlite3 migrate -c migrate.yaml"
+  ],
+  "expected_notes": "嵌入库无 schema；sqlite3 需对应构建口味二进制（构建是前置准备）",
+  "model_intent": "将 /data/app.db 的 SQLite 表迁移到 MySQL",
+  "model_steps": [
+   "按 references/dsn-and-config.md 构建 SQLite 口味并改用 owl-migrate-sqlite3",
+   "owl-migrate-sqlite3 init -s sqlite --source-dsn /data/app.db --source-schema main -t mysql --target-dsn 'user:pass@tcp(10.1.1.8:3306)/appdb' -o migrate.yaml",
+   "owl-migrate-sqlite3 migrate -c migrate.yaml"
+  ],
+  "model_notes": "基础版不支持 SQLite，必须用 -sqlite3 口味；schema 无特殊可填 main。"
+ },
+ {
+  "id": "amb-01",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【澄清】先问清：导数据（export data，CSV/SQL/XLSX）还是导结构（export-metadata / export ddl）？以及哪张表、哪个库",
+  "model_intent": "导出某张表",
+  "model_steps": [],
+  "model_notes": "需澄清：源库/DSN、表名、要导数据还是表结构/DDL、导出格式（CSV/SQL/XLSX）。"
+ },
+ {
+  "id": "neg-01",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【不支持】工具只导出 functions/packages 元数据与原始定义，不做过程逻辑改写，需人工",
+  "model_intent": "把 Oracle 存储过程改写为 PG PL/pgSQL",
+  "model_steps": [],
+  "model_notes": "不支持自动语法改写；仅能导出 functions/packages 元数据与原始定义，转换需人工。"
+ },
+ {
+  "id": "neg-02",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【不支持】没有数据比对/校验命令",
+  "model_intent": "对比两个库的数据差异",
+  "model_steps": [],
+  "model_notes": "不支持两库数据比对，owl-migrate 无此能力。"
+ },
+ {
+  "id": "neg-03",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【不支持】有效方言：oracle/postgres/postgresql/mysql/mariadb/sqlite3/duckdb/goldendb*/oceanbase*/panweidb*/opengaussdb*（* 复合方言需对应构建口味）",
+  "model_intent": "询问金仓 Kingbase 是否可迁移",
+  "model_steps": [],
+  "model_notes": "金仓 Kingbase 不在支持方言列表，不支持；支持 Oracle/MySQL/PostgreSQL/OceanBase/GoldenDB/PanWeiDB/OpenGaussDB/SQLite/DuckDB。"
+ },
+ {
+  "id": "s1-10",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate online init（不加 --apply，只生成 online_cdc_NNN.sql 脚本）",
+   "人工审核并执行脚本",
+   "owl-migrate online sync --once"
+  ],
+  "expected_notes": "online init 缺 --apply 只产出脚本；sync --once 单轮；进度可用 online status 查看，done 批次可 archive 归档",
+  "model_intent": "人工审核 online init 脚本并单轮回放增量",
+  "model_steps": [
+   "若尚未全量迁移：owl-migrate migrate -c migrate.yaml（SOP-A 全量先行）",
+   "owl-migrate online init --require-key（不加 --apply，仅出脚本）",
+   "人工审核并执行生成的 changelog/触发器脚本",
+   "owl-migrate online sync --once（单轮回放增量）"
+  ],
+  "model_notes": "不加 --apply 只出脚本；--once 单轮；前提表有主键且全量迁移已完成。"
+ },
+ {
+  "id": "s1-11",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate migrate -c migrate.yaml --skip-ddl --temp-dir /data/tmp"
+  ],
+  "expected_notes": "--skip-ddl 只导数据不建表；--temp-dir 自定义 CSV 中转目录",
+  "model_intent": "目标表已建好，迁移跳过 DDL，并指定临时目录",
+  "model_steps": [
+   "owl-migrate migrate -c migrate.yaml --skip-ddl"
+  ],
+  "model_notes": "--skip-ddl 可避免建表；临时目录 /data/tmp 配置未在参考中提供，无法设置。"
+ },
+ {
+  "id": "s2-07",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate serve（未启动时）",
+   "POST /api/v1/datasources body {name:..., type:oceanbase-oracle, dsn:oceanbase-oracle://sys@tenant1#cluster3:obpass@10.2.1.9:2883/sales}"
+  ],
+  "expected_notes": "OBProxy：端口 2883、主机段带 #集群名；直连为 2881 且不带 #cluster",
+  "model_intent": "将 OceanBase Oracle 租户连接存为数据源",
+  "model_steps": [
+   "owl-migrate serve（启动 Web API）",
+   "POST /api/v1/datasources，按 web-api.md 请求体提交 name 与 OceanBase Oracle DSN（tenant1/cluster3/OBProxy/10.2.1.9:2883/sys/obpass/sales）"
+  ],
+  "model_notes": "数据源管理仅 Web API，CLI 无 datasource add；DSN 加密落盘，可用 datasource:<名字> 引用。"
+ },
+ {
+  "id": "neg-04",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【限制】CLI 无数据源管理命令，仅 Web API（serve 后 /api/v1/datasources）；配置文件可用 source.dsn: datasource:<名字> 引用",
+  "model_intent": "询问是否有 datasource add 子命令",
+  "model_steps": [],
+  "model_notes": "没有 datasource add/list 等 CLI 子命令；数据源增删改查仅 Web API，需 serve 后调用 /api/v1/datasources。"
+ },
+ {
+  "id": "s3-08",
+  "verdict": "MATCH",
+  "expected_steps": [
+   "owl-migrate export-metadata -c migrate.yaml -o ./meta.sql --format sql"
+  ],
+  "expected_notes": "--format sql 仅 oracle 家族方言支持",
+  "model_intent": "将元数据导出为 Oracle 系统表 INSERT 脚本留存",
+  "model_steps": [
+   "确保 migrate.yaml 的 source 指向目标库；未配置则先 init --scenario export-metadata",
+   "owl-migrate export-metadata -c migrate.yaml --scope all --format sql"
+  ],
+  "model_notes": "sql 格式仅 oracle 家族支持，产出用于元数据入库留存；范围可按需改为 schema:USERA 或 table:T1,T2。"
+ },
+ {
+  "id": "s4-05",
+  "verdict": "MANUAL",
+  "expected_steps": [],
+  "expected_notes": "CREATE TABLE + CREATE INDEX + CREATE VIEW（以元数据中存在的对象为准），不止建表",
+  "model_intent": "询问 export ddl 包含哪些对象",
+  "model_steps": [],
+  "model_notes": "export ddl 生成 CREATE TABLE、INDEX、VIEW，不只建表语句。"
+ },
+ {
+  "id": "s6-06",
+  "verdict": "MISMATCH",
+  "expected_steps": [
+   "配置 import.target.disable_constraints: true",
+   "配置 import.batch.error_policy: log_only",
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "expected_notes": "error_policy 取值 skip_row|stop|log_only",
+  "model_intent": "导入时禁用/恢复外键约束，坏数据只记日志不中断",
+  "model_steps": [],
+  "model_notes": "外键禁用/恢复不在参考范围，不支持；坏数据可配置 import.batch.error_policy: skip_row 跳过并记日志。"
+ },
+ {
+  "id": "s6-07",
+  "verdict": "MISMATCH",
+  "expected_steps": [
+   "配置 import.data_transforms: {null_if: [\"\"], datetime_format: yyyyMMddHHmmss, trim_strings: true}",
+   "owl-migrate import -c migrate.yaml"
+  ],
+  "expected_notes": "datetime_format 用紧凑模板（yyyyMMddHHmmss/yyyyMMdd 等），另可配 datetime_format_fallback 列表",
+  "model_intent": "CSV 空串转 NULL、紧凑日期解析、去除字符串两端空格",
+  "model_steps": [],
+  "model_notes": "参考未提供空串转 NULL、紧凑日期解析与 trim 的配置；需澄清或预清洗 CSV。"
+ },
+ {
+  "id": "s7-06",
+  "verdict": "PARTIAL",
+  "expected_steps": [
+   "owl-migrate serve（未启动时）",
+   "POST /api/v1/migrate 启动任务获得 job id",
+   "GET /api/v1/jobs/{id} 轮询进度（另有 /jobs/{id}/events 与 /jobs/{id}/ws）"
+  ],
+  "expected_notes": "jobs 系列端点可查进度/检查点/输出下载",
+  "model_intent": "通过 Web API 发起迁移任务并轮询执行进度",
+  "model_steps": [
+   "owl-migrate serve（启动 Web API 服务）",
+   "POST /api/v1/ 迁移任务接口创建并启动任务（路径与请求体见 references/web-api.md）",
+   "轮询任务状态接口（GET 任务详情）获取进度，失败时读取 ./output/migration_report.json"
+  ],
+  "model_notes": "数据源/任务类操作仅 Web API 提供，CLI 无对应子命令；serve 未启动需先启动。"
+ },
+ {
+  "id": "amb-02",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【澄清】必须问清：源库类型+连接串、目标库类型+连接串、迁移范围（整库还是哪些表/哪些 schema）、是否要求停机；一项都没有不能动手",
+  "model_intent": "请求执行数据迁移，但信息不足",
+  "model_steps": [],
+  "model_notes": "需澄清：源库方言+DSN、目标库方言+DSN、范围（schema/用户或表清单）、整库还是指定表、是否需停机窗口。"
+ },
+ {
+  "id": "amb-03",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【澄清】必须问清：哪个库哪个 schema 哪些表、要什么格式（CSV/INSERT SQL/XLSX）、SQL 的话目标方言是什么（决定 --dialect）；格式可给默认建议但不能替用户拍板方言",
+  "model_intent": "把库中数据交给数仓团队，需求含糊",
+  "model_steps": [],
+  "model_notes": "需澄清：源库方言/DSN 与范围；“导出”指表数据还是表结构（含建表 DDL）；产出格式 CSV/SQL/XLSX；是否需直接迁入数仓库。"
+ },
+ {
+  "id": "amb-04",
+  "verdict": "MISMATCH",
+  "expected_steps": [],
+  "expected_notes": "【澄清】先取证再判断：向用户索要/自行查看迁移报告（migration_report.json，默认 ./output/）与日志，定位失败表和错误；不要凭空猜",
+  "model_intent": "排查迁移失败原因",
+  "model_steps": [
+   "cat ./output/migration_report.json（查看失败表与错误原因）",
+   "提供 migrate 终端完整输出及失败表名"
+  ],
+  "model_notes": "先取证再定位，不猜测；若为中断可在原配置上重跑并加 --resume 断点续传。"
+ },
+ {
+  "id": "amb-05",
+  "verdict": "MATCH",
+  "expected_steps": [],
+  "expected_notes": "【澄清】\"用户表\"指什么（业务表？某 schema 全部表？叫 user 的表？）、源库是哪个、新库类型与连接；确认前不动手",
+  "model_intent": "把“用户表”迁到新库，指代与目标不明",
+  "model_steps": [],
+  "model_notes": "需澄清：源库方言/DSN 与 schema；“用户表”指表名 user 还是某用户下所有表；“新库”方言与 DSN、表范围。"
+ }
+]
