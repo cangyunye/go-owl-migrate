@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,6 +24,15 @@ import (
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 	"github.com/cangyunye/owljdbc"
 )
+
+// max64 returns the larger of a and b (guard against divide-by-zero in
+// progress percentage math).
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 // Config holds importer configuration.
 type Config struct {
@@ -62,6 +72,12 @@ type Config struct {
 	SourceEncoding     string // ""=UTF-8, "GBK", "LATIN1" — CSV file encoding
 	Logger             *zap.Logger
 	NoQuoteIdentifiers bool
+	// ProgressOut receives human-readable mid-table progress lines
+	// ("  ↳ S.T: 120,000 / 450,000 rows…"), time-throttled. Defaults to
+	// os.Stderr — it also lands in web job output, which captures stderr.
+	ProgressOut io.Writer
+	// ProgressInterval throttles the progress lines (default 5s).
+	ProgressInterval time.Duration
 }
 
 // Importer reads CSV files and inserts data into a target database.
@@ -77,6 +93,12 @@ type Importer struct {
 func New(db *sql.DB, cfg Config) *Importer {
 	if cfg.Logger == nil {
 		cfg.Logger = zap.NewNop()
+	}
+	if cfg.ProgressOut == nil {
+		cfg.ProgressOut = os.Stderr
+	}
+	if cfg.ProgressInterval <= 0 {
+		cfg.ProgressInterval = 5 * time.Second
 	}
 	if cfg.CommitInterval == 0 {
 		cfg.CommitInterval = 1000
@@ -1036,6 +1058,7 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 	}
 
 	maxErrorsStop := false
+	var lastProgress time.Time
 	for pos := 0; pos < len(valsRows); {
 		select {
 		case <-ctx.Done():
@@ -1046,6 +1069,13 @@ func (imp *Importer) importOneTable(ctx context.Context, tbl *md.TableDef, targe
 			result.Err = ctx.Err()
 			return result
 		default:
+		}
+
+		// Mid-table progress (total is known: all rows are read up front).
+		if time.Since(lastProgress) >= imp.cfg.ProgressInterval {
+			fmt.Fprintf(imp.cfg.ProgressOut, "  ↳ %s: %d / %d rows (%d%%)…\n",
+				key, inserted, result.Expected, int(100*inserted/max64(result.Expected, 1)))
+			lastProgress = time.Now()
 		}
 
 		if useMultiRow {

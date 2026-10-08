@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -23,14 +24,15 @@ import (
 
 func serveCmd() *cobra.Command {
 	var (
-		port       int
-		host       string
-		masterPort int
-		tempDir    string
-		dbPath     string
-		configOut  string
-		configDir  string
-		token      string
+		port        int
+		host        string
+		masterPort  int
+		tempDir     string
+		dbPath      string
+		configOut   string
+		configDir   string
+		token       string
+		openBrowser bool
 	)
 
 	cmd := &cobra.Command{
@@ -43,6 +45,14 @@ configuration, DDL generation, data export/import, and full migration pipeline
 with real-time progress monitoring via WebSocket.
 
 No authentication is required — intended for local or trusted-network use.`,
+		Example: `  # Local use (default: http://127.0.0.1:8080, opens nothing)
+  owl-migrate serve
+
+  # Start and open the browser automatically
+  owl-migrate serve --open
+
+  # Trusted-network use with a bearer token (UI will prompt for it)
+  OWL_MIGRATE_TOKEN=s3cret owl-migrate serve --host 0.0.0.0 --port 8080`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if dbPath == "" {
 				dbPath = paths.DBPath()
@@ -102,7 +112,8 @@ No authentication is required — intended for local or trusted-network use.`,
 			ipcAddr := fmt.Sprintf("127.0.0.1:%d", ipcPort)
 			ipcServer := &http.Server{Addr: ipcAddr, Handler: m.Handler()}
 			go func() {
-				fmt.Printf("Master IPC listening on %s\n", ipcAddr)
+				// The master IPC endpoint is an internal implementation detail
+				// (the web UI talks to it); startup stays quiet about it.
 				if err := ipcServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 					fmt.Fprintf(os.Stderr, "IPC server error: %v\n", err)
 				}
@@ -119,7 +130,25 @@ No authentication is required — intended for local or trusted-network use.`,
 			})
 
 			serveAddr := fmt.Sprintf("%s:%d", host, port)
-			httpServer := &http.Server{Addr: serveAddr, Handler: srv.Handler()}
+			// Bind before printing the banner so the URL is live when shown;
+			// browsers can't open 0.0.0.0, so display a loopback fallback.
+			ln, err := net.Listen("tcp", serveAddr)
+			if err != nil {
+				return fmt.Errorf("listen %s: %w", serveAddr, err)
+			}
+			httpServer := &http.Server{Handler: srv.Handler()}
+
+			displayHost := host
+			if displayHost == "" || displayHost == "0.0.0.0" || displayHost == "::" {
+				displayHost = "127.0.0.1"
+			}
+			uiURL := fmt.Sprintf("http://%s:%d", displayHost, port)
+			printServeBanner(uiURL, token != "")
+			if openBrowser {
+				if err := openInBrowser(uiURL); err != nil {
+					fmt.Fprintf(os.Stderr, "could not open browser: %v (open %s manually)\n", err, uiURL)
+				}
+			}
 
 			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 			defer stop()
@@ -139,8 +168,7 @@ No authentication is required — intended for local or trusted-network use.`,
 			go srv.CleanupLoop(ctx)
 
 			go func() {
-				fmt.Printf("owl-migrate web UI: http://%s\n", serveAddr)
-				if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				if err := httpServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 					fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 					stop()
 				}
@@ -166,8 +194,37 @@ No authentication is required — intended for local or trusted-network use.`,
 	cmd.Flags().StringVar(&configOut, "config-out", "", "where saved configs are written (default: ~/.owl/migrate/migrate.yaml)")
 	cmd.Flags().StringVar(&configDir, "config-dir", "", "directory for the reusable config library (default: ~/.owl/migrate/configs/library/)")
 	cmd.Flags().StringVar(&token, "token", "", "auth token (also OWL_MIGRATE_TOKEN); required to bind non-loopback")
+	cmd.Flags().BoolVar(&openBrowser, "open", false, "open the web UI in the default browser after startup")
 
 	return cmd
+}
+
+// printServeBanner writes the user-facing startup summary: what to open, where
+// the docs live, and how to stop. Keep it free of internal details (the master
+// IPC endpoint is not user-facing).
+func printServeBanner(uiURL string, tokenEnabled bool) {
+	authLine := "token auth disabled — local/trusted network only (set --token to require a bearer token)"
+	if tokenEnabled {
+		authLine = "token auth enabled — the UI will prompt for the bearer token"
+	}
+	fmt.Printf("owl-migrate web UI: %s\n", uiURL)
+	fmt.Printf("  docs:  %s/docs\n", uiURL)
+	fmt.Printf("  auth:  %s\n", authLine)
+	fmt.Printf("  stop:  Ctrl+C\n")
+}
+
+// openInBrowser opens url in the default browser, best-effort per platform.
+func openInBrowser(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	return cmd.Start()
 }
 
 func selectIPCPort() (int, error) {

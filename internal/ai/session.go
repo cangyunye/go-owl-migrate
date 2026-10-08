@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	// Pure-Go SQLite: sessions must work in CGO_ENABLED=0 release builds.
@@ -22,16 +23,22 @@ import (
 // waiting for user go-ahead) → executing (handed to the job layer) → done
 // (archived; still referencable for slot inheritance within TTL).
 type Session struct {
-	ID         string            `json:"session_id"`
-	Intent     string            `json:"intent"`
-	Sub        string            `json:"sub,omitempty"`
-	Slots      map[string]string `json:"slots"`
-	Turns      []Turn            `json:"turns"`
-	Stage      string            `json:"stage"`
-	Artifacts  []Artifact        `json:"artifacts"`
-	CreatedAt  time.Time         `json:"created_at"`
-	UpdatedAt  time.Time         `json:"updated_at"`
-	Round      int               `json:"round"` // how many tasks this session has completed
+	ID        string            `json:"session_id"`
+	Intent    string            `json:"intent"`
+	Sub       string            `json:"sub,omitempty"`
+	Title     string            `json:"title,omitempty"`    // 首条用户话语截断；历史列表的主显示
+	Keywords  string            `json:"keywords,omitempty"` // 首轮分析拆出的检索词（空格分隔）
+	Slots     map[string]string `json:"slots"`
+	Turns     []Turn            `json:"turns"`
+	Stage     string            `json:"stage"`
+	Artifacts []Artifact        `json:"artifacts"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	Round     int               `json:"round"` // how many tasks this session has completed
+	// Effective: 计划被确认且任务成功启动（launch 即置位、永久）——检索与
+	// 复用的对象。Discarded: 意图分叉时源头未有效则淘汰（不进默认列表）。
+	Effective bool `json:"effective"`
+	Discarded bool `json:"discarded"`
 }
 
 const (
@@ -46,7 +53,8 @@ const (
 	StageDone = "done"
 
 	// TTLDays is how long sessions (including done ones) stay referencable.
-	TTLDays = 1
+	// 30 天：会话历史的价值在回溯与复用，一天太短。
+	TTLDays = 30
 	// keepTurns is the chat-log window: system prompt + this many recent turns
 	// keep every request bounded at roughly 10–30KB.
 	keepTurns = 8
@@ -101,6 +109,10 @@ CREATE INDEX IF NOT EXISTS idx_ai_sessions_updated ON ai_sessions(updated_at);`
 		db.Close()
 		return nil, err
 	}
+	if err := migrateSessions(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	s := &SessionStore{db: db}
 	s.purgeExpired()
 	return s, nil
@@ -146,12 +158,12 @@ func (s *SessionStore) Get(id string) (*Session, bool) {
 	if id == "" {
 		return nil, false
 	}
-	row := s.db.QueryRow(`SELECT intent, sub, slots, turns, stage, artifacts, round, created_at, updated_at
+	row := s.db.QueryRow(`SELECT intent, sub, title, keywords, slots, turns, stage, artifacts, round, effective, discarded, created_at, updated_at
 		FROM ai_sessions WHERE id = ?`, id)
 	var sess Session
 	var slotsJSON, turnsJSON, artJSON, created, updated string
-	if err := row.Scan(&sess.Intent, &sess.Sub, &slotsJSON, &turnsJSON, &sess.Stage,
-		&artJSON, &sess.Round, &created, &updated); err != nil {
+	if err := row.Scan(&sess.Intent, &sess.Sub, &sess.Title, &sess.Keywords, &slotsJSON, &turnsJSON, &sess.Stage,
+		&artJSON, &sess.Round, &sess.Effective, &sess.Discarded, &created, &updated); err != nil {
 		return nil, false
 	}
 	sess.ID = id
@@ -162,6 +174,10 @@ func (s *SessionStore) Get(id string) (*Session, bool) {
 	sess.UpdatedAt, _ = time.Parse(time.RFC3339, updated)
 	if time.Since(sess.UpdatedAt) > TTLDays*24*time.Hour {
 		s.db.Exec(`DELETE FROM ai_sessions WHERE id = ?`, id)
+		return nil, false
+	}
+	// 已删除/淘汰的会话对所有按 id 的路径视为不存在（恢复、克隆、取用、续聊）。
+	if sess.Discarded {
 		return nil, false
 	}
 	if sess.Slots == nil {
@@ -177,13 +193,13 @@ func (s *SessionStore) save(sess *Session) error {
 	arts, _ := json.Marshal(sess.Artifacts)
 	sess.UpdatedAt = time.Now()
 	_, err := s.db.Exec(`INSERT INTO ai_sessions
-		(id, intent, sub, slots, turns, stage, artifacts, round, created_at, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET intent=?, sub=?, slots=?, turns=?, stage=?, artifacts=?, round=?, updated_at=?`,
-		sess.ID, sess.Intent, sess.Sub, string(slots), string(turns), sess.Stage,
-		string(arts), sess.Round, sess.CreatedAt.Format(time.RFC3339), sess.UpdatedAt.Format(time.RFC3339),
-		sess.Intent, sess.Sub, string(slots), string(turns), sess.Stage,
-		string(arts), sess.Round, sess.UpdatedAt.Format(time.RFC3339))
+		(id, intent, sub, title, keywords, slots, turns, stage, artifacts, round, effective, discarded, created_at, updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET intent=?, sub=?, title=?, keywords=?, slots=?, turns=?, stage=?, artifacts=?, round=?, effective=?, discarded=?, updated_at=?`,
+		sess.ID, sess.Intent, sess.Sub, sess.Title, sess.Keywords, string(slots), string(turns), sess.Stage,
+		string(arts), sess.Round, sess.Effective, sess.Discarded, sess.CreatedAt.Format(time.RFC3339), sess.UpdatedAt.Format(time.RFC3339),
+		sess.Intent, sess.Sub, sess.Title, sess.Keywords, string(slots), string(turns), sess.Stage,
+		string(arts), sess.Round, sess.Effective, sess.Discarded, sess.UpdatedAt.Format(time.RFC3339))
 	return err
 }
 
@@ -232,5 +248,140 @@ func (s *SessionStore) CloneForRound(sess *Session, intent, sub string) (*Sessio
 		next.Slots[k] = v
 	}
 	next.Round = sess.Round + 1
-	return next, s.save(next)
+	if err := s.save(next); err != nil {
+		return nil, err
+	}
+	// 淘汰规则：源头会话从未有效（没跑成过任务）→ 分叉即淘汰；已有效的
+	// 源头保留（它是检索与复用的对象）。
+	if !sess.Effective {
+		sess.Discarded = true
+		if err := s.save(sess); err != nil {
+			return next, err
+		}
+	}
+	return next, nil
+}
+
+// SetMeta stores the display title and retrieval keywords for the history list.
+func (s *SessionStore) SetMeta(sess *Session, title, keywords string) error {
+	sess.Title = title
+	sess.Keywords = keywords
+	return s.save(sess)
+}
+
+// MarkEffective permanently flags the session as "produced an executable
+// task". Set at confirm(execute=true) once the job id exists; never cleared —
+// a later job failure is an environment problem, not a plan problem.
+func (s *SessionStore) MarkEffective(sess *Session) error {
+	sess.Effective = true
+	return s.save(sess)
+}
+
+// Delete soft-deletes sessions by id (discarded=1). List and every by-id
+// lookup treat them as gone; rows stay on disk until the TTL purge so an
+// accidental delete stays forensically recoverable. Returns how many
+// previously-live sessions were actually deleted.
+func (s *SessionStore) Delete(ids ...string) (int, error) {
+	deleted := 0
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		res, err := s.db.Exec(`UPDATE ai_sessions SET discarded = 1 WHERE id = ? AND discarded = 0`, id)
+		if err != nil {
+			return deleted, err
+		}
+		if n, err := res.RowsAffected(); err == nil {
+			deleted += int(n)
+		}
+	}
+	return deleted, nil
+}
+
+// SessionSummary is the history-list projection of a session.
+type SessionSummary struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Intent    string    `json:"intent"`
+	Sub       string    `json:"sub,omitempty"`
+	Stage     string    `json:"stage"`
+	Keywords  string    `json:"keywords,omitempty"`
+	Effective bool      `json:"effective"`
+	Round     int       `json:"round"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ListSessions returns non-discarded sessions, newest first, offset pages
+// through the result (history list loads batch by batch). q is a
+// space-separated keyword query: every token must match (case-insensitive)
+// the session's title, keywords, intent, or sub — deterministic keyword
+// retrieval, no vector search.
+func (s *SessionStore) ListSessions(limit, offset int, q string) ([]SessionSummary, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	where := `WHERE discarded = 0`
+	args := []any{}
+	for _, tok := range strings.Fields(q) {
+		where += ` AND (title || ' ' || ifnull(keywords,'') || ' ' || intent || ' ' || ifnull(sub,'')) LIKE ?`
+		args = append(args, "%"+strings.ToLower(tok)+"%")
+	}
+	rows, err := s.db.Query(`SELECT id, intent, sub, title, keywords, stage, round, effective, updated_at
+		FROM ai_sessions `+where+` ORDER BY updated_at DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SessionSummary
+	for rows.Next() {
+		var it SessionSummary
+		var updated string
+		if err := rows.Scan(&it.ID, &it.Intent, &it.Sub, &it.Title, &it.Keywords, &it.Stage, &it.Round, &it.Effective, &updated); err != nil {
+			return nil, err
+		}
+		it.UpdatedAt, _ = time.Parse(time.RFC3339, updated)
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// migrateSessions adds columns introduced after the first release. Old rows
+// read back with zero-valued new fields.
+func migrateSessions(db *sql.DB) error {
+	cols := map[string]bool{}
+	rows, err := db.Query(`PRAGMA table_info(ai_sessions)`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		cols[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, c := range []struct{ name, decl string }{
+		{"title", `TEXT NOT NULL DEFAULT ''`},
+		{"keywords", `TEXT NOT NULL DEFAULT ''`},
+		{"effective", `INTEGER NOT NULL DEFAULT 0`},
+		{"discarded", `INTEGER NOT NULL DEFAULT 0`},
+	} {
+		if !cols[c.name] {
+			if _, err := db.Exec(`ALTER TABLE ai_sessions ADD COLUMN ` + c.name + ` ` + c.decl); err != nil {
+				return fmt.Errorf("migrate ai_sessions add %s: %w", c.name, err)
+			}
+		}
+	}
+	return nil
 }

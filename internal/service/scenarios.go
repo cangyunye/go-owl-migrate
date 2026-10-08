@@ -215,14 +215,19 @@ func tablesField() Field {
 	return Field{Name: "tables", Label: "迁移的表", Type: "text", Default: "*", Help: "逗号分隔多个表名，* 表示全部"}
 }
 func metaType() Field {
-	return Field{Name: "metadata_type", Label: "元数据来源", Type: "select", Options: []string{"csv", "xlsx", "database"}, Default: "csv", Required: true}
+	// 默认 database：意图驱动的迁移是"连上源库就抽取"，csv/xlsx 是离线导入
+	// 的高级选项——让用户先回答实现细节会把样例元数据误配到真实源库上。
+	return Field{Name: "metadata_type", Label: "元数据来源", Type: "select", Options: []string{"csv", "xlsx", "database"}, Default: "database", Required: true,
+		Help: "选 database 则从下方源库实时抽取表结构；csv/xlsx 用于离线元数据导入"}
 }
 func schemaMappingField() Field {
 	return Field{Name: "schema_mapping", Label: "Schema 映射", Type: "text",
 		Help: "源 schema 重命名到目标 schema，格式 源:目标，多个用逗号分隔，如 SCOTT:public,HR:hr。留空则不改名"}
 }
 func csvPath() Field {
-	return Field{Name: "csv_path", Label: "CSV 元数据目录", Type: "text", Default: "./testdata/csv/", ShowWhen: &FieldCond{Field: "metadata_type", Value: "csv"}}
+	return Field{Name: "csv_path", Label: "CSV 元数据目录", Type: "text", Default: "",
+		Help: "注意：仓库自带的 ./testdata/csv/ 是 SCOTT(Oracle) 演示元数据，与 MySQL 等其他源不一致，预检会拦截",
+		ShowWhen: &FieldCond{Field: "metadata_type", Value: "csv"}}
 }
 func xlsxPath() Field {
 	return Field{Name: "xlsx_path", Label: "XLSX 文件路径", Type: "text", Default: "./metadata/schema.xlsx", ShowWhen: &FieldCond{Field: "metadata_type", Value: "xlsx"}}

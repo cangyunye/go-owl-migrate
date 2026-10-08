@@ -57,5 +57,7 @@ func New(cfg Config) (*zap.Logger, error) {
 	}
 
 	core := zapcore.NewCore(encoder, writeSyncer, level)
-	return zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel)), nil
+	// No zap.AddCaller: caller file:line is noise in CLI output; the console
+	// format carries the step banners and human progress lines instead.
+	return zap.New(core, zap.AddStacktrace(zapcore.ErrorLevel)), nil
 }

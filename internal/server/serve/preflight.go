@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cangyunye/go-owl-migrate/internal/metadata"
+	"github.com/cangyunye/go-owl-migrate/internal/plancheck"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -60,6 +61,22 @@ func (s *Server) handleMigratePreflight(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	add("源库/元数据", true, fmt.Sprintf("可读取，表清单命中 %d 张（源里共 %d 张）", len(matched), len(allTables)))
+
+	// 计划级共享检查（与 `owl-migrate preflight` / migrate Step 2 同一套实现）：
+	// 离线元数据的表在源库上是否可读、schema_mapping 覆盖率。
+	for _, c := range []plancheck.Check{
+		plancheck.CheckSourceTables(r.Context(), cfg, matched),
+		plancheck.CheckMappingCoverage(cfg, matched),
+	} {
+		add(c.Name, c.OK(), c.Detail)
+		if c.Status == plancheck.StatusWarn {
+			warnings = append(warnings, c.Name+"："+c.Detail)
+		}
+		if !c.OK() {
+			finish(false, warnings)
+			return
+		}
+	}
 
 	// 条件导出预检：filters 非空时对每张命中表跑条件 COUNT——把语法/列名/
 	// 权限错误在预检阶段暴露（与 worker 侧门禁同一判定），并给出源侧预期行数。
@@ -136,6 +153,13 @@ func (s *Server) handleMigratePreflight(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	add("目标库", true, fmt.Sprintf("%s 连接正常（%d ms）", cfg.Target.Type, time.Since(start).Milliseconds()))
+
+	// 目标建表权限探针（与 CLI 同一实现；失败是警告级，不阻塞预检但会点名）。
+	ddl := plancheck.CheckTargetDDL(r.Context(), cfg, db)
+	add(ddl.Name, ddl.OK(), ddl.Detail)
+	if ddl.Status == plancheck.StatusWarn {
+		warnings = append(warnings, ddl.Name+"："+ddl.Detail)
+	}
 
 	finish(true, warnings)
 }

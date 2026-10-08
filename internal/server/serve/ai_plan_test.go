@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/cangyunye/go-owl-migrate/internal/configbuild"
 )
 
 // seqVendor returns a vendor whose replies come from a scripted list, so a
@@ -98,18 +100,19 @@ func TestAIPlanHappyPath(t *testing.T) {
 	}
 
 	var resp struct {
-		OK          bool   `json:"ok"`
-		SessionID   string `json:"session_id"`
-		PlanID      string `json:"plan_id"`
-		Engine      string `json:"engine"`
-		YAML        string `json:"yaml"`
-		RepairRounds int   `json:"repair_rounds"`
-		Continuity  map[string]any `json:"continuity"`
-		Session     struct {
-			Stage string `json:"stage"`
+		OK           bool           `json:"ok"`
+		SessionID    string         `json:"session_id"`
+		PlanID       string         `json:"plan_id"`
+		Engine       string         `json:"engine"`
+		YAML         string         `json:"yaml"`
+		RepairRounds int            `json:"repair_rounds"`
+		Continuity   map[string]any `json:"continuity"`
+		Session      struct {
+			Stage string            `json:"stage"`
 			Slots map[string]string `json:"slots"`
 		} `json:"session"`
-		Warnings []string `json:"warnings"`
+		CredentialSlots []string `json:"credential_slots"`
+		Warnings        []string `json:"warnings"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -133,8 +136,16 @@ func TestAIPlanHappyPath(t *testing.T) {
 	if !strings.Contains(resp.YAML, "__PWD_mysql__") {
 		t.Errorf("yaml should keep the credential sentinel: %s", resp.YAML)
 	}
-	if len(resp.Warnings) == 0 || !strings.Contains(resp.Warnings[0], "__PWD_mysql__") {
-		t.Errorf("warnings should name the sentinel: %v", resp.Warnings)
+	// 哨兵走专用 credential_slots 字段（前端据此渲染密码输入框）；
+	// warnings 只放能力告警，不再混入哨兵名。
+	if len(resp.CredentialSlots) == 0 || resp.CredentialSlots[0] != "__PWD_mysql__" {
+		t.Errorf("credential_slots should name the sentinel: %v", resp.CredentialSlots)
+	}
+	for _, w := range resp.Warnings {
+		if strings.Contains(w, "__PWD_") {
+			t.Errorf("warnings must not carry sentinels: %v", resp.Warnings)
+			break
+		}
 	}
 	if resp.Continuity["mode"] != "new" {
 		t.Errorf("continuity = %v", resp.Continuity)
@@ -407,5 +418,113 @@ func TestAIPlanConfirmUnknownPlan(t *testing.T) {
 		`{"session_id":"s-none","plan_id":"p-none","execute":false}`)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+// TestFriendlyClarify: builder slot errors ("source.host is required for
+// oracle (or provide source.dsn verbatim)") must surface as a Chinese
+// follow-up question with per-item guidance, not raw internal text.
+func TestFriendlyClarify(t *testing.T) {
+	reason, missing := friendlyClarify(
+		"incomplete slots: source.host is required for oracle (or provide source.dsn verbatim)")
+	if reason != "信息不足以生成配置。" {
+		t.Errorf("reason = %q", reason)
+	}
+	if len(missing) != 1 || missing[0] != "源库 连接地址（host，或直接给完整 DSN）" {
+		t.Errorf("missing = %v", missing)
+	}
+
+	_, missing = friendlyClarify("incomplete slots: target.database is required for mysql")
+	if len(missing) != 1 || missing[0] != "目标库 库名/服务名" {
+		t.Errorf("target.database missing = %v", missing)
+	}
+
+	_, missing = friendlyClarify("incomplete slots: source.database is required for sqlite3 (file path)")
+	if len(missing) != 1 || missing[0] != "源库 数据库文件路径" {
+		t.Errorf("embedded missing = %v", missing)
+	}
+
+	// Unrecognized message falls back to raw text (no info lost).
+	raw := "incomplete slots: something.else is off"
+	reason, missing = friendlyClarify(raw)
+	if len(missing) != 0 || reason != "信息不足以生成配置："+raw {
+		t.Errorf("fallback: reason=%q missing=%v", reason, missing)
+	}
+}
+
+// ── Step 2 红测试：关键词提取 ──
+
+// TestDeriveKeywords: SlotRequest → 小写去重词表（scenario/metadata/端点类型/
+// 档案/schema/格式/filters 键），供会话历史做确定性检索。
+func TestDeriveKeywords(t *testing.T) {
+	req := `{"scenario":"export","metadata":"database",
+	  "source":{"type":"oracle","profile":"scott-xe","schema":"SCOTT"},
+	  "target":{"type":"mysql","schema":"app"},
+	  "export":{"format":"csv","filters":{"SCOTT.EMP":"deptno=20"}}}`
+	var sr configbuild.SlotRequest
+	if err := json.Unmarshal([]byte(req), &sr); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	kw := deriveKeywords(&sr)
+	want := map[string]bool{
+		"export": false, "database": false, "oracle": false, "scott-xe": false,
+		"scott": false, "mysql": false, "app": false, "csv": false, "scott.emp": false,
+	}
+	for _, k := range kw {
+		if _, ok := want[k]; !ok {
+			t.Errorf("unexpected keyword %q", k)
+			continue
+		}
+		want[k] = true
+	}
+	for k, seen := range want {
+		if !seen {
+			t.Errorf("keyword %q missing from %v", k, kw)
+		}
+	}
+	// 空槽位不炸
+	if kw := deriveKeywords(&configbuild.SlotRequest{}); len(kw) != 0 {
+		t.Errorf("empty slots keywords = %v", kw)
+	}
+}
+
+// TestPlanPersistsTitleKeywords: a full plan flow persists the display title
+// (first utterance, truncated) and the derived keyword list on the session.
+func TestPlanPersistsTitleKeywords(t *testing.T) {
+	vendor, _, _ := seqVendor(t, []string{
+		`{"route":"export-data","sub":"format:csv","confidence":"high","missing_slots":[],"out_of_scope":false,"needs_clarify":false,"reason":"导出意图"}`,
+		`{"scenario":"export","metadata":"database","source":{"type":"oracle","host":"127.0.0.1","port":"1521","user":"scott","password":"__PWD_oracle__","database":"XEPDB1","schema":"SCOTT"},"export":{"format":"csv"}}`,
+	})
+	srv := newTestServer(t)
+	t.Setenv("OWL_AI_API_KEY", "test-key")
+	srv.cfg.AI.BaseURL = vendor.URL
+	srv.cfg.AI.ApplyDefaults()
+
+	long := strings.Repeat("导出甲骨文库里scott方案全部表", 10)
+	w := doJSON(t, srv, "POST", "/api/v1/ai/plan",
+		`{"utterance":"`+long+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("plan status = %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		SessionID string `json:"session_id"`
+		Session   struct {
+			Title    string `json:"title"`
+			Keywords string `json:"keywords"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Session.Title == "" {
+		t.Fatal("title not persisted")
+	}
+	if got := []rune(resp.Session.Title); len(got) > 49+1 { // 48 + ellipsis
+		t.Errorf("title not truncated: %d runes", len(got))
+	}
+	for _, kw := range []string{"export", "database", "oracle", "scott", "csv"} {
+		if !strings.Contains(resp.Session.Keywords, kw) {
+			t.Errorf("keywords %q missing %q", resp.Session.Keywords, kw)
+		}
 	}
 }

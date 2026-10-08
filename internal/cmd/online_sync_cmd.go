@@ -132,11 +132,11 @@ func (e *syncEngine) syncOnce(ctx context.Context) error {
 func (e *syncEngine) syncFileBatch(ctx context.Context, tables []*md.TableDef) error {
 	srcDB, err := openDB(e.cfg.Source)
 	if err != nil {
-		return fmt.Errorf("connect source: %w", err)
+		return connFailure("connect", "source", e.cfg.Source, err)
 	}
 	defer srcDB.Close()
 	if err := srcDB.PingContext(ctx); err != nil {
-		return fmt.Errorf("ping source: %w", err)
+		return connFailure("ping", "source", e.cfg.Source, err)
 	}
 
 	quoter := e.adapter.Quoter()

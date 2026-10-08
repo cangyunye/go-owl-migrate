@@ -56,18 +56,22 @@ func (s *FlexString) UnmarshalJSON(b []byte) error {
 }
 
 // EndpointSlots is one database endpoint. Either DSN (verbatim) or the parts
-// (host/port/user/password/database) — DSN wins when present.
+// (host/port/user/password/database) — DSN wins when present. Profile names a
+// stored datasource profile: the server resolves it to a DSN server-side
+// (password stays sentinel-protocol), so the LLM never invents connection
+// facts the user already saved.
 type EndpointSlots struct {
 	Type       string     `json:"type"`
+	Profile    string     `json:"profile,omitempty"`
 	Host       string     `json:"host,omitempty"`
 	Port       FlexString `json:"port,omitempty"`
-	User       string `json:"user,omitempty"`
-	Password   string `json:"password,omitempty"`
-	Database   string `json:"database,omitempty"` // service/db 名；sqlite3/duckdb 为文件路径
-	Schema     string `json:"schema,omitempty"`
-	DSN        string `json:"dsn,omitempty"`
-	Channel    string `json:"channel,omitempty"`     // native|agent|auto
-	CompatMode string `json:"compat_mode,omitempty"` // OceanBase 租户模式: mysql|oracle
+	User       string     `json:"user,omitempty"`
+	Password   string     `json:"password,omitempty"`
+	Database   string     `json:"database,omitempty"` // service/db 名；sqlite3/duckdb 为文件路径
+	Schema     string     `json:"schema,omitempty"`
+	DSN        string     `json:"dsn,omitempty"`
+	Channel    string     `json:"channel,omitempty"`     // native|agent|auto
+	CompatMode string     `json:"compat_mode,omitempty"` // OceanBase 租户模式: mysql|oracle
 }
 
 type ExportSlots struct {

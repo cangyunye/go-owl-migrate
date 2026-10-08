@@ -24,6 +24,46 @@ permissions:
   contents: write # release job publishes binaries
 
 jobs:
+  # Test gate for every push/PR. The build matrix below is a cross-compile
+  # smoke test and never runs go test, so without this job nothing guards
+  # the suite. The sqlite3 pass needs CGO (mattn/go-sqlite3) — preinstalled
+  # gcc on the runner is enough; duckdb is heavier and stays local
+  # (`task test/full`).
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+
+      # The serve package go:embeds web/docsite/ (gitignored staging) —
+      # ./... does not compile without it.
+      - name: Stage docs portal for go:embed
+        run: |
+          set -euo pipefail
+          rm -rf web/docsite
+          mkdir -p web/docsite/docs
+          cp docs-site/index.html web/docsite/
+          cp -R docs-site/vendor web/docsite/vendor
+          cp docs/*.md web/docsite/docs/
+
+      - name: Test (default tags)
+        run: |
+          set -euo pipefail
+          go test ./...
+          cd owljdbc && go test ./...
+
+      - name: Test (sqlite3 dialect, CGo)
+        env:
+          CGO_ENABLED: "1"
+        run: go test -tags sqlite3 ./...
+
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
     runs-on: ubuntu-latest
@@ -69,7 +109,7 @@ jobs:
           cp docs/*.md web/docsite/docs/
 
       # Tag build -> version from the tag (v0.4.0 -> 0.4.0); otherwise fall
-      # back to the version hardcoded in internal/cmd/root.go.
+      # back to the version hardcoded in internal/buildinfo.
       - name: Resolve version
         id: version
         run: |
@@ -77,7 +117,7 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
-            v="$(sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/cmd/root.go | head -n1)"
+            v="$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/buildinfo/buildinfo.go | head -n1)"
             echo "version=${v:-dev}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -96,9 +136,9 @@ jobs:
           # Single-quoted -X values keep the space in buildTime intact through
           # the double-quoted -ldflags argument (same trick as the Makefile).
           ldflags="-s -w \
-            -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.version=${{ steps.version.outputs.version }}' \
-            -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.commitID=${commit}' \
-            -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime=${build_time}'"
+            -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Version=${{ steps.version.outputs.version }}' \
+            -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Commit=${commit}' \
+            -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Date=${build_time}'"
           # Product dialects (pure Go) are part of the published flavor so a
           # downloaded binary can reach OceanBase/openGaussDB/PanWeiDB/GoldenDB
           # without a rebuild.
@@ -130,7 +170,7 @@ jobs:
   release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts

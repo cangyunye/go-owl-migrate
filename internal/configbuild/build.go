@@ -107,10 +107,15 @@ func BuildScenarioConfig(scenario, srcType, srcDSN, srcSchema, tgtType, tgtDSN, 
 			},
 		}
 	case "export-metadata":
+		// ddl.target_dialect is unconditional in config.Load, so it must be
+		// set even though metadata export generates no DDL; inherit the
+		// source dialect (the documented fallback) instead of failing
+		// validation on a freshly generated config.
 		return &config.Config{
 			General:  config.GeneralConfig{LogLevel: "info"},
 			Metadata: config.MetadataConfig{Type: "database"},
 			Source:   config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema},
+			DDL:      config.DDLConfig{TargetDialect: srcType},
 		}
 	default:
 		return BuildMigrateConfig(srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema)

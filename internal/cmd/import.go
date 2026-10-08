@@ -28,6 +28,11 @@ func importCmd() *cobra.Command {
 		Use:   "import",
 		Short: "Import CSV files into target database",
 		Long:  `Reads CSV data files and inserts rows into the target database using batched INSERT with transaction control.`,
+		Example: `  # Import CSVs from import.source_dir using ./migrate.yaml
+  owl-migrate import
+
+  # Only two tables
+  owl-migrate import --tables SCOTT.EMP,SCOTT.DEPT`,
 	}
 
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
@@ -62,14 +67,14 @@ func importCmd() *cobra.Command {
 
 		db, err := openDB(cfg.Target)
 		if err != nil {
-			return fmt.Errorf("connect to target: %w", err)
+			return connFailure("connect", "target", cfg.Target, err)
 		}
 		defer db.Close()
 
 		pingCtx, pingCancel := context.WithTimeout(context.Background(), connectTimeout(cfg.Target))
 		if err := db.PingContext(pingCtx); err != nil {
 			pingCancel()
-			return fmt.Errorf("ping target: %w", err)
+			return connFailure("ping", "target", cfg.Target, err)
 		}
 		pingCancel()
 		fmt.Printf("Connected to %s\n", cfg.Target.Type)

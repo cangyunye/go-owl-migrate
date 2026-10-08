@@ -24,3 +24,28 @@ func TestMaskDSN(t *testing.T) {
 		})
 	}
 }
+
+// TestReplaceDSNPassword: the plan protocol swaps a profile DSN's password
+// for a sentinel — the swap must hit both recognized DSN shapes and never
+// corrupt unrecognized ones.
+func TestReplaceDSNPassword(t *testing.T) {
+	cases := []struct {
+		name, dsn, repl, want string
+	}{
+		{"url-form", "oracle://scott:tiger@127.0.0.1:1521/XEPDB1", "__PWD_oracle__", "oracle://scott:__PWD_oracle__@127.0.0.1:1521/XEPDB1"},
+		{"mysql-native", "root:root123456@tcp(127.0.0.1:3306)/shop", "__PWD_mysql__", "root:__PWD_mysql__@tcp(127.0.0.1:3306)/shop"},
+	}
+	for _, c := range cases {
+		if got := ReplaceDSNPassword(c.dsn, c.repl); got != c.want {
+			t.Errorf("%s: ReplaceDSNPassword(%q) = %q, want %q", c.name, c.dsn, got, c.want)
+		}
+	}
+	// Unrecognized shape must be returned unchanged (fail-closed handled by callers).
+	opaque := "some opaque dsn string"
+	if got := ReplaceDSNPassword(opaque, "__PWD_x__"); got != opaque {
+		t.Errorf("opaque DSN must be unchanged, got %q", got)
+	}
+	if got := ReplaceDSNPassword("", "x"); got != "" {
+		t.Errorf("empty DSN = %q", got)
+	}
+}

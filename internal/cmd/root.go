@@ -8,16 +8,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cangyunye/go-owl-migrate/internal/buildinfo"
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/paths"
 )
 
 var (
-	cfgFile   string
-	logLevel  string
-	version   = "0.7.0"
-	commitID  = "unknown"
-	buildTime = "unknown"
+	cfgFile  string
+	logLevel string
 
 	progressDB string
 	jobID      string
@@ -35,8 +33,10 @@ Supported dialects: oracle, postgres, mysql — plus the product dialects
 compiled into this build (run 'owl-migrate version' to list them).
 Supported metadata sources: csv, xlsx, database
 
-Config resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml`,
-	Version:       versionString(),
+Config resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml
+
+A commented example covering all sections: configs/migrate.example.yaml`,
+	Version:       buildinfo.String(),
 	SilenceErrors: true, // Execute() prints the error exactly once
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		cfgFile = paths.ResolveConfigPath(cfgFile)
@@ -56,13 +56,7 @@ func Execute() {
 	}
 }
 
-// versionString keeps --version short when built without ldflags metadata.
-func versionString() string {
-	if commitID == "unknown" && buildTime == "unknown" {
-		return version
-	}
-	return fmt.Sprintf("%s (commit: %s, built: %s)", version, commitID, buildTime)
-}
+// versionString was folded into buildinfo.String (shared with the web server).
 
 // loadConfigFile loads the resolved config file. Commands that can run without
 // a config (offline flag-driven modes) pass lenient=true: a missing file then
@@ -79,6 +73,7 @@ func loadConfigFile(lenient bool) (*config.Config, error) {
 		}
 		return nil, fmt.Errorf("config file not found: %s\n"+
 			"  run 'owl-migrate init' to generate one, or pass -c <path>\n"+
+			"  a fully commented template ships with the repo: configs/migrate.example.yaml\n"+
 			"  (resolution order: -c flag > ./migrate.yaml > $OWL_MIGRATE_CONFIG > ~/.owl/migrate/migrate.yaml)",
 			cfgFile)
 	}
@@ -110,4 +105,5 @@ func init() {
 	rootCmd.AddCommand(exportMetadataCmd())
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(onlineCmd())
+	rootCmd.AddCommand(preflightCmd())
 }

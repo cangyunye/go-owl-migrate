@@ -21,11 +21,12 @@ vars:
   MAIN_PATH: ./cmd/migrate/main.go
   BUILD_DIR: build
 
-  # Version is read from internal/cmd/root.go so it never drifts from the
-  # compiled-in value (the Makefile hardcoded this and could get out of sync).
+  # Version is read from internal/buildinfo/buildinfo.go so it never drifts
+  # from the compiled-in value (the Makefile hardcoded this and could get out
+  # of sync).
   VERSION:
     sh: |
-      sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/cmd/root.go | head -n1
+      sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/buildinfo/buildinfo.go | head -n1
   COMMIT_ID:
     sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
   BUILD_TIME:
@@ -35,9 +36,9 @@ vars:
   # double-quoted -ldflags argument (same trick the Makefile used).
   LDFLAGS: >-
     -s -w
-    -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.version={{.VERSION}}'
-    -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.commitID={{.COMMIT_ID}}'
-    -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime={{.BUILD_TIME}}'
+    -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Version={{.VERSION}}'
+    -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Commit={{.COMMIT_ID}}'
+    -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Date={{.BUILD_TIME}}'
 
 # Build tags for optional dialects:
 #   ob         — OceanBase (MySQL/Oracle mode)
@@ -258,6 +259,16 @@ tasks:
     cmds:
       - go test ./...
 
+  # Coverage profile over the default (no-tag) suite: writes coverage.out
+  # (gitignored) and prints the statement total. Browse with:
+  #   go tool cover -html=coverage.out
+  coverage:
+    desc: Test with coverage profile (coverage.out + total summary)
+    cmds:
+      - go test -coverprofile=coverage.out -coverpkg=./... ./...
+      - go tool cover -func=coverage.out | tail -1
+      - cd owljdbc && go test ./...
+
   # One-command web UI test flow: ensure Playwright browsers (via fast mirror) →
   # build + start a local serve server → run the web test command.
   #
@@ -308,6 +319,14 @@ tasks:
             print("OK  ", path)
         print("smoke test passed")
         '{{end}}
+
+  # AI 对话页 Playwright 验收：mock vendor + 隔离 serve + 预置档案 + 场景 A-N。
+  # 细节见 scripts/acceptance/run_aichat_acceptance.sh。
+  web-aichat:
+    desc: Run AI chat acceptance scenarios (headless browser)
+    deps: [build]
+    cmds:
+      - bash scripts/acceptance/run_aichat_acceptance.sh 18095
 
   fmt:
     desc: Format all Go source files

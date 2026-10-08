@@ -7,7 +7,7 @@ GO := go
 
 COMMIT_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME := $(shell date "+%Y-%m-%d %H:%M:%S")
-LDFLAGS := -ldflags "-s -w -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.version=0.7.0' -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.commitID=$(COMMIT_ID)' -X 'github.com/cangyunye/go-owl-migrate/internal/cmd.buildTime=$(BUILD_TIME)'"
+LDFLAGS := -ldflags "-s -w -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Version=0.7.0' -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Commit=$(COMMIT_ID)' -X 'github.com/cangyunye/go-owl-migrate/internal/buildinfo.Date=$(BUILD_TIME)'"
 
 .PHONY: build test lint fmt deps clean run web/docsite
 
@@ -141,6 +141,14 @@ test/e2e:
 
 test-quick:
 	$(GO) test ./...
+	cd owljdbc && $(GO) test ./...
+
+# Coverage profile over the default (no-tag) suite: writes coverage.out
+# (gitignored) and prints the statement total. Browse with:
+#   go tool cover -html=coverage.out
+coverage:
+	$(GO) test -coverprofile=coverage.out -coverpkg=./... ./...
+	$(GO) tool cover -func=coverage.out | tail -1
 	cd owljdbc && $(GO) test ./...
 
 fmt:

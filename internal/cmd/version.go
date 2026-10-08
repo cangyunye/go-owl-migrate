@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/cangyunye/go-owl-migrate/internal/buildinfo"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
@@ -22,9 +23,9 @@ func versionCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			w := cmd.OutOrStdout()
-			fmt.Fprintf(w, "owl-migrate %s\n", version)
-			fmt.Fprintf(w, "  commit:       %s\n", commitID)
-			fmt.Fprintf(w, "  built:        %s\n", buildTime)
+			fmt.Fprintf(w, "owl-migrate %s\n", buildinfo.String())
+			fmt.Fprintf(w, "  commit:       %s\n", buildinfo.Commit)
+			fmt.Fprintf(w, "  built:        %s\n", buildinfo.Date)
 			fmt.Fprintf(w, "  drivers:      %s\n", strings.Join(linkedDrivers(), ", "))
 			fmt.Fprintf(w, "  dialects:     %s\n", strings.Join(registry.Names(), ", "))
 			if missing := missingDrivers(); len(missing) > 0 {

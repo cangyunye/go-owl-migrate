@@ -98,3 +98,31 @@ _Avoid_: feature
 | Function | SchemaModel.allFunctions | `BuildCreateFunction` | ✅ | ✅ | ✅ | — |
 | Package spec | SchemaModel.allPackages | `BuildCreatePackage` | — | ✅ | — | — |
 | Package body | SchemaModel.allPackageBodies | `BuildCreatePackageBody` | — | ✅ | — | — |
+
+## AI Conversation
+
+### Session (AI)
+One intent thread of conversation with the AI assistant. 1:1 with a "chat" in the UI — an intent change forks a NEW session via slot inheritance (CloneForRound); history does not replay, facts carry forward. Stored server-side (SQLite, 30-day TTL); the browser holds only the session id.
+_Avoid_: 对话线程、chat thread
+
+### Effective Session
+A session whose plan was confirmed with execution and whose job successfully LAUNCHED. Marked permanently at launch; a later job failure (environment problem) does not revoke it. Only effective sessions are the retrieval/reuse targets of history search. Activate-only confirms do NOT mark.
+_Avoid_: 成功会话（含糊：任务完成≠有效判定时机）
+
+### Discarded Session
+A session discarded when it forks and it never became effective — it produced no runnable task, so it is useless for retrieval and reuse. Discarded sessions are excluded from the default history list.
+_Avoid_: 删除（不落库，只标记）
+
+### Keyword (Session)
+Space-separated lowercase retrieval terms derived deterministically from the first successful slot extraction (scenario, dialects, profiles, schemas, format, filter patterns). History search matches every token (AND, case-insensitive) against title/keywords/intent/sub — no vector search.
+_Avoid_: 标签、tags
+
+### Datasource Profile
+An operator-saved, connection-tested database profile with the password encrypted at rest (vault). The AI quotes profiles as connection facts — never invents them; the chat page's source/target selectors force a default profile that explicit utterances may override. Profile-resolved plans prompt no password.
+_Avoid_: 连接串、DSN 档案
+
+### Facts (AI)
+Connection/config facts the assistant already holds: datasource profiles, the active config summary, and session slot inheritance. Displayed as 已引用/核对单 so the user can see what the AI used instead of inventing.
+
+### Clarify Items
+Structured follow-up questions with clickable options (chips) produced deterministically from missing-slot hints; known forks (内容/格式) get fixed options, connection gaps list saved profiles, unknown gaps fall back to free text. Information is complete when the deterministic slot validation passes — not when an LLM feels confident.

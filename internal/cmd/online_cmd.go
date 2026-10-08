@@ -158,11 +158,11 @@ func runOnlineInit(ctx context.Context, cfg *config.Config) error {
 func applyOnlineDDL(ctx context.Context, cfg *config.Config, block string) error {
 	db, err := openDB(cfg.Source)
 	if err != nil {
-		return fmt.Errorf("connect source: %w", err)
+		return connFailure("connect", "source", cfg.Source, err)
 	}
 	defer db.Close()
 	if err := db.PingContext(ctx); err != nil {
-		return fmt.Errorf("ping source: %w", err)
+		return connFailure("ping", "source", cfg.Source, err)
 	}
 	for _, stmt := range cdc.SplitSQLStatements(block) {
 		if strings.TrimSpace(stmt) == "" {

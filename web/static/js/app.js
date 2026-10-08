@@ -174,6 +174,16 @@ async function renderConfigBar() {
 }
 renderConfigBar();
 
+/* ── sidebar version badge: live backend version, no hardcoded drift ── */
+(async function renderSidebarVersion() {
+    const el = document.getElementById('sidebar-ver');
+    if (!el) return;
+    try {
+        const v = await api.get('/api/v1/version');
+        if (v && v.version) el.textContent = 'v' + v.version + ' · console';
+    } catch (e) { /* keep the bare placeholder on older backends */ }
+})();
+
 /* ── sidebar collapse + theme toggle wiring ──────────────── */
 (function () {
     const btn = document.getElementById('collapse-btn');

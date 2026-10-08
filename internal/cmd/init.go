@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"encoding/json"
-	"io"
 	"bufio"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -14,8 +15,9 @@ import (
 
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/configbuild"
-	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
+	"github.com/cangyunye/go-owl-migrate/internal/service"
+	"github.com/cangyunye/go-owl-migrate/internal/transfer/exporter"
 )
 
 func initCmd() *cobra.Command {
@@ -31,7 +33,9 @@ func initCmd() *cobra.Command {
 		scenario     string
 		slotsFile    string
 		printOut     bool
+		force        bool
 	)
+	initForce = false
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -52,9 +56,24 @@ Use --scenario to control which sections appear in the generated config:
   export          — data export only
   import          — data import only
   export-metadata — metadata export only`,
+		Example: `  # Interactive wizard
+  owl-migrate init
+
+  # End-to-end migration config, fully non-interactive
+  owl-migrate init --scenario migrate -s oracle --source-dsn "oracle://scott:tiger@db1:1521/ORCLPDB1" \
+    --source-schema SCOTT -t oceanbase-oracle --target-dsn "oracle://root@tenant#cluster:pw@ob1:2883/scott" \
+    --target-schema SCOTT -o ./migrate.yaml
+
+  # DDL dump from a live MySQL, keeping the source dialect
+  owl-migrate init --scenario export-ddl -m database -s mysql \
+    --source-dsn "user:pw@tcp(127.0.0.1:3306)/shop" --source-schema shop
+
+  # Machine-readable slot pipeline (AI tools / scripts)
+  echo '{"action":"migrate","source":{"type":"mysql","dsn":"...","schema":"shop"}}' | owl-migrate init --slots - --print`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			hasTarget := cmd.Flags().Changed("target-type")
 			hasScenario := cmd.Flags().Changed("scenario")
+			initForce = force
 
 			// ── 槽位 JSON 模式（AI 工具/脚本的一等入口） ──
 			// 结构化 SlotRequest → configbuild.BuildFromSlots 确定性组装，
@@ -134,15 +153,24 @@ Use --scenario to control which sections appear in the generated config:
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "./migrate.yaml", "output configuration file path")
 	cmd.Flags().StringVarP(&metadataType, "metadata-type", "m", "database", "metadata source: csv, xlsx, or database")
 	cmd.Flags().StringVarP(&scenario, "scenario", "S", "migrate", "config scenario: export-ddl (alias gen-ddl), export-insert (alias gen-insert), gen-select, export, import, migrate, export-metadata, validate, full")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite the output file without prompting when it already exists")
 
 	return cmd
 }
+
+// initForce mirrors the init command's --force flag for writeConfig's
+// overwrite gate (set in initCmd's RunE).
+var initForce bool
 
 // ── Interactive mode ──
 
 // runScenarioInteractive enters the interactive flow for a pre-selected scenario,
 // skipping the "What do you want to do?" prompt.
 func runScenarioInteractive(r *bufio.Reader, scenario, outputPath string) error {
+	return wrapEOFErr(scenarioInteractive(r, scenario, outputPath))
+}
+
+func scenarioInteractive(r *bufio.Reader, scenario, outputPath string) error {
 	switch strings.ToLower(scenario) {
 	case "export-insert", "gen-insert":
 		return interactiveGenInsert(r, outputPath)
@@ -163,18 +191,49 @@ func runScenarioInteractive(r *bufio.Reader, scenario, outputPath string) error 
 	}
 }
 
-func ask(r *bufio.Reader, prompt, def string) string {
+// errEOFInteractive means stdin ended (EOF with no pending line) mid-wizard.
+// Returning it — instead of silently applying defaults or looping forever —
+// keeps piped/CI invocations from producing a half-answered config.
+var errEOFInteractive = errors.New("stdin closed")
+
+// wrapEOFErr turns the bare EOF sentinel into an actionable message at the
+// wizard entry points.
+func wrapEOFErr(err error) error {
+	if !errors.Is(err, errEOFInteractive) {
+		return err
+	}
+	return fmt.Errorf("stdin closed before the wizard finished (non-interactive environment)\n" +
+		"  use the all-flags non-interactive mode instead, e.g.:\n" +
+		"    owl-migrate init --scenario migrate --source-type oracle --source-dsn \"...\" --source-schema SCOTT --target-type postgres -o ./migrate.yaml\n" +
+		"  run 'owl-migrate init --help' for every supported flag")
+}
+
+// readLine reads one trimmed line. A last line without a trailing newline is
+// still processed (ReadString reports text + io.EOF together); only "no text
+// AND stream ended" aborts.
+func readLine(r *bufio.Reader) (string, error) {
+	text, err := r.ReadString('\n')
+	text = strings.TrimSpace(text)
+	if text == "" && err != nil {
+		return "", errEOFInteractive
+	}
+	return text, nil
+}
+
+func ask(r *bufio.Reader, prompt, def string) (string, error) {
 	if def != "" {
 		fmt.Printf("%s (default: %s): ", prompt, def)
 	} else {
 		fmt.Printf("%s: ", prompt)
 	}
-	text, _ := r.ReadString('\n')
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return def
+	text, err := readLine(r)
+	if err != nil {
+		return "", err
 	}
-	return text
+	if text == "" {
+		return def, nil
+	}
+	return text, nil
 }
 
 // dsnExample returns an example DSN for the given dialect to show as input hint.
@@ -231,7 +290,7 @@ func scenarioTargetDefaultable(scenario, metaType, srcType, srcDSN, srcSchema st
 }
 
 // askDSN prompts for a DSN, showing a dialect-specific example as hint.
-func askDSN(r *bufio.Reader, prompt, dialect, def string) string {
+func askDSN(r *bufio.Reader, prompt, dialect, def string) (string, error) {
 	if ex := dsnExample(dialect); ex != "" {
 		fmt.Printf("  # 格式示例: %s\n", ex)
 	}
@@ -239,9 +298,9 @@ func askDSN(r *bufio.Reader, prompt, dialect, def string) string {
 }
 
 // askSchema prompts for a schema name, with a note if the target is embedded.
-func askSchema(r *bufio.Reader, prompt, dialect, def string) string {
+func askSchema(r *bufio.Reader, prompt, dialect, def string) (string, error) {
 	if isEmbedded(dialect) {
-		return "" // schema ignored for embedded databases
+		return "", nil // schema ignored for embedded databases
 	}
 	return ask(r, prompt, def)
 }
@@ -257,11 +316,14 @@ func isEmbedded(dialect string) bool {
 }
 
 // askTables prompts for table names, returning all (*) if empty.
-func askTables(r *bufio.Reader, prompt string) []string {
-	answer := ask(r, prompt, "*")
+func askTables(r *bufio.Reader, prompt string) ([]string, error) {
+	answer, err := ask(r, prompt, "*")
+	if err != nil {
+		return nil, err
+	}
 	answer = strings.TrimSpace(answer)
 	if answer == "" || answer == "*" {
-		return []string{"*"}
+		return []string{"*"}, nil
 	}
 	var tables []string
 	for _, t := range strings.Split(answer, ",") {
@@ -270,10 +332,10 @@ func askTables(r *bufio.Reader, prompt string) []string {
 			tables = append(tables, t)
 		}
 	}
-	return tables
+	return tables, nil
 }
 
-func askChoice(r *bufio.Reader, prompt string, options []string, def string) string {
+func askChoice(r *bufio.Reader, prompt string, options []string, def string) (string, error) {
 	for {
 		fmt.Printf("%s\n  Options: %s\n", prompt, strings.Join(options, ", "))
 		p := ""
@@ -281,14 +343,17 @@ func askChoice(r *bufio.Reader, prompt string, options []string, def string) str
 			p = p + fmt.Sprintf(" (default: %s)", def)
 		}
 		fmt.Printf("  Enter%s: ", p)
-		text, _ := r.ReadString('\n')
-		text = strings.ToLower(strings.TrimSpace(text))
+		text, err := readLine(r)
+		if err != nil {
+			return "", err
+		}
+		text = strings.ToLower(text)
 		if text == "" && def != "" {
-			return def
+			return def, nil
 		}
 		for _, opt := range options {
 			if text == opt {
-				return opt
+				return opt, nil
 			}
 		}
 		fmt.Printf("  Invalid. Please enter one of: %s\n", strings.Join(options, ", "))
@@ -296,16 +361,22 @@ func askChoice(r *bufio.Reader, prompt string, options []string, def string) str
 }
 
 func runInteractive(outputPath string) error {
-	r := bufio.NewReader(os.Stdin)
+	err := interactiveMain(bufio.NewReader(os.Stdin), outputPath)
+	return wrapEOFErr(err)
+}
 
+func interactiveMain(r *bufio.Reader, outputPath string) error {
 	fmt.Println("What do you want to do?")
 	fmt.Println("  (export-ddl=DDL from metadata, export-insert=INSERT from CSV, export=export data to CSV/SQL/XLSX)")
 	fmt.Println("  (import=import CSV into DB, migrate=end-to-end, gen-select=paginated SELECT, export-metadata=metadata to CSV/xlsx/SQL)")
 	fmt.Println("  (validate=check config, full=all options with hints)")
-	action := askChoice(r, "", []string{
+	action, err := askChoice(r, "", []string{
 		"export-ddl", "export-insert", "export", "import", "migrate",
 		"export-metadata", "gen-select", "validate", "full",
 	}, "")
+	if err != nil {
+		return err
+	}
 
 	switch action {
 	case "export-insert":
@@ -328,8 +399,14 @@ func runInteractive(outputPath string) error {
 }
 
 func interactiveGenInsert(r *bufio.Reader, outputPath string) error {
-	mt := askChoice(r, "Data source type", []string{"csv", "xlsx"}, "csv")
-	dialect := askDialect(r, "Target database dialect", "postgres")
+	mt, err := askChoice(r, "Data source type", []string{"csv", "xlsx"}, "csv")
+	if err != nil {
+		return err
+	}
+	dialect, err := askDialect(r, "Target database dialect", "postgres")
+	if err != nil {
+		return err
+	}
 
 	cfg := &config.Config{
 		General: config.GeneralConfig{LogLevel: "info"},
@@ -343,10 +420,16 @@ func interactiveGenInsert(r *bufio.Reader, outputPath string) error {
 		// gen-insert (csv mode) reads data dir from CLI -d/--data flag,
 		// not from yaml; nothing else needed here.
 		cfg.Metadata = config.MetadataConfig{Type: "csv"}
-		_ = ask(r, "CSV data files directory (will be passed via -d flag)", "./output/data/")
+		fmt.Println("  # 提示: CSV 数据目录不写入配置，gen-insert 运行时用 -d/--data flag 传入（如 -d ./output/data/）")
 	case "xlsx":
-		xlsxPath := ask(r, "xlsx file path (with @sheet data sheets)", "./metadata/schema.xlsx")
-		dataOut := ask(r, "Directory for extracted CSV data files", "./output/data/")
+		xlsxPath, err := ask(r, "xlsx file path (with @sheet data sheets)", "./metadata/schema.xlsx")
+		if err != nil {
+			return err
+		}
+		dataOut, err := ask(r, "Directory for extracted CSV data files", "./output/data/")
+		if err != nil {
+			return err
+		}
 		cfg.Metadata = config.MetadataConfig{
 			Type: "xlsx",
 			XLSX: config.XLSXConfig{
@@ -360,19 +443,32 @@ func interactiveGenInsert(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
-	mt := askChoice(r, "Metadata source type", []string{"csv", "xlsx", "database"}, "csv")
+	mt, err := askChoice(r, "Metadata source type", []string{"csv", "xlsx", "database"}, "csv")
+	if err != nil {
+		return err
+	}
 
 	var srcType, srcDSN, srcSchema, csvPath, xlsxPath string
 
 	switch mt {
 	case "csv":
-		csvPath = ask(r, "CSV metadata directory", "./testdata/csv/")
+		if csvPath, err = ask(r, "CSV metadata directory", "./testdata/csv/"); err != nil {
+			return err
+		}
 	case "xlsx":
-		xlsxPath = ask(r, "xlsx schema file path", "./metadata/schema.xlsx")
+		if xlsxPath, err = ask(r, "xlsx schema file path", "./metadata/schema.xlsx"); err != nil {
+			return err
+		}
 	case "database":
-		srcType = askDialect(r, "Source database type", "")
-		srcDSN = askDSN(r, "Source database DSN", srcType, "")
-		srcSchema = askSchema(r, "Source schema name", srcType, "")
+		if srcType, err = askDialect(r, "Source database type", ""); err != nil {
+			return err
+		}
+		if srcDSN, err = askDSN(r, "Source database DSN", srcType, ""); err != nil {
+			return err
+		}
+		if srcSchema, err = askSchema(r, "Source schema name", srcType, ""); err != nil {
+			return err
+		}
 	}
 
 	// Target dialect defaults to the source type for live databases so a
@@ -381,17 +477,32 @@ func interactiveGenDDL(r *bufio.Reader, outputPath string) error {
 	if mt == "database" && srcType != "" {
 		tgtDefault = srcType
 	}
-	tgtType := askChoice(r, "Target database dialect", sortedDialectKeys(), tgtDefault)
+	tgtType, err := askChoice(r, "Target database dialect", sortedDialectKeys(), tgtDefault)
+	if err != nil {
+		return err
+	}
 
 	cfg := configbuild.BuildDDLConfig(mt, srcType, srcDSN, srcSchema, tgtType, csvPath, xlsxPath)
 	return writeConfig(cfg, outputPath)
 }
 
 func interactiveExport(r *bufio.Reader, outputPath string) error {
-	srcType := askDialect(r, "Source database type", "")
-	srcDSN := askDSN(r, "Source database DSN", srcType, "")
-	srcSchema := askSchema(r, "Source schema name", srcType, "")
-	tables := askTables(r, "Tables to migrate (comma-separated, or * for all)")
+	srcType, err := askDialect(r, "Source database type", "")
+	if err != nil {
+		return err
+	}
+	srcDSN, err := askDSN(r, "Source database DSN", srcType, "")
+	if err != nil {
+		return err
+	}
+	srcSchema, err := askSchema(r, "Source schema name", srcType, "")
+	if err != nil {
+		return err
+	}
+	tables, err := askTables(r, "Tables to migrate (comma-separated, or * for all)")
+	if err != nil {
+		return err
+	}
 
 	cfg := &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
@@ -420,10 +531,22 @@ func interactiveExport(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveImport(r *bufio.Reader, outputPath string) error {
-	dataDir := ask(r, "CSV data files directory", "./output/data/")
-	tgtType := askDialect(r, "Target database type", "")
-	tgtDSN := askDSN(r, "Target database DSN", tgtType, "")
-	tgtSchema := askSchema(r, "Target schema name", tgtType, "")
+	dataDir, err := ask(r, "CSV data files directory", "./output/data/")
+	if err != nil {
+		return err
+	}
+	tgtType, err := askDialect(r, "Target database type", "")
+	if err != nil {
+		return err
+	}
+	tgtDSN, err := askDSN(r, "Target database DSN", tgtType, "")
+	if err != nil {
+		return err
+	}
+	tgtSchema, err := askSchema(r, "Target schema name", tgtType, "")
+	if err != nil {
+		return err
+	}
 
 	cfg := &config.Config{
 		General:  config.GeneralConfig{LogLevel: "info"},
@@ -461,13 +584,34 @@ func interactiveImport(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveMigrate(r *bufio.Reader, outputPath string) error {
-	srcType := askDialect(r, "Source database type", "")
-	srcDSN := askDSN(r, "Source database DSN", srcType, "")
-	srcSchema := askSchema(r, "Source schema name", srcType, "")
-	tables := askTables(r, "Tables to migrate (comma-separated, or * for all)")
-	tgtType := askDialect(r, "Target database type", "")
-	tgtDSN := askDSN(r, "Target database DSN", tgtType, "")
-	tgtSchema := askSchema(r, "Target schema name", tgtType, "")
+	srcType, err := askDialect(r, "Source database type", "")
+	if err != nil {
+		return err
+	}
+	srcDSN, err := askDSN(r, "Source database DSN", srcType, "")
+	if err != nil {
+		return err
+	}
+	srcSchema, err := askSchema(r, "Source schema name", srcType, "")
+	if err != nil {
+		return err
+	}
+	tables, err := askTables(r, "Tables to migrate (comma-separated, or * for all)")
+	if err != nil {
+		return err
+	}
+	tgtType, err := askDialect(r, "Target database type", "")
+	if err != nil {
+		return err
+	}
+	tgtDSN, err := askDSN(r, "Target database DSN", tgtType, "")
+	if err != nil {
+		return err
+	}
+	tgtSchema, err := askSchema(r, "Target schema name", tgtType, "")
+	if err != nil {
+		return err
+	}
 	if tgtSchema == "" {
 		tgtSchema = srcSchema
 	}
@@ -478,22 +622,38 @@ func interactiveMigrate(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveGenSelect(r *bufio.Reader, outputPath string) error {
-	mt := askChoice(r, "Metadata source type", []string{"csv", "xlsx", "database"}, "csv")
+	mt, err := askChoice(r, "Metadata source type", []string{"csv", "xlsx", "database"}, "csv")
+	if err != nil {
+		return err
+	}
 
 	var srcType, srcDSN, srcSchema, csvPath, xlsxPath string
 
 	switch mt {
 	case "csv":
-		csvPath = ask(r, "CSV metadata directory", "./testdata/csv/")
+		if csvPath, err = ask(r, "CSV metadata directory", "./testdata/csv/"); err != nil {
+			return err
+		}
 	case "xlsx":
-		xlsxPath = ask(r, "xlsx schema file path", "./metadata/schema.xlsx")
+		if xlsxPath, err = ask(r, "xlsx schema file path", "./metadata/schema.xlsx"); err != nil {
+			return err
+		}
 	case "database":
-		srcType = askDialect(r, "Source database type", "")
-		srcDSN = askDSN(r, "Source database DSN", srcType, "")
-		srcSchema = askSchema(r, "Source schema name", srcType, "")
+		if srcType, err = askDialect(r, "Source database type", ""); err != nil {
+			return err
+		}
+		if srcDSN, err = askDSN(r, "Source database DSN", srcType, ""); err != nil {
+			return err
+		}
+		if srcSchema, err = askSchema(r, "Source schema name", srcType, ""); err != nil {
+			return err
+		}
 	}
 
-	tgtType := askDialect(r, "Target dialect (controls identifier quoting)", "postgres")
+	tgtType, err := askDialect(r, "Target dialect (controls identifier quoting)", "postgres")
+	if err != nil {
+		return err
+	}
 
 	cfg := &config.Config{
 		General: config.GeneralConfig{LogLevel: "info"},
@@ -524,27 +684,51 @@ func interactiveGenSelect(r *bufio.Reader, outputPath string) error {
 }
 
 func interactiveExportMetadata(r *bufio.Reader, outputPath string) error {
-	srcType := askDialect(r, "Source database type", "")
-	srcDSN := askDSN(r, "Source database DSN", srcType, "")
-	srcSchema := ask(r, "Source schema name", "")
+	srcType, err := askDialect(r, "Source database type", "")
+	if err != nil {
+		return err
+	}
+	srcDSN, err := askDSN(r, "Source database DSN", srcType, "")
+	if err != nil {
+		return err
+	}
+	srcSchema, err := ask(r, "Source schema name", "")
+	if err != nil {
+		return err
+	}
 	fmt.Println()
 	fmt.Println("Output format:")
 	fmt.Println("  csv   - Separate CSV files per metadata type")
 	fmt.Println("  xlsx  - Single Excel workbook")
 	fmt.Println("  sql   - INSERT statements for system metadata tables")
-	fmt.Print("Format (default: csv): ")
-	fmtOut, _ := r.ReadString('\n')
-	fmtOut = strings.TrimSpace(strings.ToLower(fmtOut))
-	if fmtOut == "" {
-		fmtOut = "csv"
+	var fmtOut string
+	for {
+		fmtOut, err = readLine(r)
+		if err != nil {
+			return err
+		}
+		fmtOut = strings.ToLower(fmtOut)
+		if fmtOut == "" {
+			fmtOut = "csv"
+		}
+		if fmtOut == "csv" || fmtOut == "xlsx" || fmtOut == "sql" {
+			break
+		}
+		fmt.Println("  Invalid. Please enter one of: csv, xlsx, sql")
+	}
+	// 前置校验：sql 格式仅对 oracle 家族有意义（与 export-metadata 命令同一规则），
+	// 让用户在向导里就改选，而不是执行时才报错。
+	if fmtOut == "sql" && service.TargetTypeFamily(srcType) != "oracle" {
+		fmt.Printf("  ⚠️  format sql 仅 oracle 家族有意义（当前 source=%s）；命令执行时会拒绝，建议改用 csv\n", srcType)
 	}
 
-	cfg := &config.Config{
-		General:  config.GeneralConfig{LogLevel: "info"},
-		Metadata: config.MetadataConfig{Type: "database"},
-		Source:   config.DBConfig{Type: srcType, DSN: srcDSN, Schema: srcSchema},
-	}
-	return writeConfig(cfg, outputPath)
+	// 与 flag 模式（--scenario export-metadata）同一构建器，两条路径产出同构
+	// 配置（含 config.Load 必需的 ddl.target_dialect 继承）。
+	cfg := configbuild.BuildScenarioConfig("export-metadata", srcType, srcDSN, srcSchema, "", "", "", "database")
+	// 向导选定的输出格式不是配置字段（export-metadata 用 --format flag），
+	// 写进文件头"下一步命令"，用户照抄即可带上自己选的格式。
+	next := "owl-migrate export-metadata -c " + outputPath + " --format " + fmtOut
+	return writeConfig(cfg, outputPath, next)
 }
 
 func interactiveFull(r *bufio.Reader, outputPath string) error {
@@ -556,20 +740,34 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 	fmt.Println("Enter values for each configuration option.")
 	fmt.Println("Leave blank to use default where available.")
 
-	mt := askChoice(r, "Metadata source type (csv/xlsx/database)", []string{"csv", "xlsx", "database"}, "csv")
+	mt, err := askChoice(r, "Metadata source type (csv/xlsx/database)", []string{"csv", "xlsx", "database"}, "csv")
+	if err != nil {
+		return err
+	}
 
 	var srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, csvPath, xlsxPath string
+	var importSourceDir, xlsxDataOut string
 
 	if mt == "csv" || mt == "xlsx" {
 		fmt.Println()
 		hint("Metadata files define table schemas, columns, indexes, etc.")
 		if mt == "csv" {
-			csvPath = ask(r, "CSV metadata directory", "./testdata/csv/")
-			hint("Data files are the CSV files with actual row data for INSERT generation.")
-			_ = ask(r, "CSV data files directory", "./output/data/")
+			if csvPath, err = ask(r, "CSV metadata directory", "./testdata/csv/"); err != nil {
+				return err
+			}
+			hint("Data files are the CSV files with actual row data for INSERT/import.")
+			// 这里选的目录写入 import.source_dir（import 命令使用）；
+			// gen-insert 的数据目录仍走 -d/--data flag。
+			if importSourceDir, err = ask(r, "CSV data files directory (import.source_dir)", "./output/data/"); err != nil {
+				return err
+			}
 		} else {
-			xlsxPath = ask(r, "xlsx schema file path", "./metadata/schema.xlsx")
-			_ = ask(r, "xlsx @sheet data output directory", "./output/data/")
+			if xlsxPath, err = ask(r, "xlsx schema file path", "./metadata/schema.xlsx"); err != nil {
+				return err
+			}
+			if xlsxDataOut, err = ask(r, "Directory for extracted CSV data files (metadata.xlsx.data_output_dir)", "./output/data/"); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -577,9 +775,15 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 		fmt.Println()
 		hint("Source: the database you are migrating FROM. Required for live extraction, data export, and migration.")
 		if mt == "database" {
-			srcType = askDialect(r, "Source database type", "")
-			srcDSN = askDSN(r, "Source database DSN", srcType, "")
-			srcSchema = askSchema(r, "Source schema name", srcType, "")
+			if srcType, err = askDialect(r, "Source database type", ""); err != nil {
+				return err
+			}
+			if srcDSN, err = askDSN(r, "Source database DSN", srcType, ""); err != nil {
+				return err
+			}
+			if srcSchema, err = askSchema(r, "Source schema name", srcType, ""); err != nil {
+				return err
+			}
 			if !isEmbedded(srcType) {
 				hint("For Oracle: schema/owner name. For MySQL: database name. For PG: schema name.")
 			}
@@ -588,13 +792,28 @@ func interactiveFull(r *bufio.Reader, outputPath string) error {
 
 	fmt.Println()
 	hint("Target: the database you are migrating TO. Determines DDL dialect and is required for import/migrate.")
-	tgtType = askDialect(r, "Target database type (for DDL generation)", "postgres")
-	tgtDSN = askDSN(r, "Target database DSN (optional, leave blank for DDL-only)", tgtType, "")
-	tgtSchema = askSchema(r, "Target schema name (leave blank to use source schema)", tgtType, "")
+	if tgtType, err = askDialect(r, "Target database type (for DDL generation)", "postgres"); err != nil {
+		return err
+	}
+	if tgtDSN, err = askDSN(r, "Target database DSN (optional, leave blank for DDL-only)", tgtType, ""); err != nil {
+		return err
+	}
+	if tgtSchema, err = askSchema(r, "Target schema name (leave blank to use source schema)", tgtType, ""); err != nil {
+		return err
+	}
 
 	// Build FULL template with ALL 8 sections
 	cfg := configbuild.BuildFullConfig(mt, srcType, srcDSN, srcSchema, tgtType, tgtDSN, tgtSchema, csvPath, xlsxPath)
-	askAdvancedOptions(r, cfg, srcSchema, tgtSchema)
+	// 用户在向导里给出的数据目录落到对应字段（不再是"问了丢答案"）。
+	if importSourceDir != "" {
+		cfg.Import.SourceDir = importSourceDir
+	}
+	if xlsxDataOut != "" {
+		cfg.Metadata.XLSX.DataOutputDir = xlsxDataOut
+	}
+	if err := askAdvancedOptions(r, cfg, srcSchema, tgtSchema); err != nil {
+		return err
+	}
 	return writeConfig(cfg, outputPath)
 }
 
@@ -746,18 +965,30 @@ func annotateYAML(buf []byte) []byte {
 // askAdvancedOptions offers the optional power features in interactive mode:
 // WHERE 条件导出、列投影/改名。回车跳过（默认全量全列）。输入即时校验，
 // 非法片段要求重输——与执行前的条件 COUNT 门禁同一套规则。
-func askAdvancedOptions(r *bufio.Reader, cfg *config.Config, srcSchema, tgtSchema string) {
+func askAdvancedOptions(r *bufio.Reader, cfg *config.Config, srcSchema, tgtSchema string) error {
 	fmt.Println()
-	if !askYesNo(r, "配置高级选项（WHERE 条件导出 / 列投影与改名）?", false) {
-		return
+	advanced, err := askYesNo(r, "配置高级选项（WHERE 条件导出 / 列投影与改名）?", false)
+	if err != nil {
+		return err
+	}
+	if !advanced {
+		return nil
 	}
 	fmt.Println("  提示: 表模式支持精确名与 glob（SCOTT.EMP / SCOTT.* / *.T / T_*），片段为字面 SQL WHERE（禁 ; 注释与绑定占位符）。")
 	for {
-		pat := strings.TrimSpace(ask(r, "条件导出——表模式（回车结束）", ""))
+		patRaw, err := ask(r, "条件导出——表模式（回车结束）", "")
+		if err != nil {
+			return err
+		}
+		pat := strings.TrimSpace(patRaw)
 		if pat == "" {
 			break
 		}
-		frag := strings.TrimSpace(ask(r, "  WHERE 片段", ""))
+		fragRaw, err := ask(r, "  WHERE 片段", "")
+		if err != nil {
+			return err
+		}
+		frag := strings.TrimSpace(fragRaw)
 		if err := exporter.ValidateFilterFragment(frag); err != nil {
 			fmt.Printf("  ✗ %v，请重输\n", err)
 			continue
@@ -767,9 +998,16 @@ func askAdvancedOptions(r *bufio.Reader, cfg *config.Config, srcSchema, tgtSchem
 		}
 		cfg.Export.Filters[pat] = frag
 	}
-	pat := strings.TrimSpace(ask(r, "列投影——表模式（回车跳过整节）", ""))
-	if pat != "" {
-		cols := strings.Split(ask(r, "  输出列（逗号分隔，顺序=输出顺序）", ""), ",")
+	patRaw, err := ask(r, "列投影——表模式（回车跳过整节）", "")
+	if err != nil {
+		return err
+	}
+	if pat := strings.TrimSpace(patRaw); pat != "" {
+		colsRaw, err := ask(r, "  输出列（逗号分隔，顺序=输出顺序）", "")
+		if err != nil {
+			return err
+		}
+		cols := strings.Split(colsRaw, ",")
 		var include []string
 		for _, c := range cols {
 			if c = strings.TrimSpace(c); c != "" {
@@ -781,8 +1019,11 @@ func askAdvancedOptions(r *bufio.Reader, cfg *config.Config, srcSchema, tgtSchem
 				cfg.Export.Columns.Include = map[string][]string{}
 			}
 			cfg.Export.Columns.Include[pat] = include
-			ren := strings.TrimSpace(ask(r, "  改名（源列:新名，逗号分隔，可空）", ""))
-			if ren != "" {
+			renRaw, err := ask(r, "  改名（源列:新名，逗号分隔，可空）", "")
+			if err != nil {
+				return err
+			}
+			if ren := strings.TrimSpace(renRaw); ren != "" {
 				m := map[string]string{}
 				for _, pair := range strings.Split(ren, ",") {
 					if k, v, ok := strings.Cut(strings.TrimSpace(pair), ":"); ok {
@@ -798,20 +1039,24 @@ func askAdvancedOptions(r *bufio.Reader, cfg *config.Config, srcSchema, tgtSchem
 			}
 		}
 	}
+	return nil
 }
 
-func askYesNo(r *bufio.Reader, prompt string, def bool) bool {
+func askYesNo(r *bufio.Reader, prompt string, def bool) (bool, error) {
 	suffix := " (y/N) "
 	if def {
 		suffix = " (Y/n) "
 	}
 	fmt.Print(prompt + suffix)
-	line, _ := r.ReadString('\n')
-	line = strings.ToLower(strings.TrimSpace(line))
-	if line == "" {
-		return def
+	line, err := readLine(r)
+	if err != nil {
+		return false, err
 	}
-	return line == "y" || line == "yes"
+	line = strings.ToLower(line)
+	if line == "" {
+		return def, nil
+	}
+	return line == "y" || line == "yes", nil
 }
 
 // yamlAnnotated renders a config to annotated YAML bytes (comments via
@@ -884,18 +1129,39 @@ func runSlotsInit(slotsFile, outputFile string, printOut bool) error {
 	return writeConfig(cfg, outputFile)
 }
 
-func writeConfig(cfg *config.Config, outputPath string) error {
+// writeConfig renders the annotated YAML and writes it. nextCmds, when given,
+// replace the auto-detected "next command" hints in the file header (used by
+// scenarios whose follow-up command the wizard knows precisely, e.g.
+// export-metadata with the user's chosen --format).
+// If the target file exists, interactive mode asks before overwriting;
+// non-interactive (stdin closed) runs must pass --force.
+func writeConfig(cfg *config.Config, outputPath string, nextCmds ...string) error {
 	buf, err := yamlAnnotated(cfg)
 	if err != nil {
 		return err
+	}
+
+	if st, statErr := os.Stat(outputPath); statErr == nil && !st.IsDir() && !initForce {
+		ok, askErr := askYesNo(bufio.NewReader(os.Stdin), "File "+outputPath+" already exists. Overwrite?", false)
+		if askErr != nil {
+			return fmt.Errorf("%s already exists; pass --force to overwrite (non-interactive run)", outputPath)
+		}
+		if !ok {
+			return fmt.Errorf("kept the existing file %s (pass --force to overwrite)", outputPath)
+		}
 	}
 
 	header := "# Auto-generated by owl-migrate init\n" +
 		"# Edit this file to fine-tune migration settings, then run:\n" +
 		"#   owl-migrate validate -c " + outputPath + "\n"
 
-	// Suggest appropriate commands based on config content
-	if cfg.SelectGen.OutputDir != "" && cfg.Export.OutputDir == "" && cfg.Target.DSN == "" {
+	// Suggest appropriate commands based on config content (or the caller's
+	// explicit hints).
+	if len(nextCmds) > 0 {
+		for _, c := range nextCmds {
+			header += "#   " + c + "\n"
+		}
+	} else if cfg.SelectGen.OutputDir != "" && cfg.Export.OutputDir == "" && cfg.Target.DSN == "" {
 		header += "#   owl-migrate gen-select -c " + outputPath + "\n"
 	} else if cfg.DDL.TargetDialect != "" && cfg.Target.DSN == "" && cfg.Metadata.Type != "" {
 		header += "#   owl-migrate export ddl  -c " + outputPath + "\n"
@@ -905,7 +1171,9 @@ func writeConfig(cfg *config.Config, outputPath string) error {
 	}
 	header += "\n"
 
-	content := append([]byte(nil), buf...)
+	// The header (next-command hints) rides on top of the annotated YAML —
+	// it must actually reach the file (it was silently dropped before).
+	content := append([]byte(header), buf...)
 	if err := os.WriteFile(outputPath, content, 0644); err != nil {
 		return fmt.Errorf("write config to %q: %w", outputPath, err)
 	}
@@ -933,10 +1201,13 @@ func warnUncompiledDialect(name string) {
 }
 
 // askDialect asks for a database dialect from the full (sorted) dialect list.
-func askDialect(r *bufio.Reader, prompt, def string) string {
-	choice := askChoice(r, prompt, sortedDialectKeys(), def)
+func askDialect(r *bufio.Reader, prompt, def string) (string, error) {
+	choice, err := askChoice(r, prompt, sortedDialectKeys(), def)
+	if err != nil {
+		return "", err
+	}
 	warnUncompiledDialect(choice)
-	return choice
+	return choice, nil
 }
 
 func sortedMetadataKeys() []string {

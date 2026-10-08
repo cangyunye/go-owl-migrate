@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +49,14 @@ type Config struct {
 	// {source column: output name}) so column alignment can map a renamed
 	// output name back to its live source column.
 	ColumnRenames map[string]map[string]string
-	Logger       *zap.Logger
+	Logger        *zap.Logger
+	// ProgressOut receives human-readable mid-table progress lines
+	// ("  ↳ S.T: 120,000 rows (24 batches)…"), throttled so a big table
+	// never leaves the terminal silent. Defaults to os.Stderr — it also
+	// lands in web job output, which captures stderr. zap stays structured.
+	ProgressOut io.Writer
+	// ProgressInterval throttles the progress lines (default 5s).
+	ProgressInterval time.Duration
 }
 
 // Exporter reads data from a database and writes to files.
@@ -69,6 +77,12 @@ type Exporter struct {
 func New(db *sql.DB, cfg Config) *Exporter {
 	if cfg.Logger == nil {
 		cfg.Logger = zap.NewNop()
+	}
+	if cfg.ProgressOut == nil {
+		cfg.ProgressOut = os.Stderr
+	}
+	if cfg.ProgressInterval <= 0 {
+		cfg.ProgressInterval = 5 * time.Second
 	}
 	if cfg.PageSize == 0 {
 		cfg.PageSize = 5000
@@ -213,9 +227,10 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 
 	// Batch read using cursor-based pagination
 	var (
-		totalRows int64
-		batches   int
-		lastVals  []any
+		totalRows    int64
+		batches      int
+		lastVals     []any
+		lastProgress time.Time
 	)
 
 	for {
@@ -249,6 +264,12 @@ func (e *Exporter) exportOneTable(ctx context.Context, tbl *md.TableDef, primary
 		totalRows += int64(len(rows))
 		batches++
 		lastVals = newLast
+
+		// Mid-table progress so a long export doesn't look hung.
+		if time.Since(lastProgress) >= e.cfg.ProgressInterval {
+			fmt.Fprintf(e.cfg.ProgressOut, "  ↳ %s: %d rows (%d batches)…\n", key, totalRows, batches)
+			lastProgress = time.Now()
+		}
 
 		if len(rows) < e.cfg.PageSize {
 			break

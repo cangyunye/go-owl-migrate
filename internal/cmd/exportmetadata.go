@@ -90,14 +90,14 @@ Examples:
 
 			db, err := openDB(cfg.Source)
 			if err != nil {
-				return fmt.Errorf("connect to source: %w", err)
+				return connFailure("connect", "source", cfg.Source, err)
 			}
 			defer db.Close()
 
 			pingCtx, pingCancel := context.WithTimeout(context.Background(), connectTimeout(cfg.Source))
 			if err := db.PingContext(pingCtx); err != nil {
 				pingCancel()
-				return fmt.Errorf("ping source: %w", err)
+				return connFailure("ping", "source", cfg.Source, err)
 			}
 			pingCancel()
 			fmt.Printf("Connected to %s, schema: %s\n", cfg.Source.Type, extractSchema)

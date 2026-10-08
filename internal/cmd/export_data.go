@@ -53,6 +53,11 @@ Supported output formats: csv (default), sql, xlsx`,
 		if err != nil {
 			return err
 		}
+		// 配置里的 export.output_dir 生效于未显式传 -o 时（此前被 flag
+		// 默认值无视，配置写了目录也永远导到 ./output/data/）。
+		if !cmd.Flags().Changed("output") && cfg.Export.OutputDir != "" {
+			outputDir = cfg.Export.OutputDir
+		}
 		if include := splitTableList(tablesFlag); len(include) > 0 {
 			cfg.Export.Tables.Include = include
 		}
@@ -173,14 +178,14 @@ Run 'owl-migrate init --scenario export' to generate a proper config.`)
 
 		db, err := openDB(cfg.Source)
 		if err != nil {
-			return fmt.Errorf("connect to source: %w", err)
+			return connFailure("connect", "source", cfg.Source, err)
 		}
 		defer db.Close()
 
 		pingCtx, pingCancel := context.WithTimeout(context.Background(), connectTimeout(cfg.Source))
 		if err := db.PingContext(pingCtx); err != nil {
 			pingCancel()
-			return fmt.Errorf("ping source: %w", err)
+			return connFailure("ping", "source", cfg.Source, err)
 		}
 		pingCancel()
 		fmt.Printf("Connected to %s\n", cfg.Source.Type)

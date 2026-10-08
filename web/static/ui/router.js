@@ -19,6 +19,7 @@ import { render as renderExportMetadata } from './views/exportMetadata.js';
 import { render as renderMetadata } from './views/metadata.js';
 import { render as renderConfig } from './views/config.js';
 import { render as renderDataSources } from './views/datasources.js';
+import { render as renderAIChat } from './views/aiChat.js';
 
 /* ── jobUI singleton originals ────────────────────────────────
    jobUI is created by app.js (classic script, runs before these
@@ -34,6 +35,7 @@ const ORIG_ON_EVENT = window.jobUI && window.jobUI.onEvent;
 /* ── nav metadata for active-link + crumb ────────────────── */
 const NAV = [
     { route: '/', active: '/', title: '首页' },
+    { route: '/ai', active: '/ai', title: 'AI 助手' },
     { route: '/config', active: '/config', title: '配置' },
     { route: '/datasources', active: '/datasources', title: '数据源' },
     { route: '/metadata', active: '/metadata', title: '元数据' },
@@ -52,6 +54,7 @@ const routes = [
     { re: /^\/$/, render: renderHome, active: '/', title: '首页' },
     { re: /^\/config$/, render: renderConfig, active: '/config', title: '配置' },
     { re: /^\/datasources$/, render: renderDataSources, active: '/datasources', title: '数据源' },
+    { re: /^\/ai$/, render: renderAIChat, active: '/ai', title: 'AI 助手' },
     { re: /^\/metadata$/, render: renderMetadata, active: '/metadata', title: '元数据' },
     { re: /^\/jobs$/, render: renderJobs, active: '/jobs', title: '任务' },
     { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' },

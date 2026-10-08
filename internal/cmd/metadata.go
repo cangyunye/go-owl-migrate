@@ -91,20 +91,23 @@ func loadDBModel(src config.DBConfig) (*md.SchemaModel, error) {
 	if src.DSN == "" {
 		return nil, fmt.Errorf("source.dsn is required when metadata.type is 'database'")
 	}
-	if src.Schema == "" {
+	// Embedded databases (sqlite3/duckdb) have no schema concept — the same
+	// exemption the init wizard applies; without it an AI/CLI-generated config
+	// for a sqlite source could never execute.
+	if src.Schema == "" && !isEmbedded(src.Type) {
 		return nil, fmt.Errorf("source.schema is required when metadata.type is 'database'")
 	}
 
 	db, err := openDB(src)
 	if err != nil {
-		return nil, fmt.Errorf("connect to source for metadata extraction: %w", err)
+		return nil, connFailure("connect", "source for metadata extraction", src, err)
 	}
 	defer db.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("ping source for metadata extraction: %w", err)
+		return nil, connFailure("ping", "source for metadata extraction", src, err)
 	}
 
 	sm, err := extractor.Extract(db, dbconn.MetadataSourceType(src), src.Schema)
@@ -147,6 +150,19 @@ func openDB(cfg config.DBConfig) (*sql.DB, error) {
 		cfg.Agent.JarsDir = jarsDirFlag
 	}
 	return dbconn.Open(cfg)
+}
+
+// connFailure renders a connect/ping failure with the masked DSN and a triage
+// hint — enough for the user to confirm WHICH host/account failed and where to
+// look next, without echoing the password. verb is "connect"/"ping", side is
+// "source"/"target"/"source for metadata extraction" etc.
+func connFailure(verb, side string, cfg config.DBConfig, err error) error {
+	dsn := config.MaskDSN(cfg.DSN)
+	if dsn == "" {
+		dsn = "(empty — set it in the config or via the datasource profile)"
+	}
+	return fmt.Errorf("%s %s: %w\n  DSN(masked): %s\n  hint: verify host/port/service name, network reachability, firewall/ACL, and account status",
+		verb, side, err, dsn)
 }
 
 // parseDuration parses a duration string, returning fallback if empty or invalid.

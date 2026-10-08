@@ -16,6 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/cangyunye/go-owl-migrate/internal/ai"
+	"github.com/cangyunye/go-owl-migrate/internal/buildinfo"
 	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/datasource"
 	"github.com/cangyunye/go-owl-migrate/internal/dscrypto"
@@ -65,6 +66,10 @@ type Server struct {
 	dsOnce sync.Once
 	dsErr  error
 	ds     *datasource.Store
+
+	vaultOnce sync.Once
+	vaultErr  error
+	vault     *dscrypto.Vault
 
 	aiOnce  sync.Once
 	aiErr   error
@@ -120,6 +125,10 @@ func NewServer(cfg Config) *Server {
 	return s
 }
 
+// configVault holds the lazy vault used to encrypt session config artifacts
+// (see ai_sessions.go).
+// vaultOnce / vault / vaultErr live on Server; initialized in configVault().
+
 // dsStore lazily builds the encrypted data-source store. The key file is only
 // created on first use so servers that never touch data sources stay hermetic.
 func (s *Server) dsStore() (*datasource.Store, error) {
@@ -142,6 +151,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
+	mux.HandleFunc("GET /api/v1/version", s.handleVersion)
 	mux.HandleFunc("GET /api/v1/jobs", s.handleListJobs)
 	mux.HandleFunc("GET /api/v1/jobs/{id}", s.handleGetJob)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/events", s.handleGetJobEvents)
@@ -154,6 +164,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/ai/route", s.handleAIRoute)
 	mux.HandleFunc("POST /api/v1/ai/plan", s.handleAIPlan)
 	mux.HandleFunc("POST /api/v1/ai/plan/confirm", s.handleAIPlanConfirm)
+	mux.HandleFunc("GET /api/v1/ai/sessions", s.handleListAISessions)
+	mux.HandleFunc("POST /api/v1/ai/sessions/batch-delete", s.handleBatchDeleteAISessions)
+	mux.HandleFunc("GET /api/v1/ai/session/{id}", s.handleGetAISession)
+	mux.HandleFunc("DELETE /api/v1/ai/session/{id}", s.handleDeleteAISession)
+	mux.HandleFunc("POST /api/v1/ai/session/{id}/clone", s.handleCloneAISession)
+	mux.HandleFunc("POST /api/v1/ai/session/{id}/apply", s.handleApplyAISession)
 	mux.HandleFunc("POST /api/v1/conn/test", s.handleTestConn)
 	mux.HandleFunc("GET /api/v1/config", s.handleGetConfig)
 	mux.HandleFunc("GET /api/v1/config/current", s.handleGetCurrentConfig)
@@ -239,6 +255,16 @@ func withAuth(next http.Handler, token string) http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleVersion reports the build identity so the UI sidebar badge mirrors the
+// binary instead of a hardcoded string.
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"version": buildinfo.Short(),
+		"commit":  buildinfo.Commit,
+		"date":    buildinfo.Date,
+	})
 }
 
 func (s *Server) handleListJobs(w http.ResponseWriter, r *http.Request) {

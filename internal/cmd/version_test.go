@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cangyunye/go-owl-migrate/internal/buildinfo"
 	"github.com/cangyunye/go-owl-migrate/internal/dbconn"
 	"github.com/cangyunye/go-owl-migrate/internal/registry"
 )
@@ -17,7 +18,7 @@ func TestVersionCmdListsBuildFlavor(t *testing.T) {
 	out := runVersion(t)
 
 	for _, want := range []string{
-		"owl-migrate " + version,
+		"owl-migrate " + buildinfo.String(),
 		"commit:", "built:", "drivers:", "dialects:",
 	} {
 		if !strings.Contains(out, want) {

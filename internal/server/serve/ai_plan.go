@@ -2,8 +2,8 @@ package serve
 
 import (
 	"context"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -45,9 +45,13 @@ type aiRouteResult struct {
 func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Utterance   string            `json:"utterance"`
-		Context     []string          `json:"context"`              // 显式前文（与 /ai/route 同语义）
-		SessionID   string            `json:"session_id"`           // 缺省 = 新会话
+		Context     []string          `json:"context"`               // 显式前文（与 /ai/route 同语义）
+		SessionID   string            `json:"session_id"`            // 缺省 = 新会话
 		Credentials map[string]string `json:"credentials,omitempty"` // "__PWD_mysql__" → 真实密码（服务端注入，不入会话/日志/响应）
+		Profile     struct {
+			Source string `json:"source"`
+			Target string `json:"target"`
+		} `json:"profile,omitempty"` // 对话页选择器的默认档案（话语显式提及优先）
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
@@ -86,10 +90,11 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	routeUser := buildRouteUserMessage(req.Utterance, ctxLines)
-	if len(req.Credentials) > 0 {
-		// 凭据由调用方带外提供（占位符注入），路由器不得因"缺密码"而澄清。
-		routeUser += "\n\n【凭据说明】连接密码/凭据由调用方另行提供（服务端占位符注入），缺少密码不构成澄清理由。"
-	}
+	routeUser += s.planFactsBlock()
+	// 凭据与连接由服务端管理（数据源档案/哨兵注入）：无论是否带 credentials，
+	// 路由器都不应因"缺密码/缺 host"而澄清——缺的事实要么在档案里，要么由
+	// 生成段澄清，路由层放行。
+	routeUser += "\n\n【凭据与连接说明】连接凭据由服务端管理（数据源档案/哨兵注入），缺少密码或连接信息不构成澄清理由；用户请求匹配【可用数据源档案】时视为连接信息完备。"
 	routeReply, err := client.Chat(ctx, ai.RouterSystemPrompt,
 		[]ai.Message{{Role: "user", Content: routeUser}},
 		ai.Options{JSONMode: true, Effort: a.Effort, MaxTokens: a.MaxTokens, Timeout: a.Timeout()})
@@ -118,25 +123,43 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok": true, "session_id": sess.ID, "session": sess, "continuity": continuity,
 			"route": route.Route, "result": route, "plan": nil,
+			"clarify_items": s.clarifyItemsFor(route.MissingSlots, sess),
 		})
 		return
 	}
 
 	// ── 第 2 段：配置组装。首选确定性 builder（LLM 只填槽、永不碰凭据与
 	// YAML 结构）；builder 处理不了的组合回退 LLM-YAML（engine 标注）。
-	planMsg := buildPlanUserMessage(req.Utterance, sess, route)
-	yamlText, engine, repairs, fbErr := buildViaSlots(ctx, client, a, sess, route, planMsg, req.Credentials)
-	if fbErr != nil {
+	planMsg := buildPlanUserMessage(req.Utterance, sess, route) + s.planFactsBlock()
+	res, sbErr := s.buildViaSlots(ctx, client, a, store, sess, route, planMsg, req.Credentials,
+		req.Profile.Source, req.Profile.Target)
+	var (
+		yamlText    string
+		engine      string
+		repairs     int
+		profileDSNs []string
+		factsUsed   []string
+		fallbackWhy string
+	)
+	switch {
+	case sbErr == nil:
+		yamlText, engine, repairs = res.yaml, res.engine, res.repairs
+		profileDSNs, factsUsed = res.profileDSNs, res.factsUsed
+	case errors.Is(sbErr, configbuild.ErrIncompleteSlots):
 		// 槽位不足（如缺目标库名）→ 澄清，而不是让 LLM 编造缺失事实。
-		if errors.Is(fbErr, configbuild.ErrIncompleteSlots) {
-			store.AddTurn(sess, "assistant", fbErr.Error())
-			writeJSON(w, http.StatusOK, map[string]any{
-				"ok": true, "session_id": sess.ID, "session": sess, "continuity": continuity,
-				"route": route.Route, "plan": nil, "needs_clarify": true,
-				"clarify_reason": fbErr.Error(),
-			})
-			return
-		}
+		// builder 的错误文本是内部形态（"source.host is required for
+		// oracle…"），直接透出读起来像失败而非追问——翻译成中文引导，
+		// 并给出结构化 missing_slots 供 UI 逐项提示。
+		reason, missing := friendlyClarify(sbErr.Error())
+		store.AddTurn(sess, "assistant", reason)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "session_id": sess.ID, "session": sess, "continuity": continuity,
+			"route": route.Route, "plan": nil, "needs_clarify": true,
+			"clarify_reason": reason, "missing_slots": missing,
+			"clarify_items": s.clarifyItemsFor(missing, sess),
+		})
+		return
+	default:
 		var genErr error
 		yamlText, repairs, genErr = generateAndRepair(ctx, client, a, planMsg, req.Credentials)
 		if genErr != nil {
@@ -144,34 +167,61 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		engine = "llm-fallback"
+		fallbackWhy = sbErr.Error()
 	}
 
 	// 能力前置告警：agent 通道（显式 agent 或 auto 落 agent）的 Java/sidecar/
 	// 驱动 jar 就绪检查——计划阶段给指引，不让用户到连接阶段才兜圈子。
 	warnings := s.agentPrerequisiteWarningsForYAML(yamlText)
 
+	// credential_slots: 草案里仍未注入真实值的凭据哨兵（如 "__PWD_mysql__"）。
+	// 单独成字段，前端据此渲染"连接密码"输入框——用户不需要认识哨兵协议，
+	// 哨兵也不和能力告警混在一起。真实值只在 confirm 时经服务端注入。
+	// 档案解析出的哨兵 DSN 整段从扫描中移除：档案已持有密码，UI 不该再要。
+	scanText := yamlText
+	for _, pd := range profileDSNs {
+		scanText = strings.ReplaceAll(scanText, pd, "")
+	}
+	credSlots := remainingPlaceholders(scanText, nil)
+
 	planID := ai.NewSessionID()
 	masked := maskYAML(yamlText, req.Credentials)
 	store.MergeSlots(sess, yamlSlots(yamlText))
+	// profile 槽位（source_profile/target_profile）与 facts_used 已在
+	// buildViaSlots 内部处理——那里才有 LLM 提取的槽位对象。
 	store.AddArtifact(sess, ai.Artifact{Kind: "plan", ID: planID, YAML: masked})
 	store.SetStage(sess, ai.StageConfirming)
 	store.AddTurn(sess, "user", req.Utterance)
 	store.AddTurn(sess, "assistant", "已生成配置草案 "+planID+"（等待确认执行）")
+	// 会话元数据：title=首条话语截断（历史列表主显示），keywords=槽位拆词。
+	// 只在首个计划时落（后续轮次保留用户最初的表达作为标题）。
+	if sess.Title == "" {
+		title := req.Utterance
+		if r := []rune(title); len(r) > 48 {
+			title = string(r[:48]) + "…"
+		}
+		_ = store.SetMeta(sess, title, strings.Join(res.keywords, " "))
+	}
 
+	if factsUsed == nil {
+		factsUsed = []string{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":            true,
-		"session_id":    sess.ID,
-		"session":       sess,
-		"continuity":    continuity,
-		"route":         route.Route,
-		"sub":           route.Sub,
-		"engine":          engine,
-		"fallback_reason": errString(fbErr),
-		"plan_id":       planID,
-		"yaml":          masked, // 脱敏预览；含真实凭据的版本只在服务端内存/会话产物里
-		"repair_rounds": repairs,
-		"warnings":      append(remainingPlaceholders(yamlText, nil), warnings...),
-		"next":          "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
+		"ok":               true,
+		"session_id":       sess.ID,
+		"session":          sess,
+		"continuity":       continuity,
+		"route":            route.Route,
+		"sub":              route.Sub,
+		"engine":           engine,
+		"fallback_reason":  fallbackWhy,
+		"plan_id":          planID,
+		"yaml":             masked, // 脱敏预览；含真实凭据的版本只在服务端内存/会话产物里
+		"repair_rounds":    repairs,
+		"credential_slots": credSlots,
+		"facts_used":       factsUsed,
+		"warnings":         warnings,
+		"next":             "确认后经任务端点执行（执行时凭据由服务端注入，浏览器不接触）",
 	})
 }
 
@@ -182,51 +232,119 @@ func errString(err error) string {
 	return err.Error()
 }
 
+// friendlyClarify translates a configbuild.ErrIncompleteSlots message into a
+// user-facing follow-up question. The builder's errors are precise but
+// internal-shaped ("source.host is required for oracle (or provide
+// source.dsn verbatim)"); surfacing them verbatim reads like a failure
+// instead of a question. Returns the friendly reason plus a structured
+// missing list for the UI to render as per-item guidance. Unrecognized
+// messages fall back to the raw text so no information is lost.
+func friendlyClarify(raw string) (string, []string) {
+	missing := []string{}
+	re := regexp.MustCompile(`(\w+)\.(\w+) is required for ([\w-]+)`)
+	for _, m := range re.FindAllStringSubmatch(raw, -1) {
+		sideLabel := "源库"
+		if strings.EqualFold(m[1], "target") {
+			sideLabel = "目标库"
+		}
+		what := m[2]
+		switch strings.ToLower(m[2]) {
+		case "type":
+			what = "数据库类型"
+		case "host":
+			what = "连接地址（host，或直接给完整 DSN）"
+		case "port":
+			what = "端口"
+		case "user":
+			what = "用户名"
+		case "database":
+			if strings.EqualFold(m[3], "sqlite3") || strings.EqualFold(m[3], "duckdb") {
+				what = "数据库文件路径"
+			} else {
+				what = "库名/服务名"
+			}
+		case "schema":
+			what = "schema"
+		}
+		missing = append(missing, sideLabel+" "+what)
+	}
+	if len(missing) == 0 {
+		return "信息不足以生成配置：" + raw, missing
+	}
+	return "信息不足以生成配置。", missing
+}
+
 // buildViaSlots extracts a SlotRequest via the LLM (LLM never emits passwords:
 // the prompt mandates sentinels, real values come from req.Credentials) and
-// assembles the config with configbuild. Returns the YAML (credentials
-// injected), engine label "builder", repair rounds (0 unless slot JSON needed
-// fixing), and an error when the slot path can't represent the request — the
-// caller falls back to LLM-YAML.
-func buildViaSlots(ctx context.Context, client *ai.Client, a config.AIConfig, sess *ai.Session,
-	route aiRouteResult, planMsg string, creds map[string]string) (yamlText, engine string, repairs int, fbErr error) {
+// assembles the config with configbuild. Endpoints referencing a stored
+// datasource profile are resolved server-side to a sentinel DSN — the vault
+// keeps the real password, so neither the LLM nor the browser ever touches it.
+// Returns the YAML (credentials injected), engine label "builder", repair
+// rounds (0 unless slot JSON needed fixing), an error when the slot path
+// can't represent the request (caller falls back to LLM-YAML), and the
+// sentinel DSNs installed for profiles (excluded from credential_slots).
+type slotBuild struct {
+	yaml        string
+	engine      string
+	repairs     int
+	profileDSNs []string // 档案解析安装的哨兵 DSN（从 credential_slots 扫描中剔除）
+	factsUsed   []string
+	keywords    []string // 从槽位拆出的检索词（历史列表）
+}
+
+func (s *Server) buildViaSlots(ctx context.Context, client *ai.Client, a config.AIConfig,
+	store *ai.SessionStore, sess *ai.Session,
+	route aiRouteResult, planMsg string, creds map[string]string,
+	forcedSourceProfile, forcedTargetProfile string) (slotBuild, error) {
 	reply, err := client.Chat(ctx, ai.SlotsSystemPrompt,
 		[]ai.Message{{Role: "user", Content: planMsg}},
 		ai.Options{JSONMode: true, Effort: a.PlanEffort(), MaxTokens: a.MaxTokens, Timeout: a.Timeout()})
 	if err != nil {
-		return "", "", 0, fmt.Errorf("slots 提取调用失败: %w", err)
+		return slotBuild{}, fmt.Errorf("slots 提取调用失败: %w", err)
 	}
 	raw, err := ai.ExtractJSON(reply.Content)
 	if err != nil {
-		return "", "", 0, fmt.Errorf("slots 回复非 JSON: %w", err)
+		return slotBuild{}, fmt.Errorf("slots 回复非 JSON: %w", err)
 	}
 	var req configbuild.SlotRequest
 	if err := json.Unmarshal(raw, &req); err != nil {
-		return "", "", 0, fmt.Errorf("slots JSON 结构不符: %w", err)
+		return slotBuild{}, fmt.Errorf("slots JSON 结构不符: %w", err)
 	}
 	// 哨兵协议：槽位密码一律填类型族哨兵（模型无需也不得接触真实密码），
 	// 产物 YAML 保留哨兵（非密文、可存储）；真实凭据由调用方在 confirm 时
 	// 再次提供并即时注入——会话存储与日志永不接触明文。
+	// 对话页选择器的默认档案：仅当 LLM 槽位既没显式给档案、也没给完整 DSN
+	// 时才生效（话语显式 > 选择器默认）。
+	if forcedSourceProfile != "" && req.Source.Profile == "" && req.Source.DSN == "" {
+		req.Source.Profile = forcedSourceProfile
+	}
+	if forcedTargetProfile != "" && req.Target != nil && req.Target.Profile == "" && req.Target.DSN == "" {
+		req.Target.Profile = forcedTargetProfile
+	}
+	profileDSNs, factsUsed, perr := s.resolveProfilesInSlots(&req)
+	if perr != nil {
+		return slotBuild{}, perr
+	}
 	configbuild.FillPasswordSentinels(&req)
 	_ = creds
 	cfg, err := configbuild.BuildFromSlots(req)
 	if err != nil {
-		return "", "", 0, fmt.Errorf("builder: %w", err)
+		return slotBuild{}, fmt.Errorf("builder: %w", err)
 	}
 	// 结构校验兜底（builder 产物应恒过；失败也回退 LLM 路径）
 	tmp, err := os.CreateTemp("", "owl-slots-*.yaml")
 	if err != nil {
-		return "", "", 0, fmt.Errorf("temp: %w", err)
+		return slotBuild{}, fmt.Errorf("temp: %w", err)
 	}
 	inter, merr := cfg.MarshalYAML()
 	if merr != nil {
 		os.Remove(tmp.Name())
-		return "", "", 0, fmt.Errorf("marshal: %w", merr)
+		return slotBuild{}, fmt.Errorf("marshal: %w", merr)
 	}
 	raw2, merr := yaml.Marshal(inter)
 	if merr != nil {
 		os.Remove(tmp.Name())
-		return "", "", 0, fmt.Errorf("marshal: %w", merr)
+		return slotBuild{}, fmt.Errorf("marshal: %w", merr)
 	}
 	tmp.Write(raw2)
 	tmp.Close()
@@ -234,10 +352,21 @@ func buildViaSlots(ctx context.Context, client *ai.Client, a config.AIConfig, se
 		// builder 保证结构；Load 的个别场景校验差异不阻塞——防御分支放行，
 		// 剩余问题由执行阶段暴露。
 		os.Remove(tmp.Name())
-		return string(raw2), "builder", 0, nil
+		return slotBuild{yaml: string(raw2), engine: "builder", repairs: 0, profileDSNs: profileDSNs, factsUsed: factsUsed, keywords: deriveKeywords(&req)}, nil
 	}
 	os.Remove(tmp.Name())
-	return string(raw2), "builder", 0, nil
+	// 档案引用进会话槽位（仅名称，无秘密）：confirm 时服务端据此回填真实 DSN。
+	profileSlots := map[string]string{}
+	if req.Source.Profile != "" {
+		profileSlots["source_profile"] = req.Source.Profile
+	}
+	if req.Target != nil && req.Target.Profile != "" {
+		profileSlots["target_profile"] = req.Target.Profile
+	}
+	if len(profileSlots) > 0 {
+		_ = store.MergeSlots(sess, profileSlots)
+	}
+	return slotBuild{yaml: string(raw2), engine: "builder", repairs: 0, profileDSNs: profileDSNs, factsUsed: factsUsed, keywords: deriveKeywords(&req)}, nil
 }
 
 // agentPrerequisiteWarnings checks the agent-channel prerequisites for each
