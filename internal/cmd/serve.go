@@ -130,23 +130,30 @@ No authentication is required — intended for local or trusted-network use.`,
 			})
 
 			serveAddr := fmt.Sprintf("%s:%d", host, port)
-			// Bind before printing the banner so the URL is live when shown;
-			// browsers can't open 0.0.0.0, so display a loopback fallback.
+			// Bind before printing the banner so the URL is live when shown.
 			ln, err := net.Listen("tcp", serveAddr)
 			if err != nil {
 				return fmt.Errorf("listen %s: %w", serveAddr, err)
 			}
 			httpServer := &http.Server{Handler: srv.Handler()}
 
+			// 控制台按实际绑定地址显示（--host 0.0.0.0 就显示 0.0.0.0），
+			// 不再一律替换成 127.0.0.1——否则用户看不出真正监听的是哪些接口。
+			// 浏览器无法访问通配地址，因此自动打开时才回退到回环地址。
 			displayHost := host
-			if displayHost == "" || displayHost == "0.0.0.0" || displayHost == "::" {
-				displayHost = "127.0.0.1"
+			if displayHost == "" {
+				displayHost = "0.0.0.0"
 			}
 			uiURL := fmt.Sprintf("http://%s:%d", displayHost, port)
-			printServeBanner(uiURL, token != "")
+			browseHost := displayHost
+			if browseHost == "0.0.0.0" || browseHost == "::" {
+				browseHost = "127.0.0.1"
+			}
+			browseURL := fmt.Sprintf("http://%s:%d", browseHost, port)
+			printServeBanner(uiURL, browseURL, displayHost == "0.0.0.0" || displayHost == "::", port, token != "")
 			if openBrowser {
-				if err := openInBrowser(uiURL); err != nil {
-					fmt.Fprintf(os.Stderr, "could not open browser: %v (open %s manually)\n", err, uiURL)
+				if err := openInBrowser(browseURL); err != nil {
+					fmt.Fprintf(os.Stderr, "could not open browser: %v (open %s manually)\n", err, browseURL)
 				}
 			}
 
@@ -201,16 +208,43 @@ No authentication is required — intended for local or trusted-network use.`,
 
 // printServeBanner writes the user-facing startup summary: what to open, where
 // the docs live, and how to stop. Keep it free of internal details (the master
-// IPC endpoint is not user-facing).
-func printServeBanner(uiURL string, tokenEnabled bool) {
+// IPC endpoint is not user-facing). The bind URL is shown verbatim so --host
+// is reflected; when bound to a wildcard address the machine's LAN IPv4 URLs
+// are listed too (0.0.0.0 itself is not directly browsable). browseURL is the
+// loopback form used for the docs link.
+func printServeBanner(uiURL, browseURL string, wildcard bool, port int, tokenEnabled bool) {
 	authLine := "token auth disabled — local/trusted network only (set --token to require a bearer token)"
 	if tokenEnabled {
 		authLine = "token auth enabled — the UI will prompt for the bearer token"
 	}
 	fmt.Printf("owl-migrate web UI: %s\n", uiURL)
-	fmt.Printf("  docs:  %s/docs\n", uiURL)
+	if wildcard {
+		for _, ip := range lanIPv4s() {
+			fmt.Printf("  LAN:   http://%s:%d\n", ip, port)
+		}
+	}
+	fmt.Printf("  docs:  %s/docs\n", browseURL)
 	fmt.Printf("  auth:  %s\n", authLine)
 	fmt.Printf("  stop:  Ctrl+C\n")
+}
+
+// lanIPv4s returns the machine's non-loopback IPv4 addresses (best-effort).
+func lanIPv4s() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, a := range addrs {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok || ipnet.IP.IsLoopback() {
+			continue
+		}
+		if ip4 := ipnet.IP.To4(); ip4 != nil {
+			out = append(out, ip4.String())
+		}
+	}
+	return out
 }
 
 // openInBrowser opens url in the default browser, best-effort per platform.
