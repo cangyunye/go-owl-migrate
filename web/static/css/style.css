@@ -20,9 +20,13 @@
   --text: #e8ebf2;
   --text-2: #9aa3b5;
   --text-3: #5f6b80;
+  --text-muted: #8b93a3;
+
+  --bg-soft: #1c2230;
 
   --accent: #4c8dff;
   --accent-dim: rgba(76, 141, 255, .14);
+  --accent-soft: #24354f;
   --cyan: #22d3ee;
   --cyan-dim: rgba(34, 211, 238, .13);
   --amber: #fbbf24;
@@ -58,9 +62,13 @@
   --text: #1a2333;
   --text-2: #5a6578;
   --text-3: #94a0b4;
+  --text-muted: #7a8699;
+
+  --bg-soft: #eef2fa;
 
   --accent: #2563eb;
   --accent-dim: rgba(37, 99, 235, .1);
+  --accent-soft: #dbe8ff;
   --cyan: #0891b2;
   --cyan-dim: rgba(8, 145, 178, .1);
   --amber: #b45309;
@@ -1435,6 +1443,8 @@ button:focus-visible, a:focus-visible, .tab:focus-visible, .nav-link:focus-visib
 .chat-quote:hover { color: var(--accent, #6ea8fe); border-color: var(--accent, #6ea8fe); }
 .ai-input-row { padding: 0 12px 4px; }
 .ai-plan-card { margin-top: 16px; }
+/* 执行计划 YAML：沿用配置页预览的深色代码框惯例（浅色模式下同样成立） */
+.ai-plan-card .yaml-view { background: #0d1420; border: 1px solid var(--border); border-radius: 8px; }
 .ai-slot-check { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .slot-check { background: var(--bg-soft, #1c2230); border-radius: 6px; padding: 3px 10px; font-size: 12px; }
 .slot-check b { color: var(--accent, #6ea8fe); font-weight: 600; margin-right: 4px; }
