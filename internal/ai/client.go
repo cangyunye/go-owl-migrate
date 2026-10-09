@@ -52,6 +52,8 @@ type Client struct {
 	hc        *http.Client
 	maxRetry  int
 	clientKey string // identifies the vendor in errors, e.g. "deepseek"
+	v1Tried   bool   // 404 后已尝试过 /v1 路径回退
+	effBase   string // 实际可用的前缀；回退后为 baseURL + /v1
 }
 
 // NewClient builds a client. baseURL is the API root without /chat/completions.
@@ -143,40 +145,82 @@ func (c *Client) Chat(ctx context.Context, system string, msgs []Message, opt Op
 }
 
 func (c *Client) once(ctx context.Context, payload []byte) (Reply, bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.baseURL+"/chat/completions", bytes.NewReader(payload))
-	if err != nil {
-		return Reply{}, false, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.hc.Do(req)
+	resp, data, err := c.doRequest(ctx, http.MethodPost, "chat/completions", payload)
 	if err != nil {
 		return Reply{}, true, err // transport errors are retryable
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-	if err != nil {
-		return Reply{}, true, err
-	}
-
 	var env chatEnvelope
 	_ = json.Unmarshal(data, &env) // 信封缺失时按原始状态码处理
 	if env.Error != nil {
 		// 429/5xx 的错误信封同样值得重试（网关抖动常带信封）。
 		retryable := resp.StatusCode == 429 || resp.StatusCode >= 500
-		return Reply{}, retryable, fmt.Errorf("http %d: %s", resp.StatusCode, env.Error.Message)
+		return Reply{}, retryable, fmt.Errorf("http %d @ %s: %s", resp.StatusCode, c.callURL("chat/completions"), env.Error.Message)
 	}
 	if resp.StatusCode >= 400 {
 		// Rate limits and server errors are worth another attempt.
 		retryable := resp.StatusCode == 429 || resp.StatusCode >= 500
-		return Reply{}, retryable, fmt.Errorf("http %d: %.200s", resp.StatusCode, data)
+		hint := ""
+		if resp.StatusCode == http.StatusNotFound && c.v1Tried {
+			hint = "（已自动尝试 /v1 路径仍 404：请核对 Base URL）"
+		}
+		return Reply{}, retryable, fmt.Errorf("http %d @ %s: %.200s%s", resp.StatusCode, c.callURL("chat/completions"), data, hint)
 	}
 	if len(env.Choices) == 0 {
-		return Reply{}, false, fmt.Errorf("http %d: 响应无 choices", resp.StatusCode)
+		return Reply{}, false, fmt.Errorf("http %d @ %s: 响应无 choices", resp.StatusCode, c.callURL("chat/completions"))
 	}
 	return Reply{Content: env.Choices[0].Message.Content, Usage: env.Usage}, false, nil
+}
+
+// doRequest issues one HTTP call at {base}/{suffix}. 多数"OpenAI 兼容模式"
+// 端点挂在 /v1 路径下（如 …/compatible-mode/v1、硅基流动、vLLM）：当
+// {base}/{suffix} 404 且 base 尚无 /v1 后缀时，自动改打 {base}/v1/{suffix}
+// 并记忆为后续调用的前缀。只对 404 回退——401/403 是 Key 问题，换路径没用。
+func (c *Client) doRequest(ctx context.Context, method, suffix string, payload []byte) (*http.Response, []byte, error) {
+	base := strings.TrimRight(c.baseURL, "/")
+	if c.effBase != "" {
+		base = c.effBase
+	}
+	url := base + "/" + suffix
+	var body io.Reader
+	if payload != nil {
+		body = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	resp.Body.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	if resp.StatusCode == http.StatusNotFound && !c.v1Tried && !strings.HasSuffix(base, "/v1") {
+		c.v1Tried = true
+		c.effBase = base + "/v1"
+		return c.doRequest(ctx, method, suffix, payload)
+	}
+	return resp, data, nil
+}
+
+// EffectiveBase reports the base actually in use (after /v1 adaptation), so
+// callers can offer to persist the corrected URL.
+func (c *Client) EffectiveBase() string {
+	if c.effBase != "" {
+		return c.effBase
+	}
+	return strings.TrimRight(c.baseURL, "/")
+}
+
+func (c *Client) callURL(suffix string) string {
+	return c.EffectiveBase() + "/" + suffix
 }
 
 // ListModels probes the vendor's OpenAI-compatible /models listing. Used by
@@ -184,22 +228,16 @@ func (c *Client) once(ctx context.Context, payload []byte) (Reply, bool, error) 
 // endpoints without the listing surface the error verbatim (the UI falls
 // back to free-text model input).
 func (c *Client) ListModels(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	resp, err := c.hc.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	resp, data, err := c.doRequest(ctx, http.MethodGet, "models", nil)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("http %d: %.200s", resp.StatusCode, data)
+		hint := ""
+		if resp.StatusCode == http.StatusNotFound && c.v1Tried {
+			hint = "（已自动尝试 /v1 路径仍 404：该端点可能未提供模型列表，可手填模型）"
+		}
+		return nil, fmt.Errorf("http %d @ %s: %.200s%s", resp.StatusCode, c.callURL("models"), data, hint)
 	}
 	var env struct {
 		Data []struct {

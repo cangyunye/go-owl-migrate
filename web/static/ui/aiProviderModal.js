@@ -192,7 +192,12 @@ export async function openProviderModal(onSaved) {
             els.modelDd.innerHTML = models.map(m =>
                 '<button type="button" class="ai-model-opt" data-model="' + escapeHtml(m) + '">' + escapeHtml(m) + '</button>').join('');
             els.modelDd.hidden = models.length === 0;
-            status(models.length ? '✓ 探测到 ' + models.length + ' 个模型，点击选择'
+            let note = '';
+            if (r.effective_base_url && r.effective_base_url !== els.baseUrl.value.trim()) {
+                els.baseUrl.value = r.effective_base_url; // 端点挂在 /v1 下：回填自适应路径
+                note = '（端点挂在 /v1 路径下，已自动回填 Base URL，记得保存）';
+            }
+            status(models.length ? '✓ 探测到 ' + models.length + ' 个模型，点击选择' + note
                 : '端点未返回模型列表，可手填', models.length ? 'ok' : 'fail');
         } catch (e) {
             els.modelDd.hidden = true;
@@ -248,8 +253,14 @@ export async function openProviderModal(onSaved) {
                 base_url: els.baseUrl.value.trim(), model: els.model.value.trim(),
                 key: els.key.value.trim(),
             });
-            if (r.ok) status('✓ 连接成功（' + r.model + '，' + r.latency_ms + 'ms）', 'ok');
-            else status('✗ ' + (r.error || '未知错误'), 'fail');
+            if (r.ok) {
+                let note = '';
+                if (r.effective_base_url && r.effective_base_url !== els.baseUrl.value.trim()) {
+                    els.baseUrl.value = r.effective_base_url;
+                    note = '（端点挂在 /v1 路径下，已自动回填 Base URL，记得保存）';
+                }
+                status('✓ 连接成功（' + r.model + '，' + r.latency_ms + 'ms）' + note, 'ok');
+            } else status('✗ ' + (r.error || '未知错误'), 'fail');
         } catch (e) { status('✗ ' + (e.message || e), 'fail'); }
     });
 }

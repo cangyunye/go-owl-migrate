@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -129,5 +130,73 @@ func TestPromptParity(t *testing.T) {
 	}
 	if !strings.Contains(RouterSystemPrompt, "out-of-scope") {
 		t.Error("prompt 缺少路由词表")
+	}
+}
+
+// base_url 少了 /v1 后缀是"OpenAI 兼容模式"最常见的接入错误：
+// {base}/models 404 后应自动改打 {base}/v1/models 并记忆，报错也带实际 URL。
+func TestClientV1PathFallback(t *testing.T) {
+	var gotChatPath, gotModelsPath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		gotModelsPath = r.URL.Path
+		w.Write([]byte(`{"data":[{"id":"m-1"}]}`))
+	})
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		gotChatPath = r.URL.Path
+		w.Write([]byte(`{"choices":[{"message":{"content":"hi"}}],"usage":{}}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := NewClient(srv.URL, "k", "m", time.Second)
+	models, err := c.ListModels(context.Background())
+	if err != nil || len(models) != 1 {
+		t.Fatalf("ListModels = %v, %v", models, err)
+	}
+	rep, err := c.Chat(context.Background(), "", []Message{{Role: "user", Content: "x"}}, Options{})
+	if err != nil || rep.Content != "hi" {
+		t.Fatalf("Chat = %v, %v", rep, err)
+	}
+	if gotModelsPath != "/v1/models" || gotChatPath != "/v1/chat/completions" {
+		t.Errorf("paths = %q / %q", gotModelsPath, gotChatPath)
+	}
+	if !strings.HasSuffix(c.EffectiveBase(), "/v1") {
+		t.Errorf("EffectiveBase = %q", c.EffectiveBase())
+	}
+}
+
+// 端点确实不存在时，报错必须带上实际尝试的 URL 与 /v1 回退提示。
+func TestClientV1FallbackExhaustedError(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+	c := NewClient(srv.URL, "k", "m", time.Second)
+	_, err := c.ListModels(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), srv.URL+"/v1/models") {
+		t.Fatalf("err = %v", err)
+	}
+	if !strings.Contains(err.Error(), "/v1") || !strings.Contains(err.Error(), "手填") {
+		t.Errorf("err should mention fallback + manual hint: %v", err)
+	}
+}
+
+// 严格 OpenAI 端点场景：Options 未设置 Effort 时，请求体不得携带 effort 字段。
+func TestChatOmitsUnsetEffort(t *testing.T) {
+	var raw map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &raw)
+		w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"usage":{}}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient(srv.URL, "k", "m", time.Second)
+	if _, err := c.Chat(context.Background(), "", []Message{{Role: "user", Content: "x"}}, Options{JSONMode: true}); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if _, has := raw["effort"]; has {
+		t.Error("request body must not carry effort when Options.Effort is empty")
+	}
+	if _, has := raw["response_format"]; !has {
+		t.Error("JSONMode should add response_format")
 	}
 }

@@ -390,10 +390,13 @@ func (a *AIConfig) ApplyDefaults() {
 	if a.ContextWindow == 0 {
 		a.ContextWindow = 1048576
 	}
-	if a.Effort == "" {
+	// effort/plan_effort 是 DeepSeek 系的思考强度字段，严格 OpenAI 端点会
+	// 拒收未知参数：仅 deepseek 预设默认注入；custom/其他端点留空 =
+	// 不随请求发送（用户仍可在高级参数里显式设置）。
+	if a.Effort == "" && (a.Provider == "" || a.Provider == "deepseek") {
 		a.Effort = "low"
 	}
-	if a.PlanEffortStr == "" {
+	if a.PlanEffortStr == "" && (a.Provider == "" || a.Provider == "deepseek") {
 		a.PlanEffortStr = "high"
 	}
 	if a.MaxTokens == 0 {
@@ -419,11 +422,10 @@ func (a *AIConfig) APIKey() string {
 	return ""
 }
 
-// PlanEffort returns the thinking intensity for config generation.
+// PlanEffort returns the thinking intensity for config generation; empty
+// means "not set" (custom 端点默认不发送该字段), defaults are applied by
+// ApplyDefaults for the deepseek preset.
 func (a *AIConfig) PlanEffort() string {
-	if a.PlanEffortStr == "" {
-		return "high"
-	}
 	return a.PlanEffortStr
 }
 
@@ -946,10 +948,11 @@ func (c *Config) validate() error {
 	if c.AI != (AIConfig{}) {
 		a := c.AI
 		a.ApplyDefaults()
-		if !ValidAIEfforts[a.Effort] {
+		// effort 留空合法（custom 端点不发送该字段），只拒绝非空的非法值。
+		if a.Effort != "" && !ValidAIEfforts[a.Effort] {
 			return fmt.Errorf("invalid ai.effort %q: must be low, high or max", a.Effort)
 		}
-		if !ValidAIEfforts[a.PlanEffortStr] {
+		if a.PlanEffortStr != "" && !ValidAIEfforts[a.PlanEffortStr] {
 			return fmt.Errorf("invalid ai.plan_effort %q: must be low, high or max", a.PlanEffortStr)
 		}
 		if a.BaseURL == "" {

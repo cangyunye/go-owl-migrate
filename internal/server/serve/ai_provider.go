@@ -282,7 +282,11 @@ func (s *Server) handleAIModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sort.Strings(models)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": models})
+	resp := map[string]any{"ok": true, "models": models}
+	if client.EffectiveBase() != strings.TrimRight(baseURL, "/") {
+		resp["effective_base_url"] = client.EffectiveBase()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleAITest: POST /api/v1/ai/test {"base_url":"...","model":"..."} — one
@@ -334,7 +338,11 @@ func (s *Server) handleAITest(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	okResp := map[string]any{
 		"ok": true, "model": model, "latency_ms": latency, "key_source": keySource,
-	})
+	}
+	if client.EffectiveBase() != strings.TrimRight(baseURL, "/") {
+		okResp["effective_base_url"] = client.EffectiveBase()
+	}
+	writeJSON(w, http.StatusOK, okResp)
 }

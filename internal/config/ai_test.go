@@ -114,3 +114,17 @@ func TestAIApplyDefaultsModelScoping(t *testing.T) {
 		t.Errorf("custom provider must not inherit deepseek model, got %q", custom.Model)
 	}
 }
+
+// custom/非 deepseek 端点不吃 effort 默认值：留空 = 不随请求发送该非标准字段。
+func TestAIEffortScopedToDeepseekPreset(t *testing.T) {
+	custom := AIConfig{Provider: "custom", BaseURL: "http://127.0.0.1:9/v1"}
+	custom.ApplyDefaults()
+	if custom.Effort != "" || custom.PlanEffort() != "" {
+		t.Errorf("custom provider must not inherit effort defaults, got %q/%q", custom.Effort, custom.PlanEffort())
+	}
+	ds := AIConfig{}
+	ds.ApplyDefaults()
+	if ds.Effort != "low" || ds.PlanEffort() != "high" {
+		t.Errorf("deepseek effort defaults = %q/%q", ds.Effort, ds.PlanEffort())
+	}
+}
