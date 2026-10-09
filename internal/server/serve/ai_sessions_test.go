@@ -256,7 +256,7 @@ func TestClarifyItemsMapping(t *testing.T) {
 		case strings.Contains(it.Question, "导出内容"):
 			foundContent = len(it.Options) >= 2
 		case strings.Contains(it.Question, "格式"):
-			foundFormat = len(it.Options) == 3
+			foundFormat = len(it.Options) == 4 // csv/sql/xlsx/tsv
 		case strings.Contains(it.Question, "数据源"):
 			foundProfile = len(it.Options) == 2 // 两个档案名
 		}

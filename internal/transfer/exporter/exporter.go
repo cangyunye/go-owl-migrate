@@ -384,7 +384,13 @@ func (e *Exporter) createWriter(tbl *md.TableDef, columns []ColumnInfo) (ExportW
 			schema: tbl.TableSchema,
 			table:  tbl.TableName,
 		}, nil
-	default: // csv
+	default: // csv / tsv
+		if strings.ToLower(e.cfg.Format) == "tsv" {
+			// tsv 只改写分隔符/换行/扩展名，引号转义与 null 表示沿用 csv 配置。
+			ext = "tsv"
+			delim = "\t"
+			term = "\n"
+		}
 		cw := &csvWriter{
 			path:              filepath.Join(e.cfg.OutputDir, fmt.Sprintf("%s.%s.%s", strings.ToLower(tbl.TableSchema), strings.ToLower(tbl.TableName), ext)),
 			delim:             delim,

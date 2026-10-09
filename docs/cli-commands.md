@@ -195,7 +195,7 @@ Flags:
 
 Key features:
 
-- **Multi-format output**: CSV (default), SQL (INSERT statements), XLSX (Excel workbook).
+- **Multi-format output**: CSV (default), SQL (INSERT statements), XLSX (Excel workbook), TSV (tab-separated).
 - **Filtered export (WHERE)**: `export.filters` / `--where` narrows rows per table; a conditional-COUNT gate validates the predicate against the source (syntax/column/permission errors abort before any data moves) and records the source-side expected count. Deterministic predicates only (keyset pagination); no bind placeholders, `;` or comments in fragments. See docs/filtered-export.md.
 - **Column projection & rename**: `export.columns.include` (list order = output order) + `rename`; migrate auto-created tables match the CSV column set exactly; primary keys must survive projection.
 - **Fallback to LIMIT**: Tables without primary keys use LIMIT-only pagination (less efficient but works for any table).
@@ -212,8 +212,9 @@ Output files by format:
 | CSV | `{schema}.{table}.csv` |
 | SQL | `{schema}.{table}.insert.sql` |
 | XLSX | `{schema}.{table}.xlsx` |
+| TSV | `{schema}.{table}.tsv` |
 
-The format is controlled by `export.format` in the config file (`csv`, `sql`, or `xlsx`).
+The format is controlled by `export.format` in the config file (`csv`, `sql`, `xlsx`, or `tsv`).
 
 The old `export` command is now `export data`.
 

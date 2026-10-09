@@ -18,7 +18,7 @@
   },
   "target": { "同 source" },
   "export": {
-    "format": "csv|sql|xlsx",
+    "format": "csv|sql|xlsx|tsv",
     "tables": ["表名", ...],
     "filters": {"表模式": "WHERE 片段"},
     "columns": {"include": {"表模式": ["列..."]}, "rename": {"表模式": {"源列": "新名"}}}

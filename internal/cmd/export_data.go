@@ -28,7 +28,7 @@ Offline CSV mode (no database needed):
 Offline XLSX mode (no database needed):
   owl-migrate export data --xlsx ./data.xlsx -o ./output/xlsx/ --format xlsx
 
-Supported output formats: csv (default), sql, xlsx`,
+Supported output formats: csv (default), sql, xlsx, tsv`,
 	}
 
 	var (
@@ -44,7 +44,7 @@ Supported output formats: csv (default), sql, xlsx`,
 	cmd.Flags().BoolVar(&noQuote, "no-quote-identifiers", false, "do not quote identifiers (bare names, for compatibility)")
 	cmd.Flags().StringVarP(&dataDir, "data", "d", "", "directory containing CSV data files (offline mode)")
 	cmd.Flags().StringVar(&xlsxPath, "xlsx", "", "path to xlsx file with @ data sheets (offline mode)")
-	cmd.Flags().StringVar(&format, "format", "", "output format: csv (default), sql, xlsx")
+	cmd.Flags().StringVar(&format, "format", "", "output format: csv (default), sql, xlsx, tsv")
 	cmd.Flags().StringVar(&tablesFlag, "tables", "", "comma-separated tables to export (overrides export.tables.include; supports schema.table)")
 	cmd.Flags().StringVar(&whereFlag, "where", "", `filtered export: "PATTERN: where-fragment" entries, comma-separated (overrides export.filters); e.g. 'SCOTT.EMP: deptno=20'`)
 

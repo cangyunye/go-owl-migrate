@@ -90,6 +90,7 @@ export function render(root /*Element*/, params) {
         +         '<option value="csv">CSV</option>'
         +         '<option value="sql">SQL（INSERT 语句）</option>'
         +         '<option value="xlsx">XLSX</option>'
+        +         '<option value="tsv">TSV</option>'
         +       '</select>'
         +     '</div>'
         +     '<div class="form-actions">'

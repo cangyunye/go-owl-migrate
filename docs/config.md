@@ -157,7 +157,7 @@ select_gen:
 
 export:
   output_dir: ./output/data/                # Output directory for exported data files
-  format: csv                               # Output format: csv (default), sql, xlsx
+  format: csv                               # Output format: csv (default), sql, xlsx, tsv
   filters:                                  # WHERE 条件导出（glob 键 → 字面 SQL 片段；精确点名 > glob，多命中报错）
     "SCOTT.EMP": "deptno = 20 AND sal > 1000"
   filters_check: count                      # 条件 COUNT 门禁: count(默认，执行前校验条件并产源侧 expected) | off

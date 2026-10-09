@@ -227,7 +227,7 @@ func (s *Server) clarifyItemsFor(missing []string, sess *ai.Session) []ClarifyIt
 		case strings.Contains(lm, "格式") || strings.Contains(lm, "format"):
 			items = append(items, ClarifyItem{
 				Question: "输出格式？",
-				Options:  []string{"csv", "sql", "xlsx"},
+				Options:  []string{"csv", "sql", "xlsx", "tsv"},
 			})
 		case strings.Contains(lm, "连接") || strings.Contains(lm, "host") || strings.Contains(lm, "dsn") ||
 			strings.Contains(lm, "数据库") && strings.Contains(lm, "源"):

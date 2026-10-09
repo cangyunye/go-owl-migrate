@@ -453,6 +453,74 @@ func TestExportTablesFromData_toCSV(t *testing.T) {
 	}
 }
 
+func TestExportTablesFromData_toTSV(t *testing.T) {
+	dir := t.TempDir()
+	outDir := t.TempDir()
+
+	csvPath := filepath.Join(dir, "scott.emp.csv")
+	f, _ := os.Create(csvPath)
+	f.WriteString("id,name\n1,Alice\n2,Bob\n")
+	f.Close()
+
+	tbl, _ := md.NewTableDef("scott", "emp")
+	dt, _ := ReadCSVTable(dir, tbl)
+
+	exp := New(nil, Config{
+		OutputDir: outDir,
+		Format:    "tsv",
+		CSVHeader: true,
+	})
+	results, err := exp.ExportTablesFromData([]*DataTable{dt})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.HasSuffix(results[0].OutputFile, ".tsv") {
+		t.Errorf("output file should have .tsv extension, got: %s", results[0].OutputFile)
+	}
+	data, err := os.ReadFile(results[0].OutputFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	want := "id\tname\n1\tAlice\n2\tBob\n"
+	if content != want {
+		t.Errorf("TSV content mismatch:\n got: %q\nwant: %q", content, want)
+	}
+}
+
+func TestExportTablesFromData_toTSV_quotesTabInValue(t *testing.T) {
+	dir := t.TempDir()
+	outDir := t.TempDir()
+
+	csvPath := filepath.Join(dir, "scott.emp.csv")
+	f, _ := os.Create(csvPath)
+	f.WriteString("id,name\n1,A\tB\n")
+	f.Close()
+
+	tbl, _ := md.NewTableDef("scott", "emp")
+	dt, _ := ReadCSVTable(dir, tbl)
+
+	exp := New(nil, Config{
+		OutputDir: outDir,
+		Format:    "tsv",
+		CSVHeader: true,
+	})
+	results, err := exp.ExportTablesFromData([]*DataTable{dt})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(results[0].OutputFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "id\tname\n1\t\"A\tB\"\n"
+	if string(data) != want {
+		t.Errorf("value containing tab should be quoted:\n got: %q\nwant: %q", string(data), want)
+	}
+}
+
 // readXLSXRows reads back an xlsx file and returns all rows.
 func readXLSXRows(t *testing.T, path string) [][]string {
 	t.Helper()

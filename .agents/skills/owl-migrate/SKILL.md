@@ -1,6 +1,6 @@
 ---
 name: owl-migrate
-description: 使用 owl-migrate 处理数据库迁移类任务。触发场景：把表/整库从一个数据库迁到另一个（Oracle/MySQL/PostgreSQL/OceanBase/GoldenDB/PanWeiDB/OpenGaussDB/SQLite/DuckDB，以及经 JDBC agent 通道接入的达梦 dm/金仓 Kingbase/TimesTen）、导出表结构/元数据、提取某用户下的表信息、导出表数据（CSV/INSERT SQL/Excel）、生成建表 DDL、把 CSV 导入目标库、生成 INSERT 脚本、分页拉取大表、配置数据源、测试连接、迁移预检、断点续传、在线增量迁移（CDC）、JDBC 连接通道（native/agent/auto）与 owljdbc.profiles 自定义类型注册。当用户提出数据库迁移、导出、导入、表结构提取或数据源配置需求时使用本技能。
+description: 使用 owl-migrate 处理数据库迁移类任务。触发场景：把表/整库从一个数据库迁到另一个（Oracle/MySQL/PostgreSQL/OceanBase/GoldenDB/PanWeiDB/OpenGaussDB/SQLite/DuckDB，以及经 JDBC agent 通道接入的达梦 dm/金仓 Kingbase/TimesTen）、导出表结构/元数据、提取某用户下的表信息、导出表数据（CSV/INSERT SQL/Excel/TSV）、生成建表 DDL、把 CSV 导入目标库、生成 INSERT 脚本、分页拉取大表、配置数据源、测试连接、迁移预检、断点续传、在线增量迁移（CDC）、JDBC 连接通道（native/agent/auto）与 owljdbc.profiles 自定义类型注册。当用户提出数据库迁移、导出、导入、表结构提取或数据源配置需求时使用本技能。
 ---
 
 # owl-migrate 数据库迁移技能

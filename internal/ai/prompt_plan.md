@@ -17,7 +17,7 @@ ddl:
     owl_demo: public
   column_types: {"SCOTT.EMP.SAL": "number(10,2)"}   # 按列类型覆盖（自动建表/export ddl）
 export:
-  format: csv|sql|xlsx
+  format: csv|sql|xlsx|tsv
   parallel: {enabled: true, max_workers: 4}
   filters:                                    # WHERE 条件导出（字面 SQL 片段，禁 ; 注释与绑定占位符）
     "SCOTT.EMP": "deptno = 20"

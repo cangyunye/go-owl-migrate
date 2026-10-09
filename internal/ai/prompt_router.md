@@ -24,7 +24,7 @@
 | `clarify` | 指代不明/要素缺失，需向用户提问 | "导出这个库" |
 | `out-of-scope` | 超出工具能力 | 见硬约束 |
 
-`sub` 字段填该路由下的变体标签（如 resume / skip-ddl / sql-out / continue-on-error / format:csv|sql|xlsx / objects / schema-mapping / no-quote / csv-metadata / offline-csv2sql / parallel / truncate / gbk / error-policy / use-copy / data-transforms / channel-agent / create / conn-test / search-order / apply / script-only / once / capabilities / dsn-example / unsupported-filter 等；无变体填空串）。
+`sub` 字段填该路由下的变体标签（如 resume / skip-ddl / sql-out / continue-on-error / format:csv|sql|xlsx|tsv / objects / schema-mapping / no-quote / csv-metadata / offline-csv2sql / parallel / truncate / gbk / error-policy / use-copy / data-transforms / channel-agent / create / conn-test / search-order / apply / script-only / once / capabilities / dsn-example / unsupported-filter 等；无变体填空串）。
 
 ## 硬约束（判定 out-of-scope 的依据）
 

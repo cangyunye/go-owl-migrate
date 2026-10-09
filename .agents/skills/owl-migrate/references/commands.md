@@ -66,12 +66,12 @@ CSV 模式产出 13 张规范表：tables / columns / primary_keys / indexes / f
 ## export data — 导出表数据
 
 ```
-在线:  owl-migrate export data -c migrate.yaml [--tables S.T1,...] [--where 'S.T: where片段'] --format csv|sql|xlsx -o ./output/data/
+在线:  owl-migrate export data -c migrate.yaml [--tables S.T1,...] [--where 'S.T: where片段'] --format csv|sql|xlsx|tsv -o ./output/data/
 离线:  owl-migrate export data -d <csv目录> -o ./output/sql/ --format sql     # CSV→SQL
        owl-migrate export data --xlsx <文件> -o ./output/xlsx/ --format xlsx
 ```
 
-- 输出命名：`{schema}.{table}.csv` / `{schema}.{table}.insert.sql`。
+- 输出命名：`{schema}.{table}.csv` / `{schema}.{table}.insert.sql` / `{schema}.{table}.tsv`（tsv 固定 tab 分隔 + `\n` 换行，引号转义与 null 表示沿用 `export.csv.*` 配置）。
 - 条件导出：`--where 'SCOTT.EMP: deptno=20'`（逗号分隔多条；配置 `export.filters`，`filters_check: count|off`）——执行前条件 COUNT 门禁，列名/语法错中止并指名 filter；片段禁 `;`、注释、绑定占位符，且须确定性（keyset 分页）。
 - 列投影/改名：`export.columns.include`（**列表顺序=输出顺序**）+ `rename`；migrate 自动建表与 CSV 列集一致；PK 列不可被投影丢弃。
 - 迁移同样支持 `migrate --where`；`online init` 遇 filters 硬拒绝；报告 `filtered: true` 标注。

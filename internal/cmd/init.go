@@ -866,7 +866,7 @@ var fieldComments = map[string]string{
 	// export
 	"export":                         "# 数据导出配置（仅 export data/migrate 命令使用）",
 	"export.output_dir":              "# 仅 export data 独立运行时使用; migrate 用 --temp-dir",
-	"export.format":                  "# 输出格式: csv(默认), sql, xlsx",
+	"export.format":                  "# 输出格式: csv(默认), sql, xlsx, tsv",
 	"export.csv":                     "# 导出 CSV 格式选项",
 	"export.csv.delimiter":           "# CSV 分隔符",
 	"export.csv.quote_char":          "# CSV 引号字符",
