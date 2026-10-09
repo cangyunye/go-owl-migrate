@@ -108,7 +108,7 @@ async function refreshStatus() {
     if (!isActive(job.status)) {
         stopLive();
         await loadCheckpoints();
-        await loadExportFiles();
+        await loadArtifacts();
         await loadEvents();
     }
 }
@@ -135,20 +135,25 @@ function startLive() {
 
 let currentJobId = '';
 
-async function loadExportFiles() {
+/* 任务产物统一面板：数据产物（export.output_dir）+ sql-out 产物（insert 目录，
+   打包下载复用既有 /output/download 端点）。两者皆空时隐藏面板。 */
+async function loadArtifacts() {
     const panel = document.getElementById('job-files-panel');
     if (!panel) return;
-    let resp;
-    try { resp = await window.api.get('/api/v1/jobs/' + currentJobId + '/files'); }
-    catch (e) { panel.hidden = true; return; }
-    const files = resp && resp.files || [];
-    if (!files.length) { panel.hidden = true; return; }
+    const [filesResp, sqlResp] = await Promise.all([
+        window.api.get('/api/v1/jobs/' + currentJobId + '/files').catch(() => null),
+        window.api.get('/api/v1/jobs/' + currentJobId + '/output').catch(() => null),
+    ]);
+    const dataFiles = filesResp && filesResp.files || [];
+    const sql = sqlResp && sqlResp.has_sql ? sqlResp : null;
+    if (!dataFiles.length && !sql) { panel.hidden = true; return; }
     panel.hidden = false;
+
     const dirEl = document.getElementById('files-dir');
-    if (dirEl) dirEl.textContent = resp.dir || '';
+    if (dirEl) dirEl.textContent = (filesResp && filesResp.dir) || '';
     const count = document.getElementById('files-count');
-    if (count) count.textContent = files.length + ' 个文件';
-    document.getElementById('files-body').innerHTML = files.map(f =>
+    if (count) count.textContent = dataFiles.length + ' 个数据文件';
+    document.getElementById('files-body').innerHTML = dataFiles.map(f =>
         '<tr><td class="mono">' + escapeHtml(f.name) + '</td>' +
         '<td class="mono">' + (window.humanSize ? window.humanSize(f.size) : f.size) + '</td>' +
         '<td class="mono">' + escapeHtml((f.modified || '').replace('T', ' ').slice(0, 19)) + '</td>' +
@@ -156,6 +161,20 @@ async function loadExportFiles() {
         window.api.downloadURL('/api/v1/jobs/' + currentJobId + '/files/download?name=' + encodeURIComponent(f.name)) +
         '">下载</a></td></tr>'
     ).join('');
+
+    const sqlSec = document.getElementById('sql-artifacts');
+    if (sql) {
+        sqlSec.hidden = false;
+        document.getElementById('sql-files-body').innerHTML = (sql.files || []).map(f =>
+            '<tr><td class="mono">' + escapeHtml(f.name) + '</td>' +
+            '<td class="mono">' + (window.humanSize ? window.humanSize(f.size) : f.size) + '</td></tr>'
+        ).join('');
+        const base = window.api.downloadURL('/api/v1/jobs/' + currentJobId + '/output/download?format=');
+        document.getElementById('sql-bundle-tgz').href = base + 'tar.gz';
+        document.getElementById('sql-bundle-zip').href = base + 'zip';
+    } else {
+        sqlSec.hidden = true;
+    }
 }
 
 async function load() {
@@ -164,7 +183,7 @@ async function load() {
     renderInfo(job);
     renderButtons(job.status);
     await loadCheckpoints();
-    await loadExportFiles();
+    await loadArtifacts();
     if (isActive(job.status)) startLive();
     else await loadEvents();
 }
@@ -224,13 +243,23 @@ export function render(root /*Element*/, params) {
         + '</div>'
         + '<div class="panel reveal" style="--i:2" id="job-files-panel" hidden>'
         +   '<div class="panel-head">'
-        +     '<span class="panel-title">导出产物<span class="badge badge-accent" id="files-count"></span></span>'
+        +     '<span class="panel-title">任务产物<span class="badge badge-accent" id="files-count"></span></span>'
         +     '<span class="field-help mono" id="files-dir" style="margin:0"></span>'
         +   '</div>'
         +   '<table class="data-table">'
         +     '<thead><tr><th scope="col">文件</th><th scope="col">大小</th><th scope="col">修改时间</th><th scope="col">操作</th></tr></thead>'
         +     '<tbody id="files-body"></tbody>'
         +   '</table>'
+        +   '<div id="sql-artifacts" hidden style="margin-top:14px">'
+        +     '<div class="field-help" style="margin-bottom:6px">SQL 产物（sql-out 任务）：'
+        +       '<a class="btn-ghost btn-sm" id="sql-bundle-tgz" href="#">打包 tar.gz</a> '
+        +       '<a class="btn-ghost btn-sm" id="sql-bundle-zip" href="#">打包 zip</a>'
+        +     '</div>'
+        +     '<table class="data-table">'
+        +       '<thead><tr><th scope="col">SQL 文件</th><th scope="col">大小</th></tr></thead>'
+        +       '<tbody id="sql-files-body"></tbody>'
+        +     '</table>'
+        +   '</div>'
         + '</div>'
         + '<div class="panel reveal" style="--i:3">'
         +   '<div class="panel-head">'
