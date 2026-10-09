@@ -7,9 +7,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/cangyunye/go-owl-migrate/internal/config"
 )
 
 // sqlOutputDir returns the directory where a sql-out migration worker writes
@@ -187,4 +194,96 @@ func (s *Server) streamRaw(w http.ResponseWriter, dir string, e os.DirEntry) {
 	w.Header().Set("Content-Type", "application/sql")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, e.Name()))
 	_, _ = io.Copy(w, f)
+}
+
+// jobExportOutputDir resolves the data-export output directory of a job:
+// export.output_dir from the job's stored config (default ./output/data/).
+// Data-export and migrate jobs write their CSV/xlsx there (shared dir), unlike
+// sql-out jobs whose INSERT files land in the per-job insert dir above.
+func (s *Server) jobExportOutputDir(jobID string) (string, error) {
+	job, err := s.store.GetJob(jobID)
+	if err != nil {
+		return "", err
+	}
+	var cfg config.Config
+	if err := yaml.Unmarshal([]byte(job.Config), &cfg); err != nil {
+		return "", err
+	}
+	dir := cfg.Export.OutputDir
+	if dir == "" {
+		dir = "./output/data/"
+	}
+	return dir, nil
+}
+
+type exportFile struct {
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	ModTime string `json:"modified"`
+}
+
+// handleJobExportFiles lists the data-export artifacts of a job (flat listing
+// of the job's export output dir, newest first). 目录不存在返回空列表——
+// 任务可能尚未产出任何文件。
+func (s *Server) handleJobExportFiles(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("id")
+	dir, err := s.jobExportOutputDir(jobID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"dir": dir, "files": []exportFile{}})
+		return
+	}
+	files := make([]exportFile, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, exportFile{
+			Name:    e.Name(),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Format(time.RFC3339),
+		})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].ModTime > files[j].ModTime })
+	writeJSON(w, http.StatusOK, map[string]any{"dir": dir, "files": files})
+}
+
+// handleJobExportFileDownload streams one exported artifact. 路径清洗限制在
+// 产物目录内；仅允许已完成的任务下载，避免拉到写了一半的文件。
+func (s *Server) handleJobExportFileDownload(w http.ResponseWriter, r *http.Request) {
+	jobID := r.PathValue("id")
+	if job, err := s.store.GetJob(jobID); err != nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	} else if job.Status != "completed" && job.Status != "completed_with_errors" {
+		writeError(w, http.StatusConflict, "job is not completed yet (status: "+job.Status+")")
+		return
+	}
+	dir, err := s.jobExportOutputDir(jobID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	name := filepath.Clean("/" + r.URL.Query().Get("name")) // 强制相对化，防穿越
+	full := filepath.Join(dir, filepath.FromSlash(name))
+	cleanDir := filepath.Clean(dir)
+	if !strings.HasPrefix(full, cleanDir+string(os.PathSeparator)) {
+		writeError(w, http.StatusBadRequest, "invalid file name")
+		return
+	}
+	info, err := os.Stat(full)
+	if err != nil || info.IsDir() {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.PathEscape(filepath.Base(full)))
+	http.ServeFile(w, r, full)
 }

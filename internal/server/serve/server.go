@@ -157,6 +157,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/jobs/{id}/events", s.handleGetJobEvents)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/checkpoints", s.handleGetJobCheckpoints)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/output", s.handleJobOutput)
+	mux.HandleFunc("GET /api/v1/jobs/{id}/files", s.handleJobExportFiles)
+	mux.HandleFunc("GET /api/v1/jobs/{id}/files/download", s.handleJobExportFileDownload)
 	mux.HandleFunc("GET /api/v1/jobs/{id}/output/download", s.handleJobOutputDownload)
 	mux.HandleFunc("GET /api/v1/dialects", s.handleGetDialects)
 	mux.HandleFunc("GET /api/v1/capabilities", s.handleGetCapabilities)

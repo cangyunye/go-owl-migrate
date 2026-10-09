@@ -64,7 +64,7 @@ function appendEvent(m) {
     const tbl = ((m.schema || '') + (m.table ? '.' + m.table : '')).trim();
     line.innerHTML = '<span class="ln-seq">#' + m.seq + '</span>' +
         '<span class="ln-info">' + escapeHtml(m.event || '') + '</span>' +
-        (tbl ? '  <span style="color:var(--text)">' + escapeHtml(tbl) + '</span>' : '') +
+        (tbl ? '  <span class="ln-strong">' + escapeHtml(tbl) + '</span>' : '') +
         (m.event !== 'stage' && m.rows !== undefined && m.rows !== null ? '  <span class="ln-dim">→ ' + escapeHtml(m.rows) + ' rows</span>' : '') +
         (m.message ? '  <span class="ln-dim">' + escapeHtml(m.message) + '</span>' : '');
     log.appendChild(line);
@@ -108,6 +108,7 @@ async function refreshStatus() {
     if (!isActive(job.status)) {
         stopLive();
         await loadCheckpoints();
+        await loadExportFiles();
         await loadEvents();
     }
 }
@@ -134,12 +135,36 @@ function startLive() {
 
 let currentJobId = '';
 
+async function loadExportFiles() {
+    const panel = document.getElementById('job-files-panel');
+    if (!panel) return;
+    let resp;
+    try { resp = await window.api.get('/api/v1/jobs/' + currentJobId + '/files'); }
+    catch (e) { panel.hidden = true; return; }
+    const files = resp && resp.files || [];
+    if (!files.length) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const dirEl = document.getElementById('files-dir');
+    if (dirEl) dirEl.textContent = resp.dir || '';
+    const count = document.getElementById('files-count');
+    if (count) count.textContent = files.length + ' 个文件';
+    document.getElementById('files-body').innerHTML = files.map(f =>
+        '<tr><td class="mono">' + escapeHtml(f.name) + '</td>' +
+        '<td class="mono">' + (window.humanSize ? window.humanSize(f.size) : f.size) + '</td>' +
+        '<td class="mono">' + escapeHtml((f.modified || '').replace('T', ' ').slice(0, 19)) + '</td>' +
+        '<td><a class="btn-ghost btn-sm" href="' +
+        window.api.downloadURL('/api/v1/jobs/' + currentJobId + '/files/download?name=' + encodeURIComponent(f.name)) +
+        '">下载</a></td></tr>'
+    ).join('');
+}
+
 async function load() {
     const job = await window.api.get('/api/v1/jobs/' + currentJobId);
     jobType = job.type;
     renderInfo(job);
     renderButtons(job.status);
     await loadCheckpoints();
+    await loadExportFiles();
     if (isActive(job.status)) startLive();
     else await loadEvents();
 }
@@ -197,7 +222,17 @@ export function render(root /*Element*/, params) {
         +   '<div class="panel-head"><span class="panel-title">任务信息</span></div>'
         +   '<div class="job-info" id="job-info"></div>'
         + '</div>'
-        + '<div class="panel reveal" style="--i:2">'
+        + '<div class="panel reveal" style="--i:2" id="job-files-panel" hidden>'
+        +   '<div class="panel-head">'
+        +     '<span class="panel-title">导出产物<span class="badge badge-accent" id="files-count"></span></span>'
+        +     '<span class="field-help mono" id="files-dir" style="margin:0"></span>'
+        +   '</div>'
+        +   '<table class="data-table">'
+        +     '<thead><tr><th scope="col">文件</th><th scope="col">大小</th><th scope="col">修改时间</th><th scope="col">操作</th></tr></thead>'
+        +     '<tbody id="files-body"></tbody>'
+        +   '</table>'
+        + '</div>'
+        + '<div class="panel reveal" style="--i:3">'
         +   '<div class="panel-head">'
         +     '<span class="panel-title">检查点（每表状态）<span class="badge badge-accent" id="cp-count"></span></span>'
         +   '</div>'

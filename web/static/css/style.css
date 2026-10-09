@@ -787,8 +787,12 @@ body.modal-open { overflow: hidden; }
 .ln-ok { color: var(--green); }
 .ln-err { color: var(--red); }
 .ln-warn { color: var(--amber); }
-.ln-info { color: var(--cyan); }
-.ln-dim { color: #5a6780; }
+/* .ln-* 是终端（.term 黑底，浅色模式下也保持黑底）内的行 token：
+   颜色固定为深底友好值，不随页面主题翻转——否则浅色主题下会出现
+   黑底配近黑字（进度事件里表名曾用 var(--text) 内联，即此问题）。 */
+.ln-info { color: #22d3ee; }
+.ln-dim { color: #7f8aa3; }
+.ln-strong { color: #e8ebf2; font-weight: 600; }
 
 .code-box {
   background: #070a10;
