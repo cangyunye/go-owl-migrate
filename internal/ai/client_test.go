@@ -200,3 +200,37 @@ func TestChatOmitsUnsetEffort(t *testing.T) {
 		t.Error("JSONMode should add response_format")
 	}
 }
+
+// 环境代理（HTTP_PROXY）不得劫持 localhost 流量：用户 shell 里的代理会让
+// serve 调本机网关得到代理的 504 HTML 页。本机地址必须永远直连。
+func TestProxyBypassesLocalhost(t *testing.T) {
+	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1") // 死端口：真被代理劫持必然报错
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"id":"m-1"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	// httptest 地址是 127.0.0.1:port，属于本机 → 绕过代理直连
+	c := NewClient(srv.URL, "k", "m", 5*time.Second)
+	models, err := c.ListModels(context.Background())
+	if err != nil || len(models) != 1 {
+		t.Fatalf("localhost via env proxy = %v, %v (proxy hijacked?)", models, err)
+	}
+}
+
+// 外部域名（含点、非本机）仍尊重 HTTP_PROXY —— 需要出网的用户不受影响。
+func TestProxyUsedForExternalHost(t *testing.T) {
+	var proxiedHost string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxiedHost = r.Host // 绝对形式 URI 经代理转发，Host 保留原目标
+		w.Write([]byte(`{"data":[{"id":"m-1"}]}`))
+	}))
+	t.Cleanup(proxy.Close)
+	t.Setenv("HTTP_PROXY", proxy.URL)
+	c := NewClient("http://gw.example.com", "k", "m", 5*time.Second)
+	if _, err := c.ListModels(context.Background()); err != nil {
+		t.Fatalf("ListModels via proxy: %v", err)
+	}
+	if proxiedHost != "gw.example.com" {
+		t.Errorf("proxy saw host %q", proxiedHost)
+	}
+}

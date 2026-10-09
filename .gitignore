@@ -108,3 +108,4 @@ docs/diagrams/
 /tmp_e2e/
 /tmp_seed/
 gui-test-screenshots/
+.zcodeignore

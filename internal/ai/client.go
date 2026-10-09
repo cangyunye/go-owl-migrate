@@ -13,7 +13,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -56,16 +59,54 @@ type Client struct {
 	effBase   string // 实际可用的前缀；回退后为 baseURL + /v1
 }
 
+// aiProxy decides per-request whether HTTP(S)_PROXY env applies. 外部供应商
+// 尊重环境代理（很多用户靠它出网）；但本机/内网/无点主机名永远直连——
+// 环境代理劫持 loopback 流量会得到代理的 504 HTML 错误页而不是 API 响应
+// （典型症状：localhost 网关 curl 通、serve 内 504）。这里自行读环境变量
+// 而非 http.ProxyFromEnvironment，绕开其 sync.Once 缓存以便测试注入。
+func aiProxy(req *http.Request) (*url.URL, error) {
+	host := req.URL.Hostname()
+	if host == "localhost" || host == "::1" || !strings.Contains(host, ".") {
+		return nil, nil
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()) {
+		return nil, nil
+	}
+	var raw string
+	if req.URL.Scheme == "https" {
+		raw = firstNonEmpty(os.Getenv("HTTPS_PROXY"), os.Getenv("https_proxy"),
+			os.Getenv("ALL_PROXY"), os.Getenv("all_proxy"))
+	} else {
+		raw = firstNonEmpty(os.Getenv("HTTP_PROXY"), os.Getenv("http_proxy"),
+			os.Getenv("ALL_PROXY"), os.Getenv("all_proxy"))
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	return url.Parse(raw)
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // NewClient builds a client. baseURL is the API root without /chat/completions.
 func NewClient(baseURL, apiKey, model string, timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = aiProxy
 	return &Client{
 		baseURL:   strings.TrimRight(baseURL, "/"),
 		apiKey:    apiKey,
 		model:     model,
-		hc:        &http.Client{Timeout: timeout},
+		hc:        &http.Client{Timeout: timeout, Transport: tr},
 		maxRetry:  3,
 		clientKey: "vendor",
 	}
