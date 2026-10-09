@@ -76,6 +76,7 @@ type EndpointSlots struct {
 
 type ExportSlots struct {
 	Format    string            `json:"format,omitempty"`
+	Tables    []string          `json:"tables,omitempty"` // 导出表清单：裸表名，支持通配；省略 = 全表
 	OutputDir string            `json:"output_dir,omitempty"`
 	Filters   map[string]string `json:"filters,omitempty"`
 	Columns   *ColumnSlots      `json:"columns,omitempty"`
@@ -326,6 +327,22 @@ func applyExportSlots(cfg *config.Config, s *ExportSlots) error {
 	}
 	if s.OutputDir != "" {
 		cfg.Export.OutputDir = s.OutputDir
+	}
+	if len(s.Tables) > 0 {
+		// 表清单：去空白、去重、保序；空串/纯 schema 前缀项丢弃。
+		include := make([]string, 0, len(s.Tables))
+		seen := map[string]bool{}
+		for _, tb := range s.Tables {
+			tb = strings.TrimSpace(tb)
+			if tb == "" || seen[tb] {
+				continue
+			}
+			seen[tb] = true
+			include = append(include, tb)
+		}
+		if len(include) > 0 {
+			cfg.Export.Tables.Include = include
+		}
 	}
 	if len(s.Filters) > 0 {
 		cleaned := map[string]string{}

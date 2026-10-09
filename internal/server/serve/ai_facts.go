@@ -188,6 +188,9 @@ func deriveKeywords(req *configbuild.SlotRequest) []string {
 		for pat := range req.Export.Filters {
 			add(pat)
 		}
+		for _, tb := range req.Export.Tables {
+			add(tb)
+		}
 	}
 	return out
 }

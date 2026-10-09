@@ -28,7 +28,7 @@ func TestBuildFromSlotsMigrateMySQL(t *testing.T) {
 		Source:   EndpointSlots{Type: "mysql", Host: "127.0.0.1", Port: "3306", User: "root", Password: "pw", Database: "owl_demo", Schema: "owl_demo"},
 		Target:   &EndpointSlots{Type: "postgres", Host: "127.0.0.1", Port: "5432", User: "postgres", Database: "app", Schema: "public"},
 		Export: &ExportSlots{
-			Format: "csv",
+			Format:  "csv",
 			Filters: map[string]string{"owl_demo.users": "id > 1"},
 			Columns: &ColumnSlots{
 				Include: map[string][]string{"owl_demo.users": {"id", "name"}},
@@ -148,5 +148,39 @@ func TestBuildFromSlotsScenarios(t *testing.T) {
 			continue
 		}
 		mustLoad(t, cfg, sc)
+	}
+}
+
+// 用户说"导出 xx 用户的 xx 表"：tables 槽位必须落到 export.tables.include，
+// 去空白、去重、保序——而不是回落全表导出。
+func TestBuildFromSlotsExportTables(t *testing.T) {
+	req := SlotRequest{
+		Scenario: "export",
+		Source:   EndpointSlots{Type: "oracle", Schema: "SCOTT", DSN: "oracle://scott:pw@host/svc"},
+		Export: &ExportSlots{
+			Format: "csv",
+			Tables: []string{" emp ", "dept", "emp", ""},
+		},
+	}
+	cfg, err := BuildFromSlots(req)
+	if err != nil {
+		t.Fatalf("BuildFromSlots: %v", err)
+	}
+	got := cfg.Export.Tables.Include
+	if len(got) != 2 || got[0] != "emp" || got[1] != "dept" {
+		t.Errorf("tables.include = %v, want [emp dept] (trim+dedupe+order)", got)
+	}
+
+	// 未提及表名 = 场景预设全表（include 只有 *）
+	cfg2, err := BuildFromSlots(SlotRequest{
+		Scenario: "export",
+		Source:   EndpointSlots{Type: "oracle", Schema: "SCOTT", DSN: "oracle://scott:pw@host/svc"},
+		Export:   &ExportSlots{Format: "csv"},
+	})
+	if err != nil {
+		t.Fatalf("BuildFromSlots no-tables: %v", err)
+	}
+	if len(cfg2.Export.Tables.Include) != 1 || cfg2.Export.Tables.Include[0] != "*" {
+		t.Errorf("no tables mentioned: include = %v, want [*] (全表)", cfg2.Export.Tables.Include)
 	}
 }

@@ -19,6 +19,7 @@
   "target": { "同 source" },
   "export": {
     "format": "csv|sql|xlsx",
+    "tables": ["表名", ...],
     "filters": {"表模式": "WHERE 片段"},
     "columns": {"include": {"表模式": ["列..."]}, "rename": {"表模式": {"源列": "新名"}}}
   },
@@ -29,6 +30,7 @@
 
 ## 规则
 
+- **表名必须提取**：用户提到具体表/视图名时，逐个填入 `export.tables`——**裸表名，禁止带 schema 前缀**（`scott.emp` 写法：`emp` 进 tables，`scott` 进 `source.schema`）；「导出 A、B 表」→ `tables: ["A", "B"]`；用户未提及表名或明确说全部表/整库时省略 `tables`（默认全表）。已知槽位里的表清单未显式修改则沿用。
 - **数据源档案优先**：消息提供【可用数据源档案】清单时，若用户描述的连接与某档案匹配（按名称/类型/schema 语义判断），该端点**必须**填 `"profile": "<档案名>"`，并省略 host/port/user/database/dsn——**禁止**为已匹配档案的端点编造任何连接部件；档案未覆盖的字段（schema、channel 等）按用户说法填。用户显式给出完整 DSN 时以 DSN 为准、不用档案。
 - **凭据协议**：密码**永远**不写真实值——用户提到了密码时，`password` 填 `__PWD_mysql__`（mysql 系）/`__PWD_pg__`（pg 系）/`__PWD_oracle__`（oracle/dm/OB 系）；未提到就省略该字段。服务端会注入真实值。
 - **高级选项克制**：`filters`/`columns`/`column_types` 仅在用户明确要求时输出——用户没要求就整段省略，禁止"顺手"生成（如 `1=1` 之类无意义过滤）。
