@@ -522,7 +522,7 @@ button { font-family: inherit; }
   margin-bottom: 6px;
   letter-spacing: .02em;
 }
-.field input, .field select, select, input[type="text"], input[type="number"], input[type="search"] {
+.field input, .field select, select, input[type="text"], input[type="number"], input[type="search"], input[type="password"] {
   width: 100%;
   padding: 9px 12px;
   background: var(--bg-inset);
@@ -533,7 +533,7 @@ button { font-family: inherit; }
   font-family: var(--font-body);
   transition: border-color .15s, box-shadow .15s, background .15s;
 }
-.field input:focus, .field select:focus, select:focus, input[type="text"]:focus, input[type="number"]:focus, input[type="search"]:focus {
+.field input:focus, .field select:focus, select:focus, input[type="text"]:focus, input[type="number"]:focus, input[type="search"]:focus, input[type="password"]:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-dim);
@@ -1230,8 +1230,11 @@ button:focus-visible, a:focus-visible, .tab:focus-visible, .nav-link:focus-visib
 @media (max-width: 980px) { .gen-layout { grid-template-columns: 1fr; } .gen-side { position: static; } }
 
 /* ── config page ────────────────────────────────────────── */
-.cfg-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; align-items: start; }
-.cfg-preview-panel { position: sticky; top: calc(var(--topbar-h) + 18px); }
+.cfg-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; }
+/* 预览面板拉伸至与左侧表单等高，YAML 区填满剩余空间（超出内部滚动） */
+.cfg-preview-panel { position: sticky; top: calc(var(--topbar-h) + 18px); display: flex; flex-direction: column; }
+.cfg-preview-panel .code-box { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cfg-preview-panel .yaml-view { flex: 1; height: auto; min-height: 400px; }
 .cmd-badge {
   font-family: var(--font-display);
   font-size: 11px;
@@ -1361,6 +1364,37 @@ button:focus-visible, a:focus-visible, .tab:focus-visible, .nav-link:focus-visib
 /* ── AI 对话页 ───────────────────────────────────────────── */
 .ai-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
 @media (max-width: 900px) { .ai-layout { grid-template-columns: 1fr; } }
+/* AI 供应商面板：两列栅格 + 折叠高级区 */
+.ai-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-top: 10px; }
+@media (max-width: 720px) { .ai-form-grid { grid-template-columns: 1fr; } }
+.ai-fld { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-2); }
+.ai-fld > span { font-weight: 600; letter-spacing: .02em; }
+.ai-fld .upload-row { display: flex; gap: 8px; align-items: center; }
+.ai-fld .upload-row input { flex: 1; }
+/* 模型探测下拉：全量展示，不按输入值过滤 */
+.ai-model-wrap { position: relative; flex: 1; display: flex; }
+.ai-model-wrap input { flex: 1; }
+.ai-model-dd { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-surface, #161b26); border: 1px solid var(--border); border-radius: 8px; z-index: 50; max-height: 240px; overflow-y: auto; overscroll-behavior: contain; box-shadow: 0 10px 28px rgba(0, 0, 0, .4); }
+.ai-model-opt { display: block; width: 100%; text-align: left; padding: 7px 10px; background: transparent; border: 0; color: var(--text); font-family: var(--font-display); font-size: 12.5px; cursor: pointer; }
+.ai-model-opt:hover { background: var(--bg-inset); color: var(--accent); }
+.ai-advanced { margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 10px; }
+.ai-advanced summary { cursor: pointer; font-size: 12.5px; color: var(--text-3); user-select: none; }
+.ai-advanced[open] summary { margin-bottom: 4px; color: var(--text-2); }
+
+/* ── 顶栏「选择配置」下拉：列表限高约 10 行，其余滚动 ── */
+.cfg-dd { position: relative; display: inline-block; }
+.cfg-dd-toggle { cursor: pointer; }
+.cfg-dd-caret { font-size: 10px; opacity: .7; margin-left: 2px; }
+.cfg-dd-panel { position: absolute; right: 0; top: calc(100% + 6px); min-width: 260px; background: var(--bg-surface, #161b26); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, .4); z-index: 60; padding: 6px; }
+.cfg-dd-item { display: block; width: 100%; text-align: left; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font-size: 12.5px; font-family: inherit; cursor: pointer; text-decoration: none; }
+.cfg-dd-item:hover { background: var(--bg-inset); color: var(--accent); }
+.cfg-dd-item b { font-weight: 600; }
+.cfg-dd-item .sub { display: block; font-size: 11px; opacity: .55; margin-top: 1px; }
+.cfg-dd-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+.cfg-dd-list { max-height: 484px; overflow-y: auto; overscroll-behavior: contain; }
+.cfg-dd-empty { padding: 12px 10px; font-size: 12px; opacity: .55; text-align: center; line-height: 1.7; }
+/* AI 供应商模态框：两列表单需要比默认 520px 更宽 */
+.ai-provider-modal .dsn-modal { width: min(680px, 100%); }
 .ai-hist-panel { padding-bottom: 12px; }
 .ai-hist-panel input[type="text"] { margin: 0 12px 10px; width: calc(100% - 24px); box-sizing: border-box; }
 .ai-hist-noconfirm { margin: 0 12px 8px; }

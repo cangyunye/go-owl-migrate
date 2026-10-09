@@ -11,6 +11,7 @@
 
 import { escapeHtml } from '../util.js';
 import { dsModal } from './datasources.js';
+import { openProviderModal } from '../aiProviderModal.js';
 
 /* 模块级会话状态：跨 render 存活（修掉旧面板 render 作用域丢失会话的 bug），
    刷新浏览器由 localStorage 恢复。 */
@@ -134,22 +135,34 @@ export async function render(root /*Element*/) {
         execute: $('#ai-execute'), activate: $('#ai-activate'),
     };
 
-    /* ── 供应商徽章 + 未配置禁用 ── */
-    (async () => {
+    /* ── 供应商徽章（点击弹出配置模态框） + 未配置禁用 ── */
+    el.badge.style.cursor = 'pointer';
+    el.badge.title = '点击配置 AI 供应商';
+    el.badge.addEventListener('click', () => openProviderModal(refreshProviderBadge));
+    refreshProviderBadge();
+
+    async function refreshProviderBadge() {
         try {
             const st = await window.api.get('/api/v1/ai/status');
             if (st && st.enabled) {
                 el.badge.textContent = (st.provider || '?') + ' · ' + (st.model || '?');
+                el.input.disabled = el.send.disabled = false;
+                /* 配置补齐时清掉"未配置"类提示；任务链接等有效状态不动 */
+                if (el.status.classList.contains('fail') && el.status.textContent.indexOf('未配置') >= 0) {
+                    aiSetStatus('', '');
+                }
                 return;
             }
-            el.badge.textContent = '未配置';
+            el.badge.textContent = st && st.key_set ? '模型未设置' : '未配置';
             el.input.disabled = el.send.disabled = true;
-            aiSetStatus('AI 未配置：设置环境变量 ' + (st && st.key_env || 'OWL_AI_API_KEY')
-                + '（或 DEEPSEEK_API_KEY）后重启 serve', 'fail');
+            aiSetStatus(st && st.key_set
+                ? '✗ 模型未设置：点击右上角供应商徽章，探测或手填模型'
+                : 'AI 未配置：点击右上角供应商徽章保存 Key（或设置环境变量 '
+                    + (st && st.key_env || 'OWL_AI_API_KEY') + '）', 'fail');
         } catch (e) {
             el.badge.textContent = '状态未知';
         }
-    })();
+    }
 
     function aiSetStatus(msg, cls) {
         el.status.textContent = msg;

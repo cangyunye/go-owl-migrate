@@ -107,3 +107,4 @@ docs/diagrams/
 # dameng 互迁 e2e 本地产物（配置/日志/对拍 CSV）
 /tmp_e2e/
 /tmp_seed/
+gui-test-screenshots/

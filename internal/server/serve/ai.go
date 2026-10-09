@@ -21,17 +21,20 @@ func (s *Server) aiSettings() config.AIConfig {
 }
 
 // handleAIStatus reports whether the routing layer is provisioned. Cheap:
-// no vendor call is made. Key material is never echoed — only presence.
+// no vendor call is made. Key material is never echoed — only presence and
+// provenance (vault = UI 保存的本机加密副本，env = 环境变量链).
 func (s *Server) handleAIStatus(w http.ResponseWriter, r *http.Request) {
 	a := s.aiSettings()
+	key, keySource := s.aiKeyMaterial()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"enabled":  a.APIKey() != "",
-		"provider": a.Provider,
-		"model":    a.Model,
-		"base_url": a.BaseURL,
-		"effort":   a.Effort,
-		"key_set":  a.APIKey() != "",
-		"key_env":  a.APIKeyEnv,
+		"enabled":    key != "" && a.Model != "",
+		"provider":   a.Provider,
+		"model":      a.Model,
+		"base_url":   a.BaseURL,
+		"effort":     a.Effort,
+		"key_set":    key != "",
+		"key_env":    a.APIKeyEnv,
+		"key_source": keySource,
 	})
 }
 
@@ -53,10 +56,15 @@ func (s *Server) handleAIRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a := s.aiSettings()
-	key := a.APIKey()
+	key, _ := s.aiKeyMaterial()
 	if key == "" {
 		writeError(w, http.StatusServiceUnavailable,
-			"AI 路由未配置：设置环境变量 "+a.APIKeyEnv+"（或 DEEPSEEK_API_KEY），或在配置里加 ai 段")
+			"AI 未配置：到配置页「AI 供应商」保存 Key，或设置环境变量 "+a.APIKeyEnv)
+		return
+	}
+	if a.Model == "" {
+		writeError(w, http.StatusBadRequest,
+			"模型未设置：到配置页「AI 供应商」探测或手填模型")
 		return
 	}
 

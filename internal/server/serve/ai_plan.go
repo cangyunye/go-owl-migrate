@@ -63,10 +63,15 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a := s.aiSettings()
-	key := a.APIKey()
+	key, _ := s.aiKeyMaterial()
 	if key == "" {
 		writeError(w, http.StatusServiceUnavailable,
-			"AI 未配置：设置环境变量 "+a.APIKeyEnv+"（或 DEEPSEEK_API_KEY），或在配置里加 ai 段")
+			"AI 未配置：到配置页「AI 供应商」保存 Key，或设置环境变量 "+a.APIKeyEnv)
+		return
+	}
+	if a.Model == "" {
+		writeError(w, http.StatusBadRequest,
+			"模型未设置：到配置页「AI 供应商」探测或手填模型")
 		return
 	}
 	store, err := s.aiSessions()

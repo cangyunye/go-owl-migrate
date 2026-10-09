@@ -179,6 +179,47 @@ func (c *Client) once(ctx context.Context, payload []byte) (Reply, bool, error) 
 	return Reply{Content: env.Choices[0].Message.Content, Usage: env.Usage}, false, nil
 }
 
+// ListModels probes the vendor's OpenAI-compatible /models listing. Used by
+// the provider-config UI to offer a dropdown after base_url + key are filled;
+// endpoints without the listing surface the error verbatim (the UI falls
+// back to free-text model input).
+func (c *Client) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("http %d: %.200s", resp.StatusCode, data)
+	}
+	var env struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &env); err != nil {
+		return nil, fmt.Errorf("响应不是 OpenAI /models 结构: %.120s", data)
+	}
+	out := make([]string, 0, len(env.Data))
+	seen := map[string]bool{}
+	for _, m := range env.Data {
+		if m.ID != "" && !seen[m.ID] {
+			seen[m.ID] = true
+			out = append(out, m.ID)
+		}
+	}
+	return out, nil
+}
+
 // ExtractJSON pulls the first balanced JSON object out of a model reply,
 // tolerating markdown fences and surrounding prose.
 func ExtractJSON(text string) ([]byte, error) {

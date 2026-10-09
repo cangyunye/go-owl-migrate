@@ -81,3 +81,36 @@ func TestAIMarshalRoundTrip(t *testing.T) {
 		t.Errorf("yaml must not contain a key field: %s", yamlText)
 	}
 }
+
+func TestAIProviderPresets(t *testing.T) {
+	for _, p := range []string{"deepseek", "openai", "moonshot", "qwen", "glm", "ollama", "custom"} {
+		if !ValidAIProvider(p) {
+			t.Errorf("preset %q not valid", p)
+		}
+	}
+	if ValidAIProvider("anthropic") {
+		t.Error("unknown provider accepted")
+	}
+	for name, want := range map[string]string{
+		"deepseek": "https://api.deepseek.com",
+		"openai":   "https://api.openai.com/v1",
+		"ollama":   "http://127.0.0.1:11434/v1",
+	} {
+		if got := DefaultAIBaseURL[name]; got != want {
+			t.Errorf("preset %s base_url = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestAIApplyDefaultsModelScoping(t *testing.T) {
+	var a AIConfig
+	a.ApplyDefaults()
+	if a.Model != "deepseek-flash" {
+		t.Errorf("deepseek default model = %q", a.Model)
+	}
+	custom := AIConfig{Provider: "custom", BaseURL: "http://127.0.0.1:9/v1"}
+	custom.ApplyDefaults()
+	if custom.Model != "" {
+		t.Errorf("custom provider must not inherit deepseek model, got %q", custom.Model)
+	}
+}

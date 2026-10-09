@@ -168,9 +168,70 @@ async function renderConfigBar() {
             chips.push('<span class="cfg-chip hide-sm" title="' + escapeHtml(idTitle(st.source)) + '">源 <b>' +
                 escapeHtml(sourceId) + '</b></span>');
         }
-        chips.push('<a class="cfg-bar-link" href="#/config">编辑配置</a>');
+        chips.push('<div class="cfg-dd">'
+            + '<button type="button" class="cfg-chip cfg-dd-toggle" id="cfg-dd-btn">选择配置 <span class="cfg-dd-caret">▾</span></button>'
+            + '<div class="cfg-dd-panel" id="cfg-dd-panel" hidden>'
+            +   '<a class="cfg-dd-item" href="#/config"><b>✎ 编辑当前配置</b></a>'
+            +   '<div class="cfg-dd-sep"></div>'
+            +   '<div class="cfg-dd-list" id="cfg-dd-list"><div class="cfg-dd-empty">加载中…</div></div>'
+            + '</div></div>');
         bar.innerHTML = chips.join('');
+        wireConfigDropdown(bar);
     } catch (e) { /* best-effort */ }
+}
+
+/* 「选择配置」下拉：配置库条目点击即加载为当前配置；列表最多显示 10 行，
+   其余滚动查看。document 级的点击外部收起与路由切换收起只注册一次。 */
+document.addEventListener('click', (e) => {
+    const panel = document.getElementById('cfg-dd-panel');
+    if (panel && !panel.hidden && !e.target.closest('.cfg-dd')) panel.hidden = true;
+});
+window.addEventListener('hashchange', () => {
+    const panel = document.getElementById('cfg-dd-panel');
+    if (panel) panel.hidden = true;
+});
+
+function wireConfigDropdown(bar) {
+    const btn = bar.querySelector('#cfg-dd-btn');
+    const panel = bar.querySelector('#cfg-dd-panel');
+    const list = bar.querySelector('#cfg-dd-list');
+    if (!btn || !panel || !list) return;
+    btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        panel.hidden = !panel.hidden;
+        if (panel.hidden) return;
+        list.innerHTML = '<div class="cfg-dd-empty">加载中…</div>';
+        try {
+            const items = await api.get('/api/v1/configs');
+            if (!items || !items.length) {
+                list.innerHTML = '<div class="cfg-dd-empty">配置库为空<br>到配置页上传，或把表单配置「存入配置库」</div>';
+                return;
+            }
+            list.innerHTML = items.map(c => {
+                const sub = [c.scenario, [c.source_type, c.target_type].filter(Boolean).join(' → ')]
+                    .filter(Boolean).join(' · ');
+                return '<button type="button" class="cfg-dd-item" data-name="' + escapeHtml(c.name) + '">'
+                    + '<b>' + escapeHtml(c.name) + '</b>'
+                    + (sub ? '<span class="sub">' + escapeHtml(sub) + '</span>' : '')
+                    + '</button>';
+            }).join('');
+        } catch (err) {
+            list.innerHTML = '<div class="cfg-dd-empty">加载失败：' + escapeHtml((err && err.message) || String(err)) + '</div>';
+        }
+    });
+    panel.addEventListener('click', async (e) => {
+        const item = e.target.closest('.cfg-dd-item[data-name]');
+        if (!item) return;
+        const name = item.dataset.name;
+        panel.hidden = true;
+        try {
+            await api.post('/api/v1/configs/' + encodeURIComponent(name) + '/load', {});
+            if (window.toast) window.toast.ok('已加载配置', name);
+            renderConfigBar();
+        } catch (err) {
+            if (window.toast) window.toast.err('加载配置失败', (err && err.message) || String(err));
+        }
+    });
 }
 renderConfigBar();
 

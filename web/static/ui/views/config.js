@@ -97,7 +97,7 @@ export async function render(root /*Element*/, params) {
         + '<a class="panel ai-entry-card reveal" style="--i:1" href="#/ai">'
         +   '<div>'
         +     '<div class="panel-title">AI 助手 · 已升级为独立对话页</div>'
-        +     '<p class="field-help">气泡对话、会话历史与检索、数据源选择器、引导式澄清——点此进入</p>'
+        +     '<p class="field-help">气泡对话、会话历史与检索、引导式澄清；供应商配置在助手页右上角徽章。点此进入</p>'
         +   '</div>'
         +   '<span class="btn-ghost btn-sm">打开 AI 助手 →</span>'
         + '</a>'
@@ -117,6 +117,7 @@ export async function render(root /*Element*/, params) {
         +         '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>'
         +         '保存为当前配置'
         +       '</button>'
+        +       '<button type="button" class="btn-ghost" id="btn-save-lib">存入配置库</button>'
         +       '<span class="save-status" id="save-status" role="status"></span>'
         +     '</div>'
         +     '<p class="saved-path" id="saved-path"></p>'
@@ -955,6 +956,36 @@ export async function render(root /*Element*/, params) {
         setTimeout(() => { if (root.isConnected) saveStatus.textContent = ''; }, 3000);
     }
 
+    /* 表单配置另存进配置库（当前配置不受影响；数据源引用由服务端还原） */
+    async function saveToLibrary() {
+        const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+        const suggested = (activeScenario && (activeScenario.label || activeScenario.name) || 'config') + '-' + stamp;
+        const name = window.prompt('配置库名称（.yaml 自动补全）', suggested);
+        if (name === null) return;
+        if (!name.trim()) {
+            saveStatus.textContent = '✗ 名称不能为空';
+            saveStatus.className = 'save-status fail';
+            return;
+        }
+        saveStatus.textContent = '存入配置库中…'; saveStatus.className = 'save-status';
+        try {
+            const resp = await window.api.post(`/api/v1/scenarios/${activeScenario.name}/build`,
+                { values: collectValues(), save: false, library: name.trim() });
+            if (resp && resp.library_saved) {
+                saveStatus.textContent = '✓ 已存入配置库：' + resp.library_saved;
+                saveStatus.className = 'save-status ok';
+                loadConfigLib();
+            } else {
+                saveStatus.textContent = '✗ 未入库（服务端未确认）';
+                saveStatus.className = 'save-status fail';
+            }
+        } catch (e) {
+            saveStatus.textContent = '✗ ' + ((e && e.message) || String(e));
+            saveStatus.className = 'save-status fail';
+        }
+        setTimeout(() => { if (root.isConnected) saveStatus.textContent = ''; }, 4000);
+    }
+
     /* ── form value helpers (mask-safe DSN prefill) ──────────── */
     function applyFormValues(values) {
         values = values || {};
@@ -1108,6 +1139,7 @@ export async function render(root /*Element*/, params) {
 
     /* ── wire events ────────────────────────────────────────── */
     btnSave.addEventListener('click', saveConfig);
+    root.querySelector('#btn-save-lib').addEventListener('click', saveToLibrary);
     btnUpload.addEventListener('click', uploadFile);
     fileInput.addEventListener('change', function () {
         if (this.files.length) {

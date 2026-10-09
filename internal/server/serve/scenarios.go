@@ -1,7 +1,11 @@
 package serve
 
 import (
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -38,6 +42,9 @@ func (s *Server) handleBuildScenarioConfig(w http.ResponseWriter, r *http.Reques
 	var req struct {
 		Values map[string]string `json:"values"`
 		Save   bool              `json:"save"`
+		// Library 非空时把解析后的完整配置（数据源引用已在服务端还原，
+		// 浏览器从未接触明文）额外存一份进配置库；当前配置不受影响。
+		Library string `json:"library"`
 	}
 	if !decodeJSON(w, r, &req, maxBodyBytes) {
 		return
@@ -68,6 +75,33 @@ func (s *Server) handleBuildScenarioConfig(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	librarySaved := ""
+	if strings.TrimSpace(req.Library) != "" {
+		name := sanitizeConfigName(strings.TrimSpace(req.Library))
+		if name == "" {
+			name = fmt.Sprintf("config-%s", time.Now().Format("20060102-150405"))
+		}
+		libPath, err := s.safeConfigPath(name)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := os.MkdirAll(s.configDir, 0755); err != nil {
+			writeError(w, http.StatusInternalServerError, "create config dir: "+err.Error())
+			return
+		}
+		libYAML, err := yaml.Marshal(cfg)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if err := os.WriteFile(libPath, libYAML, 0644); err != nil {
+			writeError(w, http.StatusInternalServerError, "save to library: "+err.Error())
+			return
+		}
+		librarySaved = name
+	}
+
 	out, err := configToMap(cfg)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -92,11 +126,12 @@ func (s *Server) handleBuildScenarioConfig(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scenario": name,
-		"config":   out,
-		"yaml":     string(yamlBytes),
-		"saved":    req.Save,
-		"path":     s.configPath,
+		"scenario":      name,
+		"config":        out,
+		"yaml":          string(yamlBytes),
+		"saved":         req.Save,
+		"library_saved": librarySaved,
+		"path":          s.configPath,
 	})
 }
 

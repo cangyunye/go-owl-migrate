@@ -345,8 +345,28 @@ type AIConfig struct {
 }
 
 // DefaultAIBaseURL maps a provider preset to its OpenAI-compatible API root.
+// "custom" 档位不在表内——base_url 必须显式提供。
 var DefaultAIBaseURL = map[string]string{
 	"deepseek": "https://api.deepseek.com",
+	"openai":   "https://api.openai.com/v1",
+	"moonshot": "https://api.moonshot.cn/v1",
+	"qwen":     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+	"glm":      "https://open.bigmodel.cn/api/paas/v4",
+	"ollama":   "http://127.0.0.1:11434/v1",
+}
+
+// AIProviderPresets lists the selectable provider slots in UI order; custom
+// means a hand-filled base_url (不在预设表内).
+var AIProviderPresets = []string{"deepseek", "openai", "moonshot", "qwen", "glm", "ollama", "custom"}
+
+// ValidAIProvider reports whether name is a preset or the custom slot.
+func ValidAIProvider(name string) bool {
+	for _, p := range AIProviderPresets {
+		if p == name {
+			return true
+		}
+	}
+	return false
 }
 
 // ValidAIEfforts lists supported thinking-intensity levels.
@@ -362,7 +382,9 @@ func (a *AIConfig) ApplyDefaults() {
 	if a.APIKeyEnv == "" {
 		a.APIKeyEnv = "OWL_AI_API_KEY"
 	}
-	if a.Model == "" {
+	// deepseek 兜底默认模型；custom 端点的模型必须由用户探测或手填——
+	// 拿 deepseek 的模型名打别的端点只会得到一个必然失败的请求。
+	if a.Model == "" && (a.Provider == "" || a.Provider == "deepseek") {
 		a.Model = "deepseek-flash"
 	}
 	if a.ContextWindow == 0 {
