@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -96,6 +98,15 @@ func (s *Server) launchJob(jobType string, extra map[string]any) (int, []byte, e
 		}
 	}
 
+	// 每次 serve 任务产物独立成目录（见 execSpawner）：导出写入
+	// <jobDir>/data。独立导入任务若配置的 source_dir 缺失或为空，回退到最近
+	// 一次已完成导出任务的产物目录，保持"导出 → 导入"链路可用。
+	if jobType == "import" {
+		if dir := s.importFallbackSourceDir(); dir != "" {
+			setConfigImportSourceDir(cfgMap, dir)
+		}
+	}
+
 	payload := map[string]any{
 		"type":   jobType,
 		"config": cfgMap,
@@ -108,6 +119,65 @@ func (s *Server) launchJob(jobType string, extra map[string]any) (int, []byte, e
 		return http.StatusBadGateway, nil, fmt.Errorf("master unreachable: %w", err)
 	}
 	return status, respBody, nil
+}
+
+// importFallbackSourceDir returns the newest completed export job's artifact
+// dir when the active config's import.source_dir is missing or empty; otherwise
+// it returns "" (the configured dir wins).
+func (s *Server) importFallbackSourceDir() string {
+	s.mu.RLock()
+	cfg := s.cfg
+	s.mu.RUnlock()
+	if cfg != nil && cfg.Import.SourceDir != "" && dirHasArtifacts(cfg.Import.SourceDir) {
+		return ""
+	}
+	jobs, err := s.store.ListJobs(100)
+	if err != nil {
+		return ""
+	}
+	for _, j := range jobs {
+		if j.Type != "export" {
+			continue
+		}
+		if j.Status != "completed" && j.Status != "completed_with_errors" {
+			continue
+		}
+		for _, cand := range []string{
+			filepath.Join(s.tempDir, j.JobID, "data"),
+			filepath.Join(s.tempDir, j.JobID),
+		} {
+			if dirHasArtifacts(cand) {
+				return cand
+			}
+		}
+	}
+	return ""
+}
+
+// dirHasArtifacts reports whether dir exists and holds at least one data
+// artifact (empty dirs and internal job files don't count).
+func dirHasArtifacts(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && isArtifactFile(e.Name()) {
+			return true
+		}
+	}
+	return false
+}
+
+// setConfigImportSourceDir overrides import.source_dir in a serialized config
+// map (never mutating the active config).
+func setConfigImportSourceDir(cfgMap map[string]any, dir string) {
+	imp, _ := cfgMap["import"].(map[string]any)
+	if imp == nil {
+		imp = map[string]any{}
+		cfgMap["import"] = imp
+	}
+	imp["source_dir"] = dir
 }
 
 func (s *Server) handleStartMigrate(w http.ResponseWriter, r *http.Request) {

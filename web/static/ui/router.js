@@ -9,6 +9,7 @@
 import { render as renderHome } from './views/home.js';
 import { render as renderJobs } from './views/jobs.js';
 import { render as renderJobDetail } from './views/jobDetail.js';
+import { render as renderArtifacts } from './views/artifacts.js';
 import { render as renderDDL } from './views/ddl.js';
 import { render as renderSelect } from './views/select.js';
 import { render as renderInsert } from './views/insert.js';
@@ -46,7 +47,8 @@ const NAV = [
     { route: '/migrate', active: '/migrate', title: '迁移' },
     { route: '/export', active: '/export', title: '导出' },
     { route: '/import', active: '/import', title: '导入' },
-    { route: '/jobs', active: '/jobs', title: '任务' }
+    { route: '/jobs', active: '/jobs', title: '任务' },
+    { route: '/artifacts', active: '/artifacts', title: '产物' }
 ];
 
 /* ── route table: ordered; first match wins ───────────────── */
@@ -58,6 +60,7 @@ const routes = [
     { re: /^\/metadata$/, render: renderMetadata, active: '/metadata', title: '元数据' },
     { re: /^\/jobs$/, render: renderJobs, active: '/jobs', title: '任务' },
     { re: /^\/jobs\/([^/]+)$/, render: renderJobDetail, active: '/jobs', title: '任务详情' },
+    { re: /^\/artifacts$/, render: renderArtifacts, active: '/artifacts', title: '产物' },
     { re: /^\/ddl$/, render: renderDDL, active: '/ddl', title: 'DDL' },
     { re: /^\/select$/, render: renderSelect, active: '/select', title: 'SELECT' },
     { re: /^\/insert$/, render: renderInsert, active: '/insert', title: 'INSERT' },

@@ -286,6 +286,107 @@ func TestSetYAMLSectionDSN(t *testing.T) {
 	}
 }
 
+// TestAIPlanSelectedProfilesResolveSourceClarifyAndTarget locks the two chat
+// regressions together: (2) when source+target profiles are selected in the UI,
+// the router's "which source?" clarify is suppressed; (3) when the slot stage
+// omits the target entirely, the selected target profile is synthesized so the
+// builder no longer fails with "scenario migrate requires a target endpoint".
+func TestAIPlanSelectedProfilesResolveSourceClarifyAndTarget(t *testing.T) {
+	srv := newTestServerWithDatasources(t, t.TempDir())
+	store, err := srv.dsStore()
+	if err != nil {
+		t.Fatalf("dsStore: %v", err)
+	}
+	if err := store.Put("src-pg", "postgres", "public", "postgres://srcu:SrcSecret1@127.0.0.1:5432/srcdb", ""); err != nil {
+		t.Fatalf("put src: %v", err)
+	}
+	if err := store.Put("tgt-pg", "postgres", "public", "postgres://tgtu:TgtSecret2@127.0.0.1:5432/tgtdb", ""); err != nil {
+		t.Fatalf("put tgt: %v", err)
+	}
+
+	vendor, calls, bodies := seqVendor(t, []string{
+		// Router wrongly asks which source, despite the UI selection.
+		`{"route":"migrate","sub":"","confidence":"high","missing_slots":["源数据源"],"out_of_scope":false,"needs_clarify":true,"reason":"缺源"}`,
+		// Slot stage only fills source; target is omitted on purpose.
+		`{"scenario":"migrate","source":{"profile":"src-pg"},"export":{"tables":["users"]}}`,
+	})
+	t.Setenv("OWL_AI_API_KEY", "test-key")
+	srv.cfg.AI.BaseURL = vendor.URL
+	srv.cfg.AI.ApplyDefaults()
+
+	w := doJSON(t, srv, "POST", "/api/v1/ai/plan",
+		`{"utterance":"把 users 表的数据迁移到目标库 b 用户下","profile":{"source":"src-pg","target":"tgt-pg"}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		OK           bool     `json:"ok"`
+		PlanID       string   `json:"plan_id"`
+		Route        string   `json:"route"`
+		NeedsClarify bool     `json:"needs_clarify"`
+		YAML         string   `json:"yaml"`
+		FactsUsed    []string `json:"facts_used"`
+		Session      struct {
+			Slots map[string]string `json:"slots"`
+		} `json:"session"`
+		Continuity map[string]any `json:"continuity"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	// Issue 3: a plan must be produced (not the "target required" clarify).
+	if resp.PlanID == "" || resp.NeedsClarify {
+		t.Fatalf("expected a plan, got plan_id=%q needs_clarify=%v body=%s", resp.PlanID, resp.NeedsClarify, w.Body.String())
+	}
+	if resp.Route != "migrate" {
+		t.Errorf("route = %q, want migrate", resp.Route)
+	}
+	if *calls != 2 {
+		t.Fatalf("vendor calls = %d, want 2 (route + slots)", *calls)
+	}
+	// Issue 2: the route-stage prompt carried the UI selection as a fact.
+	if !strings.Contains((*bodies)[0], "界面已选数据源") || !strings.Contains((*bodies)[0], "tgt-pg") {
+		t.Errorf("route message lacks selected-profile facts:\n%.400s", (*bodies)[0])
+	}
+	// Both profile sides resolved into the plan (sentinel DSNs, no secrets).
+	if !strings.Contains(resp.YAML, "target:") || !strings.Contains(resp.YAML, "__PWD_pg__") {
+		t.Errorf("plan yaml should carry a resolved target profile:\n%s", resp.YAML)
+	}
+	for _, secret := range []string{"SrcSecret1", "TgtSecret2"} {
+		if strings.Contains(resp.YAML, secret) {
+			t.Fatalf("plan yaml leaks %s", secret)
+		}
+	}
+	if resp.Session.Slots["target_profile"] != "tgt-pg" {
+		t.Errorf("session slots missing target_profile: %+v", resp.Session.Slots)
+	}
+}
+
+// TestProfileCoversConnectionGap covers the deterministic side-match used to
+// suppress router clarifies: source gaps need a source profile, target gaps a
+// target profile, and unqualified connection gaps accept either.
+func TestProfileCoversConnectionGap(t *testing.T) {
+	cases := []struct {
+		missing, src, tgt string
+		want              bool
+	}{
+		{"源数据源", "src", "tgt", true},
+		{"源数据源", "", "tgt", false},
+		{"目标连接", "src", "", false},
+		{"目标连接", "src", "tgt", true},
+		{"数据库连接", "src", "", true},
+		{"host", "", "tgt", true},
+		{"导出格式", "src", "tgt", false},
+		{"可导出的表名", "src", "tgt", false},
+	}
+	for _, c := range cases {
+		if got := profileCoversConnectionGap(c.missing, c.src, c.tgt); got != c.want {
+			t.Errorf("profileCoversConnectionGap(%q, %q, %q) = %v, want %v", c.missing, c.src, c.tgt, got, c.want)
+		}
+	}
+}
+
 // newTestServerWithDatasources: test server with isolated datasource AND
 // AI-session dirs — without the latter, tests would read/write the real
 // user session database at ~/.owl/migrate/ai/sessions.

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cangyunye/go-owl-migrate/internal/config"
 	"github.com/cangyunye/go-owl-migrate/internal/service"
 )
 
@@ -307,4 +308,144 @@ func TestJobOutputDownload_NoOutput404(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want 404 (no SQL output)", resp.StatusCode)
 	}
+}
+
+// newArtifactRig builds a Server with a temp job dir and a temp shared export
+// dir, so artifact-scoping tests never read the repo's real ./output/data/.
+func newArtifactRig(t *testing.T) (*Server, *service.JobStore, string, string) {
+	t.Helper()
+	tempDir := t.TempDir()
+	sharedDir := t.TempDir()
+	store, err := service.NewJobStore(filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatalf("NewJobStore: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	srv := NewServer(Config{Store: store, TempDir: tempDir})
+	srv.cfg = &config.Config{Export: config.ExportConfig{OutputDir: sharedDir}}
+	return srv, store, tempDir, sharedDir
+}
+
+// TestJobExportFilesScopedToJob locks the core item-1 fix: a job's detail lists
+// ONLY its own artifacts, never the whole shared export dir.
+func TestJobExportFilesScopedToJob(t *testing.T) {
+	srv, store, tempDir, _ := newArtifactRig(t)
+	for _, jid := range []string{"job-a", "job-b"} {
+		if err := store.CreateJob(jid, "export", "{}"); err != nil {
+			t.Fatalf("CreateJob: %v", err)
+		}
+		store.UpdateJobStatus(jid, "completed")
+	}
+	for _, d := range []struct{ jid, name, content string }{
+		{"job-a", "a.csv", "a"},
+		{"job-b", "b.csv", "b"},
+	} {
+		dir := filepath.Join(tempDir, d.jid, "data")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, d.name), []byte(d.content), 0644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	// Internal job file in the root must not surface as an artifact.
+	os.WriteFile(filepath.Join(tempDir, "job-a", "config.yaml"), []byte("x"), 0644)
+
+	w := doGet(t, srv, "/api/v1/jobs/job-a/files")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Files []struct {
+			Name string `json:"name"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Files) != 1 || resp.Files[0].Name != "a.csv" {
+		t.Fatalf("job-a files = %+v, want exactly [a.csv]", resp.Files)
+	}
+}
+
+// TestJobArtifactsDownloadBundlesDataAndSQL: the single-job 打包下载 contains
+// both the data file and the INSERT SQL (namespaced under sql/).
+func TestJobArtifactsDownloadBundlesDataAndSQL(t *testing.T) {
+	srv, store, tempDir, _ := newArtifactRig(t)
+	store.CreateJob("job-bundle", "migrate", "{}")
+	store.UpdateJobStatus("job-bundle", "completed")
+	os.MkdirAll(filepath.Join(tempDir, "job-bundle", "insert"), 0755)
+	os.WriteFile(filepath.Join(tempDir, "job-bundle", "scott.emp.csv"), []byte("id\n1\n"), 0644)
+	os.WriteFile(filepath.Join(tempDir, "job-bundle", "insert", "scott.emp.insert.sql"), []byte("INSERT INTO emp VALUES (1);"), 0644)
+
+	w := doGet(t, srv, "/api/v1/jobs/job-bundle/artifacts/download?format=zip")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	got := readZip(t, w.Body)
+	if _, ok := got["scott.emp.csv"]; !ok {
+		t.Errorf("bundle missing data file, entries=%v", keysOf(got))
+	}
+	if _, ok := got["sql/scott.emp.insert.sql"]; !ok {
+		t.Errorf("bundle missing namespaced SQL file, entries=%v", keysOf(got))
+	}
+}
+
+// TestJobArtifactsDownloadRejectsIncomplete: no pulling a half-written bundle.
+func TestJobArtifactsDownloadRejectsIncomplete(t *testing.T) {
+	srv, store, tempDir, _ := newArtifactRig(t)
+	store.CreateJob("job-running2", "export", "{}")
+	store.UpdateJobStatus("job-running2", "running")
+	os.MkdirAll(filepath.Join(tempDir, "job-running2", "data"), 0755)
+	os.WriteFile(filepath.Join(tempDir, "job-running2", "data", "partial.csv"), []byte("x"), 0644)
+
+	w := doGet(t, srv, "/api/v1/jobs/job-running2/artifacts/download?format=tar.gz")
+	if w.Code != http.StatusConflict {
+		t.Errorf("status = %d, want 409", w.Code)
+	}
+}
+
+// TestListArtifacts: the library lists per-job bundles (with job id) and
+// standalone shared-dir files separately.
+func TestListArtifacts(t *testing.T) {
+	srv, store, tempDir, sharedDir := newArtifactRig(t)
+	store.CreateJob("job-lib", "export", "{}")
+	store.UpdateJobStatus("job-lib", "completed")
+	os.MkdirAll(filepath.Join(tempDir, "job-lib", "data"), 0755)
+	os.WriteFile(filepath.Join(tempDir, "job-lib", "data", "lib.csv"), []byte("lib"), 0644)
+	os.MkdirAll(sharedDir, 0755)
+	os.WriteFile(filepath.Join(sharedDir, "orphan.csv"), []byte("orphan"), 0644)
+
+	w := doGet(t, srv, "/api/v1/artifacts")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Jobs []struct {
+			JobID     string `json:"job_id"`
+			FileCount int    `json:"file_count"`
+		} `json:"jobs"`
+		Standalone struct {
+			Files []struct {
+				Name string `json:"name"`
+			} `json:"files"`
+		} `json:"standalone"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(resp.Jobs) != 1 || resp.Jobs[0].JobID != "job-lib" || resp.Jobs[0].FileCount != 1 {
+		t.Fatalf("jobs = %+v, want one job-lib with 1 file", resp.Jobs)
+	}
+	if len(resp.Standalone.Files) != 1 || resp.Standalone.Files[0].Name != "orphan.csv" {
+		t.Fatalf("standalone = %+v, want [orphan.csv]", resp.Standalone.Files)
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

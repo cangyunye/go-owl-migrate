@@ -288,8 +288,10 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) 
 		"--parent-pid", fmt.Sprintf("%d", req.ParentPID),
 	)
 
-	// Command-specific flags. --temp-dir only exists on migrate. Export defaults
-	// to ./output/data/ (shared with import's source_dir so the two chain).
+	// Command-specific flags. --temp-dir only exists on migrate. Export writes
+	// into the job's OWN directory (<jobDir>/data) so the job-detail artifact
+	// panel never mixes in other jobs' files; standalone CLI export keeps its
+	// shared ./output/data/ default.
 	switch req.JobType {
 	case "migrate":
 		if req.TempDir != "" {
@@ -306,6 +308,10 @@ func (s *execSpawner) Spawn(req master.SpawnRequest) (int, func() error, error) 
 		}
 		if req.ContinueOnError {
 			args = append(args, "--continue-on-error")
+		}
+	case "export":
+		if req.TempDir != "" {
+			args = append(args, "--output", filepath.Join(req.TempDir, "data"))
 		}
 	}
 

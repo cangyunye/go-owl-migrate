@@ -96,6 +96,9 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	routeUser := buildRouteUserMessage(req.Utterance, ctxLines)
 	routeUser += s.planFactsBlock()
+	// 界面选择器：源/目标数据源已选时是"显式连接事实"，路由器不得再追问
+	// 「源数据是哪个」——把选择结果作为事实喂进路由层。
+	routeUser += selectedProfilesHint(req.Profile.Source, req.Profile.Target)
 	// 凭据与连接由服务端管理（数据源档案/哨兵注入）：无论是否带 credentials，
 	// 路由器都不应因"缺密码/缺 host"而澄清——缺的事实要么在档案里，要么由
 	// 生成段澄清，路由层放行。
@@ -118,6 +121,10 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 界面选择器是显式连接事实：据此消解"缺源/缺目标连接"类澄清——用户
+	// 明明在界面选好了源/目标数据源，不应再被追问「源数据是哪个」。
+	route = reconcileRouteWithSelectedProfiles(route, req.Profile.Source, req.Profile.Target)
+
 	// ── 会话接续判定：同意图沿用；意图变化自动开新一轮（克隆槽位） ──
 	sess, continuity := s.resolveSession(store, req.SessionID, route, req.Utterance)
 
@@ -135,7 +142,8 @@ func (s *Server) handleAIPlan(w http.ResponseWriter, r *http.Request) {
 
 	// ── 第 2 段：配置组装。首选确定性 builder（LLM 只填槽、永不碰凭据与
 	// YAML 结构）；builder 处理不了的组合回退 LLM-YAML（engine 标注）。
-	planMsg := buildPlanUserMessage(req.Utterance, sess, route) + s.planFactsBlock()
+	planMsg := buildPlanUserMessage(req.Utterance, sess, route) + s.planFactsBlock() +
+		selectedProfilesHint(req.Profile.Source, req.Profile.Target)
 	res, sbErr := s.buildViaSlots(ctx, client, a, store, sess, route, planMsg, req.Credentials,
 		req.Profile.Source, req.Profile.Target)
 	var (
@@ -320,8 +328,24 @@ func (s *Server) buildViaSlots(ctx context.Context, client *ai.Client, a config.
 	// 再次提供并即时注入——会话存储与日志永不接触明文。
 	// 对话页选择器的默认档案：仅当 LLM 槽位既没显式给档案、也没给完整 DSN
 	// 时才生效（话语显式 > 选择器默认）。
+	// 话题/轮次继承：界面选择器（本轮显式）优先于会话槽位（上一轮事实）。
+	// 两者都作为"默认事实"，话语显式给出的 DSN 仍然最优先。
+	if forcedSourceProfile == "" {
+		forcedSourceProfile = sess.Slots["source_profile"]
+	}
+	if forcedTargetProfile == "" {
+		forcedTargetProfile = sess.Slots["target_profile"]
+	}
+	// 源：档案或 DSN 均未给时才套用默认档案。
 	if forcedSourceProfile != "" && req.Source.Profile == "" && req.Source.DSN == "" {
 		req.Source.Profile = forcedSourceProfile
+	}
+	// 目标：needsTarget 场景下 req.Target 可能整个缺失（LLM 只填了 source），
+	// 此时若界面/会话有目标档案，必须先补出 target 端点——否则
+	// BuildFromSlots 直接报 "requires a target endpoint"，用户明明选了目标
+	// 数据源却被判信息不足。
+	if forcedTargetProfile != "" && req.Target == nil {
+		req.Target = &configbuild.EndpointSlots{}
 	}
 	if forcedTargetProfile != "" && req.Target != nil && req.Target.Profile == "" && req.Target.DSN == "" {
 		req.Target.Profile = forcedTargetProfile
@@ -611,4 +635,85 @@ func buildPlanUserMessage(utterance string, sess *ai.Session, route aiRouteResul
 	b.WriteString("【用户最新一句话】\n")
 	b.WriteString(utterance)
 	return b.String()
+}
+
+// selectedProfilesHint renders the chat page's source/target datasource
+// selectors as explicit connection facts for the LLM stages. The selectors are
+// "default facts" (an explicit utterance still wins), but their mere presence
+// means the corresponding connection is NOT a missing slot: the model must not
+// ask "源数据是哪个" when the user already picked it in the UI.
+func selectedProfilesHint(src, tgt string) string {
+	if src == "" && tgt == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\n【界面已选数据源（默认连接事实，非缺失槽位）】")
+	if src != "" {
+		b.WriteString("\n- 源数据源档案：" + src)
+	} else {
+		b.WriteString("\n- 源数据源档案：（未选择）")
+	}
+	if tgt != "" {
+		b.WriteString("\n- 目标数据源档案：" + tgt)
+	} else {
+		b.WriteString("\n- 目标数据源档案：（未选择）")
+	}
+	b.WriteString("\n说明：用户已在界面选定上述数据源时，对应连接信息视为完备，" +
+		"不得因缺少源/目标连接信息而澄清（话语显式给出连接时以话语为准）。")
+	return b.String()
+}
+
+// reconcileRouteWithSelectedProfiles drops connection-gap clarify reasons that
+// the chat page's source/target selectors already satisfy. Without this, the
+// router could return {route: migrate, needs_clarify: true, missing_slots:
+// ["源连接"]} while the source profile is plainly selected, forcing the user to
+// answer a question the UI already answered.
+func reconcileRouteWithSelectedProfiles(route aiRouteResult, src, tgt string) aiRouteResult {
+	if src == "" && tgt == "" {
+		return route
+	}
+	if len(route.MissingSlots) == 0 && !route.NeedsClarify {
+		return route
+	}
+	kept := make([]string, 0, len(route.MissingSlots))
+	for _, m := range route.MissingSlots {
+		if profileCoversConnectionGap(m, src, tgt) {
+			continue
+		}
+		kept = append(kept, m)
+	}
+	route.MissingSlots = kept
+	// 连接缺口被界面选择补齐后，若没有其它缺口，就不再澄清。
+	// route=="clarify" 时无法据此推断场景，保留原判定交给生成段兜底。
+	if len(kept) == 0 && route.NeedsClarify && route.Route != "clarify" {
+		route.NeedsClarify = false
+		route.Reason = strings.TrimSpace(route.Reason + "（源/目标数据源已由界面选择，连接信息完备）")
+	}
+	return route
+}
+
+// profileCoversConnectionGap reports whether one missing-slot phrase is a
+// connection gap that the given selected profile(s) already cover.
+func profileCoversConnectionGap(missing, src, tgt string) bool {
+	lm := strings.ToLower(missing)
+	conn := strings.Contains(lm, "连接") || strings.Contains(lm, "host") ||
+		strings.Contains(lm, "dsn") || strings.Contains(lm, "数据源") ||
+		strings.Contains(lm, "密码") || strings.Contains(lm, "数据库") ||
+		strings.Contains(lm, "endpoint") || strings.Contains(lm, "用户名") ||
+		strings.Contains(lm, "user")
+	if !conn {
+		return false
+	}
+	hasSrc := strings.Contains(lm, "源") || strings.Contains(lm, "source")
+	hasTgt := strings.Contains(lm, "目标") || strings.Contains(lm, "target")
+	switch {
+	case hasSrc && !hasTgt:
+		return src != ""
+	case hasTgt && !hasSrc:
+		return tgt != ""
+	default:
+		// 未指明哪一侧的连接缺口：任一侧选择器已选即认为可推进，
+		// 剩余缺口由确定性 builder 校验兜底。
+		return src != "" || tgt != ""
+	}
 }

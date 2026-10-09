@@ -135,8 +135,9 @@ function startLive() {
 
 let currentJobId = '';
 
-/* 任务产物统一面板：数据产物（export.output_dir）+ sql-out 产物（insert 目录，
-   打包下载复用既有 /output/download 端点）。两者皆空时隐藏面板。 */
+/* 任务产物统一面板：仅显示本任务自己的产物——数据产物（<jobDir>/data 或
+   migrate 的 <jobDir>）+ sql-out 产物（<jobDir>/insert）。整任务可一键打包
+   下载（tar.gz/zip）。两者皆空时隐藏面板。 */
 async function loadArtifacts() {
     const panel = document.getElementById('job-files-panel');
     if (!panel) return;
@@ -148,6 +149,11 @@ async function loadArtifacts() {
     const sql = sqlResp && sqlResp.has_sql ? sqlResp : null;
     if (!dataFiles.length && !sql) { panel.hidden = true; return; }
     panel.hidden = false;
+    const bundleBase = window.api.downloadURL('/api/v1/jobs/' + currentJobId + '/artifacts/download?format=');
+    const bundleTgz = document.getElementById('artifacts-bundle-tgz');
+    const bundleZip = document.getElementById('artifacts-bundle-zip');
+    if (bundleTgz) bundleTgz.href = bundleBase + 'tar.gz';
+    if (bundleZip) bundleZip.href = bundleBase + 'zip';
 
     const dirEl = document.getElementById('files-dir');
     if (dirEl) dirEl.textContent = (filesResp && filesResp.dir) || '';
@@ -245,6 +251,10 @@ export function render(root /*Element*/, params) {
         +   '<div class="panel-head">'
         +     '<span class="panel-title">任务产物<span class="badge badge-accent" id="files-count"></span></span>'
         +     '<span class="field-help mono" id="files-dir" style="margin:0"></span>'
+        +     '<span class="panel-actions" style="margin-left:auto">'
+        +       '<a class="btn-ghost btn-sm" id="artifacts-bundle-tgz" href="#">打包 tar.gz</a>'
+        +       '<a class="btn-ghost btn-sm" id="artifacts-bundle-zip" href="#">打包 zip</a>'
+        +     '</span>'
         +   '</div>'
         +   '<table class="data-table">'
         +     '<thead><tr><th scope="col">文件</th><th scope="col">大小</th><th scope="col">修改时间</th><th scope="col">操作</th></tr></thead>'
